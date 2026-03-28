@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { PricesResponse } from "@/lib/types";
 
-const REFRESH_SECONDS = 30;
+const REFRESH_SECONDS = 5;
 const ORDER = ["binance", "kucoin", "novadax", "mercadobitcoin"];
 
 function money(v: number) {

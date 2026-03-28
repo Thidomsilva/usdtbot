@@ -39,13 +39,40 @@ function safeNumber(value: any): number {
 }
 
 async function fetchBinance() {
-  const data = await fetchJson("https://api.binance.com/api/v3/ticker/24hr?symbol=USDTBRL");
+  const hosts = ["api.binance.com", "api1.binance.com", "api2.binance.com", "api3.binance.com"];
+
+  for (const host of hosts) {
+    try {
+      const data = await fetchJson(`https://${host}/api/v3/ticker/24hr?symbol=USDTBRL`);
+      const price = safeNumber(data.lastPrice);
+      if (price > 0) {
+        return {
+          price_brl: price,
+          volume_24h: safeNumber(data.quoteVolume),
+          change_24h: safeNumber(data.priceChangePercent),
+          high_24h: safeNumber(data.highPrice),
+          low_24h: safeNumber(data.lowPrice),
+          source_url: "https://www.binance.com/en/trade/USDT_BRL",
+        };
+      }
+    } catch {
+      // Try next Binance host.
+    }
+  }
+
+  // Fallback: gets Binance reference price via CryptoCompare when direct endpoints are blocked.
+  const fallback = await fetchJson("https://min-api.cryptocompare.com/data/price?fsym=USDT&tsyms=BRL&e=Binance");
+  const fallbackPrice = safeNumber(fallback.BRL);
+  if (fallbackPrice <= 0) {
+    throw new Error("Binance ticker indisponivel");
+  }
+
   return {
-    price_brl: safeNumber(data.lastPrice),
-    volume_24h: safeNumber(data.quoteVolume),
-    change_24h: safeNumber(data.priceChangePercent),
-    high_24h: safeNumber(data.highPrice),
-    low_24h: safeNumber(data.lowPrice),
+    price_brl: fallbackPrice,
+    volume_24h: 0,
+    change_24h: 0,
+    high_24h: fallbackPrice,
+    low_24h: fallbackPrice,
     source_url: "https://www.binance.com/en/trade/USDT_BRL",
   };
 }
