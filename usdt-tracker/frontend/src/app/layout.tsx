@@ -3,13 +3,14 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "USDT Tracker — Preço em Tempo Real",
   description:
-    "Monitoramento do preço do USDT nas principais corretoras: Binance, Bybit, Novadax, KuCoin, Kraken, MEXC e Mercado Bitcoin.",
+    "Monitoramento do preço do USDT/BRL nas corretoras Binance, KuCoin, Novadax e Mercado Bitcoin.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR">
       <head>
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link

@@ -3,7 +3,6 @@ export interface ExchangeData {
   label: string;
   flag: string;
   pair?: string;
-  price_usd?: number;
   price_brl?: number;
   volume_24h?: number;
   change_24h?: number;
@@ -24,6 +23,8 @@ export interface Summary {
 
 export interface PricesResponse {
   timestamp: string;
+  ok_count?: number;
+  total_count?: number;
   exchanges: Record<string, ExchangeData>;
   summary: Summary;
 }

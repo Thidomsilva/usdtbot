@@ -2,11 +2,11 @@
   "version": 2,
   "builds": [
     {
-      "src": "frontend/package.json",
+      "src": "usdt-tracker/frontend/package.json",
       "use": "@vercel/next"
     },
     {
-      "src": "api/index.py",
+      "src": "usdt-tracker/api/index.py",
       "use": "@vercel/python",
       "config": {
         "runtime": "python3.12",
@@ -15,6 +15,6 @@
     }
   ],
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index.py" }
+    { "source": "/api/(.*)", "destination": "/usdt-tracker/api/index.py" }
   ]
 }

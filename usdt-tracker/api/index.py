@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import asyncio
 from datetime import datetime, timezone
+import time
 
 app = FastAPI(title="USDT Price Tracker")
 
@@ -14,6 +15,18 @@ app.add_middleware(
 )
 
 TIMEOUT = 8.0
+CACHE_TTL_SECONDS = 10
+_CACHE = {"at": 0.0, "payload": None}
+
+
+async def fetch_json(client: httpx.AsyncClient, url: str) -> dict:
+    """Perform a GET request and return a JSON object with basic validation."""
+    r = await client.get(url, timeout=TIMEOUT)
+    r.raise_for_status()
+    data = r.json()
+    if not isinstance(data, dict):
+        raise ValueError("Unexpected JSON payload")
+    return data
 
 
 # ── exchange fetchers ─────────────────────────────────────────────────────────
@@ -25,8 +38,7 @@ async def fetch_binance(client: httpx.AsyncClient) -> dict:
     used_symbol = None
     for symbol in symbols:
         url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol}"
-        r = await client.get(url, timeout=TIMEOUT)
-        candidate = r.json()
+        candidate = await fetch_json(client, url)
         if isinstance(candidate, dict) and "lastPrice" in candidate:
             d = candidate
             used_symbol = symbol
@@ -68,8 +80,8 @@ async def fetch_binance(client: httpx.AsyncClient) -> dict:
 async def fetch_novadax(client: httpx.AsyncClient) -> dict:
     """USDT/BRL from Novadax."""
     url = "https://api.novadax.com/v1/market/ticker?symbol=USDT_BRL"
-    r = await client.get(url, timeout=TIMEOUT)
-    d = r.json()["data"]
+    payload = await fetch_json(client, url)
+    d = payload["data"]
     price_brl = float(d["lastPrice"])
     vol_brl = float(d.get("volume24h", 0) or 0)
     open_brl = float(d.get("open24h", price_brl) or price_brl)
@@ -88,8 +100,8 @@ async def fetch_novadax(client: httpx.AsyncClient) -> dict:
 async def fetch_kucoin(client: httpx.AsyncClient) -> dict:
     """USDT/BRL from KuCoin public API."""
     url = "https://api.kucoin.com/api/v1/market/stats?symbol=USDT-BRL"
-    r = await client.get(url, timeout=TIMEOUT)
-    data = r.json().get("data", {})
+    payload = await fetch_json(client, url)
+    data = payload.get("data", {})
 
     last = float(data.get("last") or 0)
     if last <= 0:
@@ -111,8 +123,8 @@ async def fetch_kucoin(client: httpx.AsyncClient) -> dict:
 async def fetch_mercadobitcoin(client: httpx.AsyncClient) -> dict:
     """USDT/BRL from Mercado Bitcoin."""
     url = "https://www.mercadobitcoin.net/api/USDT/ticker/"
-    r = await client.get(url, timeout=TIMEOUT)
-    d = r.json()["ticker"]
+    payload = await fetch_json(client, url)
+    d = payload["ticker"]
     price_brl = float(d["last"])
     open_brl = float(d.get("open", price_brl) or price_brl)
     change = (price_brl - open_brl) / open_brl * 100 if open_brl > 0 else 0
@@ -149,15 +161,26 @@ async def safe_fetch(name, fn, client):
         data = await fn(client)
         return name, {"status": "ok", **data, **EXCHANGE_META[name]}
     except Exception as e:
+        msg = str(e)
+        if " 451" in msg:
+            msg = "Indisponivel na regiao atual"
+        elif "timed out" in msg.lower():
+            msg = "Timeout na consulta da corretora"
         return name, {
             "status": "error",
-            "error": str(e),
+            "error": msg,
             **EXCHANGE_META[name],
         }
 
 
 @app.get("/api/prices")
 async def get_prices():
+    now = time.time()
+    cached_payload = _CACHE.get("payload")
+    cache_at = float(_CACHE.get("at", 0.0) or 0.0)
+    if cached_payload and now - cache_at < CACHE_TTL_SECONDS:
+        return cached_payload
+
     async with httpx.AsyncClient() as client:
         tasks = [
             safe_fetch(name, fn, client)
@@ -190,11 +213,16 @@ async def get_prices():
             ),
         }
 
-    return {
+    payload = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "ok_count": len(ok),
+        "total_count": len(EXCHANGE_FETCHERS),
         "exchanges": results,
         "summary": summary,
     }
+    _CACHE["payload"] = payload
+    _CACHE["at"] = now
+    return payload
 
 
 @app.get("/api/health")
