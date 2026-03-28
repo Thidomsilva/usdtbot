@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "usdt-tracker/frontend/package.json",
+      "src": "usdt-tracker/frontend/next.config.js",
       "use": "@vercel/next"
     },
     {
@@ -14,7 +14,8 @@
       }
     }
   ],
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/usdt-tracker/api/index.py" }
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/usdt-tracker/api/index.py" },
+    { "handle": "filesystem" }
   ]
 }

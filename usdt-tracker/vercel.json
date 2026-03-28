@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "frontend/package.json",
+      "src": "frontend/next.config.js",
       "use": "@vercel/next"
     },
     {
@@ -14,7 +14,8 @@
       }
     }
   ],
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index.py" }
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/index.py" },
+    { "handle": "filesystem" }
   ]
 }
