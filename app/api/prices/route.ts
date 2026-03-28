@@ -1,0 +1,172 @@
+import { NextResponse } from "next/server";
+import type { ExchangeData, PricesResponse, Summary } from "@/lib/types";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const TIMEOUT_MS = 8000;
+
+type Fetcher = () => Promise<Omit<ExchangeData, "status" | "label" | "pair">>;
+
+type ExchangeDef = {
+  key: string;
+  label: string;
+  fetcher: Fetcher;
+};
+
+async function fetchJson(url: string): Promise<Record<string, any>> {
+  const res = await fetch(url, {
+    method: "GET",
+    cache: "no-store",
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+    headers: {
+      accept: "application/json",
+      "user-agent": "usdtbot-monitor/1.0",
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+
+  return (await res.json()) as Record<string, any>;
+}
+
+function safeNumber(value: any): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return parsed;
+}
+
+async function fetchBinance() {
+  const data = await fetchJson("https://api.binance.com/api/v3/ticker/24hr?symbol=USDTBRL");
+  return {
+    price_brl: safeNumber(data.lastPrice),
+    volume_24h: safeNumber(data.quoteVolume),
+    change_24h: safeNumber(data.priceChangePercent),
+    high_24h: safeNumber(data.highPrice),
+    low_24h: safeNumber(data.lowPrice),
+    source_url: "https://www.binance.com/en/trade/USDT_BRL",
+  };
+}
+
+async function fetchKucoin() {
+  const payload = await fetchJson("https://api.kucoin.com/api/v1/market/stats?symbol=USDT-BRL");
+  const data = payload.data ?? {};
+  return {
+    price_brl: safeNumber(data.last),
+    volume_24h: safeNumber(data.volValue),
+    change_24h: safeNumber(data.changeRate) * 100,
+    high_24h: safeNumber(data.high),
+    low_24h: safeNumber(data.low),
+    source_url: "https://www.kucoin.com/trade/USDT-BRL",
+  };
+}
+
+async function fetchNovadax() {
+  const payload = await fetchJson("https://api.novadax.com/v1/market/ticker?symbol=USDT_BRL");
+  const data = payload.data ?? {};
+  const last = safeNumber(data.lastPrice);
+  const open = safeNumber(data.open24h) || last;
+  const change = open > 0 ? ((last - open) / open) * 100 : 0;
+  return {
+    price_brl: last,
+    volume_24h: safeNumber(data.volume24h),
+    change_24h: change,
+    high_24h: safeNumber(data.high24h),
+    low_24h: safeNumber(data.low24h),
+    source_url: "https://novadax.com/pt-BR/trade/USDT-BRL",
+  };
+}
+
+async function fetchMercadoBitcoin() {
+  const payload = await fetchJson("https://www.mercadobitcoin.net/api/USDT/ticker/");
+  const data = payload.ticker ?? {};
+  const last = safeNumber(data.last);
+  const open = safeNumber(data.open) || last;
+  const change = open > 0 ? ((last - open) / open) * 100 : 0;
+  return {
+    price_brl: last,
+    volume_24h: safeNumber(data.vol),
+    change_24h: change,
+    high_24h: safeNumber(data.high),
+    low_24h: safeNumber(data.low),
+    source_url: "https://www.mercadobitcoin.com.br/negociacoes/USDT",
+  };
+}
+
+const EXCHANGES: ExchangeDef[] = [
+  { key: "binance", label: "Binance", fetcher: fetchBinance },
+  { key: "kucoin", label: "KuCoin", fetcher: fetchKucoin },
+  { key: "novadax", label: "Novadax", fetcher: fetchNovadax },
+  { key: "mercadobitcoin", label: "Mercado Bitcoin", fetcher: fetchMercadoBitcoin },
+];
+
+function normalizeError(err: unknown): string {
+  const msg = String(err ?? "Erro desconhecido");
+  if (msg.includes("HTTP 451")) return "Indisponivel na regiao atual";
+  if (msg.toLowerCase().includes("timeout")) return "Timeout na consulta";
+  return msg;
+}
+
+export async function GET() {
+  const entries = await Promise.all(
+    EXCHANGES.map(async ({ key, label, fetcher }) => {
+      try {
+        const data = await fetcher();
+        return [
+          key,
+          {
+            status: "ok",
+            label,
+            pair: "USDT/BRL",
+            price_brl: Number((data.price_brl ?? 0).toFixed(4)),
+            volume_24h: Number((data.volume_24h ?? 0).toFixed(4)),
+            change_24h: Number((data.change_24h ?? 0).toFixed(4)),
+            high_24h: Number((data.high_24h ?? 0).toFixed(4)),
+            low_24h: Number((data.low_24h ?? 0).toFixed(4)),
+            source_url: data.source_url,
+          } satisfies ExchangeData,
+        ] as const;
+      } catch (err) {
+        return [
+          key,
+          {
+            status: "error",
+            label,
+            pair: "USDT/BRL",
+            error: normalizeError(err),
+          } satisfies ExchangeData,
+        ] as const;
+      }
+    })
+  );
+
+  const exchanges = Object.fromEntries(entries) as PricesResponse["exchanges"];
+  const okList = Object.values(exchanges).filter((e) => e.status === "ok" && e.price_brl && e.price_brl > 0);
+  const prices = okList.map((e) => e.price_brl as number);
+
+  let summary: Summary | null = null;
+  if (prices.length > 0) {
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    summary = {
+      min: Number(min.toFixed(4)),
+      max: Number(max.toFixed(4)),
+      avg: Number((prices.reduce((acc, n) => acc + n, 0) / prices.length).toFixed(4)),
+      spread_pct: min > 0 ? Number((((max - min) / min) * 100).toFixed(4)) : 0,
+      min_exchange: okList.find((e) => e.price_brl === min)?.label ?? "",
+      max_exchange: okList.find((e) => e.price_brl === max)?.label ?? "",
+    };
+  }
+
+  const payload: PricesResponse = {
+    timestamp: new Date().toISOString(),
+    ok_count: okList.length,
+    total_count: EXCHANGES.length,
+    exchanges,
+    summary,
+  };
+
+  return NextResponse.json(payload, { status: 200 });
+}
