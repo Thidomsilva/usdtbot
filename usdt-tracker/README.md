@@ -67,8 +67,8 @@ vercel --prod
 
 Se fizer deploy via dashboard da Vercel conectado ao GitHub:
 - Defina **Root Directory** como `usdt-tracker` (se o repositório tiver essa pasta na raiz)
-- Build Command: `cd frontend && npm run build`
-- Install Command: `cd frontend && npm ci`
+- Deixe o `vercel.json` controlar os builders (Next.js em `frontend` + Python em `api`)
+- Em caso de conflito com auto-detecção, use Framework Preset `Other`
 
 A Vercel detecta automaticamente:
 - `/api/index.py` → runtime Python 3.12 (serverless function)
