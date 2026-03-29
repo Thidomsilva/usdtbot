@@ -7,6 +7,16 @@ const REFRESH_SECONDS = 5;
 const ORDER = ["binance", "bybit", "bitget", "okx", "kucoin", "novadax", "mercadobitcoin"];
 type ThemeMode = "auto" | "light" | "dark";
 
+const EXCHANGE_META: Record<string, { domain: string }> = {
+  binance: { domain: "binance.com" },
+  bybit: { domain: "bybit.com" },
+  bitget: { domain: "bitget.com" },
+  okx: { domain: "okx.com" },
+  kucoin: { domain: "kucoin.com" },
+  novadax: { domain: "novadax.com" },
+  mercadobitcoin: { domain: "mercadobitcoin.com.br" },
+};
+
 function money(v: number) {
   return `R$ ${v.toFixed(4)}`;
 }
@@ -63,7 +73,25 @@ export default function HomePage() {
 
   const cards = useMemo(() => {
     if (!data) return [];
-    return ORDER.map((key) => ({ key, ex: data.exchanges[key] })).filter((i) => !!i.ex);
+    const rank = new Map(ORDER.map((key, index) => [key, index]));
+
+    return Object.entries(data.exchanges)
+      .filter(([key]) => rank.has(key))
+      .map(([key, ex]) => ({ key, ex }))
+      .sort((a, b) => {
+        const aOk = a.ex.status === "ok";
+        const bOk = b.ex.status === "ok";
+
+        if (aOk && bOk) {
+          const aPrice = a.ex.price_brl ?? Number.POSITIVE_INFINITY;
+          const bPrice = b.ex.price_brl ?? Number.POSITIVE_INFINITY;
+          if (aPrice !== bPrice) return aPrice - bPrice;
+        }
+
+        if (aOk !== bOk) return aOk ? -1 : 1;
+
+        return (rank.get(a.key) ?? 999) - (rank.get(b.key) ?? 999);
+      });
   }, [data]);
 
   return (
@@ -158,7 +186,16 @@ export default function HomePage() {
                 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <strong style={{ fontSize: 17 }}>{ex.label}</strong>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <img
+                      src={`https://www.google.com/s2/favicons?domain=${EXCHANGE_META[key]?.domain ?? ""}&sz=64`}
+                      alt={`${ex.label} logo`}
+                      width={20}
+                      height={20}
+                      style={{ borderRadius: 999, display: "block" }}
+                    />
+                    <strong style={{ fontSize: 17 }}>{ex.label}</strong>
+                  </div>
                   <span
                     style={{
                       fontSize: 11,
