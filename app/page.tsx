@@ -17,6 +17,18 @@ const EXCHANGE_META: Record<string, { domain: string }> = {
   mercadobitcoin: { domain: "mercadobitcoin.com.br" },
 };
 
+// Taxas de negociação padrão por exchange (taker fee spot, nível básico sem desconto).
+// Ajuste conforme sua conta real — exchanges têm camadas VIP com taxas menores.
+const DEFAULT_FEES: Record<string, { buy: number; sell: number }> = {
+  binance: { buy: 0.20, sell: 0.20 },
+  bybit: { buy: 0.20, sell: 0.20 },
+  bitget: { buy: 0.20, sell: 0.20 },
+  okx: { buy: 0.20, sell: 0.20 },
+  kucoin: { buy: 0.20, sell: 0.20 },
+  novadax: { buy: 0.35, sell: 0.35 },
+  mercadobitcoin: { buy: 0.45, sell: 0.45 },
+};
+
 function money(v: number) {
   return `R$ ${v.toFixed(4)}`;
 }
@@ -33,6 +45,11 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [countdown, setCountdown] = useState(REFRESH_SECONDS);
   const [theme, setTheme] = useState<ThemeMode>("auto");
+  const [arbAmount, setArbAmount] = useState<string>("1000");
+  const [arbBuyEx, setArbBuyEx] = useState<string>("");
+  const [arbSellEx, setArbSellEx] = useState<string>("");
+  const [customFees, setCustomFees] = useState<Record<string, { buy: number; sell: number }>>(DEFAULT_FEES);
+  const [showFees, setShowFees] = useState(false);
 
   async function load() {
     try {
@@ -93,6 +110,67 @@ export default function HomePage() {
         return (rank.get(a.key) ?? 999) - (rank.get(b.key) ?? 999);
       });
   }, [data]);
+
+  const okCards = useMemo(
+    () => cards.filter(({ ex }) => ex.status === "ok" && ex.price_brl != null),
+    [cards]
+  );
+
+  const arbResult = useMemo(():
+    | null
+    | { sameExchange: true }
+    | {
+        sameExchange: false;
+        buyKey: string; sellKey: string;
+        buyLabel: string; sellLabel: string;
+        buyPrice: number; sellPrice: number;
+        buyFee: number; sellFee: number;
+        usdtReceived: number; brlReceived: number;
+        profit: number; profitPct: number; amount: number;
+      } => {
+    if (!data || okCards.length < 2) return null;
+    const amount = parseFloat(arbAmount);
+    if (!Number.isFinite(amount) || amount <= 0) return null;
+
+    // Melhor compra: minimiza custo efetivo = preço / (1 - taxa)
+    const autoBuy = [...okCards].reduce((best, cur) => {
+      const curEff = (cur.ex.price_brl ?? Infinity) / (1 - (customFees[cur.key]?.buy ?? 0.10) / 100);
+      const bestEff = (best.ex.price_brl ?? Infinity) / (1 - (customFees[best.key]?.buy ?? 0.10) / 100);
+      return curEff < bestEff ? cur : best;
+    });
+
+    // Melhor venda: maximiza retorno efetivo = preço * (1 - taxa)
+    const autoSell = [...okCards].reduce((best, cur) => {
+      const curEff = (cur.ex.price_brl ?? 0) * (1 - (customFees[cur.key]?.sell ?? 0.10) / 100);
+      const bestEff = (best.ex.price_brl ?? 0) * (1 - (customFees[best.key]?.sell ?? 0.10) / 100);
+      return curEff > bestEff ? cur : best;
+    });
+
+    const buyKey = arbBuyEx || autoBuy.key;
+    const sellKey = arbSellEx || autoSell.key;
+
+    if (buyKey === sellKey) return { sameExchange: true as const };
+
+    const buyEx = data.exchanges[buyKey];
+    const sellEx = data.exchanges[sellKey];
+    if (!buyEx?.price_brl || !sellEx?.price_brl || buyEx.status !== "ok" || sellEx.status !== "ok") return null;
+
+    const buyFeeVal = (customFees[buyKey]?.buy ?? 0.10) / 100;
+    const sellFeeVal = (customFees[sellKey]?.sell ?? 0.10) / 100;
+    const usdtReceived = (amount / buyEx.price_brl) * (1 - buyFeeVal);
+    const brlReceived = usdtReceived * sellEx.price_brl * (1 - sellFeeVal);
+    const profit = brlReceived - amount;
+
+    return {
+      sameExchange: false as const,
+      buyKey, sellKey,
+      buyLabel: buyEx.label, sellLabel: sellEx.label,
+      buyPrice: buyEx.price_brl, sellPrice: sellEx.price_brl,
+      buyFee: buyFeeVal * 100, sellFee: sellFeeVal * 100,
+      usdtReceived, brlReceived,
+      profit, profitPct: (profit / amount) * 100, amount,
+    };
+  }, [data, okCards, arbAmount, arbBuyEx, arbSellEx, customFees]);
 
   return (
     <main className="page-shell" style={{ minHeight: "100vh", padding: "24px" }}>
@@ -231,6 +309,171 @@ export default function HomePage() {
             );
           })}
         </section>
+
+        {/* ── Calculadora de Arbitragem ── */}
+        <section
+          className="arb-section"
+          style={{
+            marginTop: 18,
+            background: "var(--card)",
+            border: "1px solid var(--card-border)",
+            borderRadius: 16,
+            padding: 20,
+            boxShadow: "var(--shadow)",
+            backdropFilter: "blur(14px)",
+          }}
+        >
+          <h2 style={{ margin: "0 0 16px", fontSize: 20, fontWeight: 700, letterSpacing: "-0.4px" }}>
+            Calculadora de Arbitragem
+          </h2>
+
+          {/* Inputs */}
+          <div className="arb-inputs" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Valor (BRL)</div>
+              <input
+                type="number"
+                min="0"
+                step="100"
+                value={arbAmount}
+                onChange={(e) => setArbAmount(e.target.value)}
+                placeholder="Ex: 1000"
+                style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "9px 11px", background: "var(--card)", color: "var(--text)", fontSize: 14, width: "100%" }}
+              />
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Comprar em</div>
+              <select
+                value={arbBuyEx}
+                onChange={(e) => setArbBuyEx(e.target.value)}
+                style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "9px 11px", background: "var(--card)", color: "var(--text)", fontSize: 14, width: "100%" }}
+              >
+                <option value="">Auto (mais barata)</option>
+                {okCards.map(({ key, ex }) => (
+                  <option key={key} value={key}>{ex.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Vender em</div>
+              <select
+                value={arbSellEx}
+                onChange={(e) => setArbSellEx(e.target.value)}
+                style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "9px 11px", background: "var(--card)", color: "var(--text)", fontSize: 14, width: "100%" }}
+              >
+                <option value="">Auto (mais cara)</option>
+                {okCards.map(({ key, ex }) => (
+                  <option key={key} value={key}>{ex.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Resultado */}
+          {arbResult && (
+            arbResult.sameExchange ? (
+              <div style={{ marginTop: 14, padding: "12px 16px", border: "1px solid var(--error)", borderRadius: 10, color: "var(--error)", fontSize: 14 }}>
+                Selecione exchanges diferentes para compra e venda.
+              </div>
+            ) : (
+              <div
+                className="arb-result"
+                style={{ marginTop: 14, background: "rgba(128,128,128,0.06)", border: "1px solid var(--card-border)", borderRadius: 12, padding: 16 }}
+              >
+                {/* Rota */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+                  <div style={{ fontSize: 13, background: "var(--card)", border: "1px solid var(--card-border)", borderRadius: 8, padding: "6px 12px" }}>
+                    <span style={{ color: "var(--muted)" }}>Comprar:</span>{" "}
+                    <strong>{arbResult.buyLabel}</strong> · {money(arbResult.buyPrice)} · taxa {arbResult.buyFee.toFixed(2)}%
+                  </div>
+                  <span style={{ color: "var(--muted)", fontSize: 20 }}>→</span>
+                  <div style={{ fontSize: 13, background: "var(--card)", border: "1px solid var(--card-border)", borderRadius: 8, padding: "6px 12px" }}>
+                    <span style={{ color: "var(--muted)" }}>Vender:</span>{" "}
+                    <strong>{arbResult.sellLabel}</strong> · {money(arbResult.sellPrice)} · taxa {arbResult.sellFee.toFixed(2)}%
+                  </div>
+                </div>
+
+                {/* Métricas */}
+                <div className="arb-result-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Capital</div>
+                    <div style={{ fontSize: 15, fontWeight: 700 }}>R$ {arbResult.amount.toFixed(2)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>USDT comprado</div>
+                    <div style={{ fontSize: 15, fontWeight: 700 }}>{arbResult.usdtReceived.toFixed(4)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>BRL retornado</div>
+                    <div style={{ fontSize: 15, fontWeight: 700 }}>R$ {arbResult.brlReceived.toFixed(2)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Resultado</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.4px", color: arbResult.profit >= 0 ? "var(--ok)" : "var(--error)" }}>
+                      {arbResult.profit >= 0 ? "+" : ""}R$ {arbResult.profit.toFixed(2)}
+                    </div>
+                    <div style={{ fontSize: 12, color: arbResult.profit >= 0 ? "var(--ok)" : "var(--error)" }}>
+                      {arbResult.profitPct >= 0 ? "+" : ""}{arbResult.profitPct.toFixed(4)}%
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          )}
+
+          {/* Toggle editar taxas */}
+          <button
+            onClick={() => setShowFees((f) => !f)}
+            style={{ marginTop: 14, border: "1px solid var(--card-border)", borderRadius: 10, padding: "8px 14px", background: "transparent", color: "var(--muted)", cursor: "pointer", fontSize: 13 }}
+          >
+            {showFees ? "▲ Ocultar taxas" : "▼ Editar taxas por exchange"}
+          </button>
+
+          {showFees && (
+            <div className="arb-fees-grid" style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
+              {ORDER.map((key) => {
+                const ex = data?.exchanges[key];
+                if (!ex) return null;
+                const fees = customFees[key] ?? { buy: 0.10, sell: 0.10 };
+                return (
+                  <div key={key} style={{ padding: "10px 12px", border: "1px solid var(--card-border)", borderRadius: 10, background: "var(--card)" }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>{ex.label}</div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <label style={{ flex: 1, fontSize: 11, color: "var(--muted)" }}>
+                        Compra (%)
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="100"
+                          value={fees.buy}
+                          onChange={(e) =>
+                            setCustomFees((prev) => ({ ...prev, [key]: { ...prev[key], buy: parseFloat(e.target.value) || 0 } }))
+                          }
+                          style={{ marginTop: 4, display: "block", border: "1px solid var(--card-border)", borderRadius: 6, padding: "5px 8px", background: "var(--bg)", color: "var(--text)", fontSize: 12, width: "100%" }}
+                        />
+                      </label>
+                      <label style={{ flex: 1, fontSize: 11, color: "var(--muted)" }}>
+                        Venda (%)
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="100"
+                          value={fees.sell}
+                          onChange={(e) =>
+                            setCustomFees((prev) => ({ ...prev, [key]: { ...prev[key], sell: parseFloat(e.target.value) || 0 } }))
+                          }
+                          style={{ marginTop: 4, display: "block", border: "1px solid var(--card-border)", borderRadius: 6, padding: "5px 8px", background: "var(--bg)", color: "var(--text)", fontSize: 12, width: "100%" }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </div>
 
       <style jsx>{`
@@ -349,8 +592,27 @@ export default function HomePage() {
           }
 
           .summary-grid,
-          .exchange-card {
+          .exchange-card,
+          .arb-section {
             border-radius: 14px !important;
+          }
+
+          .arb-result-grid {
+            grid-template-columns: 1fr 1fr !important;
+          }
+
+          .arb-fees-grid {
+            grid-template-columns: 1fr 1fr !important;
+          }
+        }
+
+        @media (max-width: 420px) {
+          .arb-result-grid {
+            grid-template-columns: 1fr 1fr !important;
+          }
+
+          .arb-fees-grid {
+            grid-template-columns: 1fr !important;
           }
         }
       `}</style>
