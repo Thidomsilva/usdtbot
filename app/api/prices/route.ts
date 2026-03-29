@@ -77,6 +77,46 @@ async function fetchBinance() {
   };
 }
 
+async function fetchBybit() {
+  const hosts = ["api.bybit.com", "api.bytick.com", "api.bybitglobal.com"];
+
+  for (const host of hosts) {
+    try {
+      const payload = await fetchJson(`https://${host}/v5/market/tickers?category=spot&symbol=USDTBRL`);
+      const data = Array.isArray(payload.result?.list) ? payload.result.list[0] ?? {} : {};
+      const last = safeNumber(data.lastPrice);
+      if (last > 0) {
+        return {
+          price_brl: last,
+          volume_24h: safeNumber(data.turnover24h),
+          change_24h: safeNumber(data.price24hPcnt) * 100,
+          high_24h: safeNumber(data.highPrice24h),
+          low_24h: safeNumber(data.lowPrice24h),
+          source_url: "https://www.bybit.com/pt-BR/trade/spot/USDT/BRL",
+        };
+      }
+    } catch {
+      // Try next Bybit host.
+    }
+  }
+
+  // Fallback: reference Bybit price via CryptoCompare when direct endpoints are blocked.
+  const fallback = await fetchJson("https://min-api.cryptocompare.com/data/price?fsym=USDT&tsyms=BRL&e=Bybit");
+  const fallbackPrice = safeNumber(fallback.BRL);
+  if (fallbackPrice <= 0) {
+    throw new Error("Bybit ticker indisponivel");
+  }
+
+  return {
+    price_brl: fallbackPrice,
+    volume_24h: 0,
+    change_24h: 0,
+    high_24h: fallbackPrice,
+    low_24h: fallbackPrice,
+    source_url: "https://www.bybit.com/pt-BR/trade/spot/USDT/BRL",
+  };
+}
+
 async function fetchKucoin() {
   const payload = await fetchJson("https://api.kucoin.com/api/v1/market/stats?symbol=USDT-BRL");
   const data = payload.data ?? {};
@@ -122,8 +162,45 @@ async function fetchMercadoBitcoin() {
   };
 }
 
+async function fetchBitget() {
+  const payload = await fetchJson("https://api.bitget.com/api/v2/spot/market/tickers?symbol=USDTBRL");
+  const data = Array.isArray(payload.data) ? payload.data[0] ?? {} : {};
+  return {
+    price_brl: safeNumber(data.lastPr),
+    volume_24h: safeNumber(data.quoteVolume),
+    change_24h: (() => {
+      const open = safeNumber(data.open);
+      const last = safeNumber(data.lastPr);
+      return open > 0 ? ((last - open) / open) * 100 : 0;
+    })(),
+    high_24h: safeNumber(data.high24h),
+    low_24h: safeNumber(data.low24h),
+    source_url: "https://www.bitget.com/spot/USDTBRL",
+  };
+}
+
+async function fetchOkx() {
+  const payload = await fetchJson("https://www.okx.com/api/v5/market/ticker?instId=USDT-BRL");
+  const data = Array.isArray(payload.data) ? payload.data[0] ?? {} : {};
+  return {
+    price_brl: safeNumber(data.last),
+    volume_24h: safeNumber(data.volCcy24h),
+    change_24h: (() => {
+      const open = safeNumber(data.open24h);
+      const last = safeNumber(data.last);
+      return open > 0 ? ((last - open) / open) * 100 : 0;
+    })(),
+    high_24h: safeNumber(data.high24h),
+    low_24h: safeNumber(data.low24h),
+    source_url: "https://www.okx.com/trade-spot/usdt-brl",
+  };
+}
+
 const EXCHANGES: ExchangeDef[] = [
   { key: "binance", label: "Binance", fetcher: fetchBinance },
+  { key: "bybit", label: "Bybit", fetcher: fetchBybit },
+  { key: "bitget", label: "Bitget", fetcher: fetchBitget },
+  { key: "okx", label: "OKX", fetcher: fetchOkx },
   { key: "kucoin", label: "KuCoin", fetcher: fetchKucoin },
   { key: "novadax", label: "Novadax", fetcher: fetchNovadax },
   { key: "mercadobitcoin", label: "Mercado Bitcoin", fetcher: fetchMercadoBitcoin },
@@ -132,6 +209,7 @@ const EXCHANGES: ExchangeDef[] = [
 function normalizeError(err: unknown): string {
   const msg = String(err ?? "Erro desconhecido");
   if (msg.includes("HTTP 451")) return "Indisponivel na regiao atual";
+  if (msg.includes("HTTP 403")) return "Bloqueado para esta regiao";
   if (msg.toLowerCase().includes("timeout")) return "Timeout na consulta";
   return msg;
 }

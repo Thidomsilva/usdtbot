@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { PricesResponse } from "@/lib/types";
 
 const REFRESH_SECONDS = 5;
-const ORDER = ["binance", "kucoin", "novadax", "mercadobitcoin"];
+const ORDER = ["binance", "bybit", "bitget", "okx", "kucoin", "novadax", "mercadobitcoin"];
 
 function money(v: number) {
   return `R$ ${v.toFixed(4)}`;
