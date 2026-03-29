@@ -95,17 +95,18 @@ export default function HomePage() {
   }, [data]);
 
   return (
-    <main style={{ minHeight: "100vh", padding: "24px" }}>
-      <div style={{ maxWidth: 1080, margin: "0 auto" }}>
-        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 34, letterSpacing: "-0.8px", fontWeight: 800 }}>USDT/BRL Pulse</h1>
-            <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 15 }}>
+    <main className="page-shell" style={{ minHeight: "100vh", padding: "24px" }}>
+      <div className="page-container" style={{ maxWidth: 1080, margin: "0 auto" }}>
+        <header className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div className="hero-copy">
+            <h1 className="hero-title" style={{ margin: 0, fontSize: 34, letterSpacing: "-0.8px", fontWeight: 800 }}>USDT/BRL Pulse</h1>
+            <p className="hero-subtitle" style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 15 }}>
               Monitoramento em tempo real com atualizacao a cada 5 segundos.
             </p>
           </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="header-actions" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <select
+              className="theme-select"
               value={theme}
               onChange={(e) => setTheme(e.target.value as ThemeMode)}
               style={{
@@ -123,6 +124,7 @@ export default function HomePage() {
             </select>
 
             <button
+              className="refresh-button"
               onClick={() => {
                 setLoading(true);
                 load();
@@ -143,12 +145,13 @@ export default function HomePage() {
           </div>
         </header>
 
-        <div style={{ marginTop: 14, color: "var(--muted)", fontSize: 13 }}>
+        <div className="status-line" style={{ marginTop: 14, color: "var(--muted)", fontSize: 13 }}>
           {data ? `${data.ok_count} de ${data.total_count} corretoras ativas` : "Carregando..."} · proxima atualizacao em {countdown}s
         </div>
 
         {data?.summary && (
           <section
+            className="summary-grid"
             style={{
               marginTop: 18,
               background: "var(--card)",
@@ -169,13 +172,14 @@ export default function HomePage() {
           </section>
         )}
 
-        <section style={{ marginTop: 18, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
+        <section className="cards-grid" style={{ marginTop: 18, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
           {cards.map(({ key, ex }) => {
             if (!ex) return null;
             const ok = ex.status === "ok";
             return (
               <article
                 key={key}
+                className="exchange-card"
                 style={{
                   background: "var(--card)",
                   border: "1px solid var(--card-border)",
@@ -185,18 +189,20 @@ export default function HomePage() {
                   backdropFilter: "blur(12px)",
                 }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div className="card-brand" style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <img
+                      className="exchange-logo"
                       src={`https://www.google.com/s2/favicons?domain=${EXCHANGE_META[key]?.domain ?? ""}&sz=64`}
                       alt={`${ex.label} logo`}
                       width={20}
                       height={20}
                       style={{ borderRadius: 999, display: "block" }}
                     />
-                    <strong style={{ fontSize: 17 }}>{ex.label}</strong>
+                    <strong className="exchange-name" style={{ fontSize: 17 }}>{ex.label}</strong>
                   </div>
                   <span
+                    className="status-chip"
                     style={{
                       fontSize: 11,
                       color: ok ? "var(--ok)" : "var(--error)",
@@ -210,11 +216,11 @@ export default function HomePage() {
                 </div>
                 {ok ? (
                   <>
-                    <div style={{ fontSize: 30, fontWeight: 800, marginTop: 8, letterSpacing: "-0.5px" }}>{money(ex.price_brl ?? 0)}</div>
-                    <div style={{ marginTop: 9, fontSize: 13, color: "var(--muted)" }}>
+                    <div className="price-value" style={{ fontSize: 30, fontWeight: 800, marginTop: 8, letterSpacing: "-0.5px" }}>{money(ex.price_brl ?? 0)}</div>
+                    <div className="metric-line" style={{ marginTop: 9, fontSize: 13, color: "var(--muted)" }}>
                       24h: {ex.change_24h?.toFixed(4)}% · Vol: {vol(ex.volume_24h ?? 0)}
                     </div>
-                    <div style={{ marginTop: 4, fontSize: 13, color: "var(--muted)" }}>
+                    <div className="metric-line" style={{ marginTop: 4, fontSize: 13, color: "var(--muted)" }}>
                       Max: {money(ex.high_24h ?? 0)} · Min: {money(ex.low_24h ?? 0)}
                     </div>
                   </>
@@ -226,6 +232,128 @@ export default function HomePage() {
           })}
         </section>
       </div>
+
+      <style jsx>{`
+        .page-shell {
+          overflow-x: hidden;
+        }
+
+        @media (max-width: 760px) {
+          .page-shell {
+            padding: 16px !important;
+          }
+
+          .page-header {
+            align-items: stretch !important;
+          }
+
+          .hero-copy,
+          .header-actions {
+            width: 100%;
+          }
+
+          .hero-title {
+            font-size: 28px !important;
+            line-height: 1.05;
+          }
+
+          .hero-subtitle {
+            font-size: 14px !important;
+            line-height: 1.45;
+            max-width: 32ch;
+          }
+
+          .header-actions {
+            display: grid !important;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+          }
+
+          .theme-select,
+          .refresh-button {
+            width: 100%;
+            min-height: 44px;
+          }
+
+          .status-line {
+            line-height: 1.5;
+          }
+
+          .summary-grid {
+            padding: 14px !important;
+            grid-template-columns: 1fr !important;
+            gap: 10px !important;
+          }
+
+          .cards-grid {
+            grid-template-columns: 1fr !important;
+            gap: 12px !important;
+          }
+
+          .exchange-card {
+            padding: 14px !important;
+          }
+
+          .card-header {
+            align-items: flex-start !important;
+            gap: 10px;
+          }
+
+          .card-brand {
+            min-width: 0;
+            gap: 8px !important;
+          }
+
+          .exchange-logo {
+            width: 18px;
+            height: 18px;
+            margin-top: 2px;
+          }
+
+          .exchange-name {
+            font-size: 16px !important;
+            line-height: 1.2;
+          }
+
+          .status-chip {
+            white-space: nowrap;
+          }
+
+          .price-value {
+            font-size: 26px !important;
+            line-height: 1.1;
+            word-break: break-word;
+          }
+
+          .metric-line {
+            font-size: 12px !important;
+            line-height: 1.5;
+          }
+        }
+
+        @media (max-width: 420px) {
+          .page-shell {
+            padding: 12px !important;
+          }
+
+          .header-actions {
+            grid-template-columns: 1fr;
+          }
+
+          .hero-title {
+            font-size: 25px !important;
+          }
+
+          .status-line {
+            font-size: 12px !important;
+          }
+
+          .summary-grid,
+          .exchange-card {
+            border-radius: 14px !important;
+          }
+        }
+      `}</style>
     </main>
   );
 }
