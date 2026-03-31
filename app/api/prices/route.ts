@@ -6,6 +6,8 @@ export const dynamic = "force-dynamic";
 
 const TIMEOUT_MS = 8000;
 
+let usdBrlCache: { value: number; expiresAt: number } | null = null;
+
 type Fetcher = () => Promise<Omit<ExchangeData, "status" | "label" | "pair">>;
 
 type ExchangeDef = {
@@ -36,6 +38,56 @@ function safeNumber(value: any): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 0;
   return parsed;
+}
+
+async function fetchUsdBrlRate(): Promise<number> {
+  const now = Date.now();
+  if (usdBrlCache && usdBrlCache.expiresAt > now) {
+    return usdBrlCache.value;
+  }
+
+  const payload = await fetchJson("https://api.frankfurter.app/latest?from=USD&to=BRL");
+  const rate = safeNumber(payload.rates?.BRL);
+  if (rate <= 0) {
+    throw new Error("Taxa USD/BRL indisponivel");
+  }
+
+  usdBrlCache = {
+    value: rate,
+    expiresAt: now + 60_000,
+  };
+
+  return rate;
+}
+
+function buildUsdFallback(
+  usdtUsd: number,
+  usdBrl: number,
+  sourceUrl: string,
+  sourcePair: string,
+  opts?: {
+    change_24h?: number;
+    high_usd?: number;
+    low_usd?: number;
+    volume_usd?: number;
+  }
+) {
+  const priceBrl = usdtUsd * usdBrl;
+  const highUsd = opts?.high_usd ?? usdtUsd;
+  const lowUsd = opts?.low_usd ?? usdtUsd;
+  const volumeUsd = opts?.volume_usd ?? 0;
+
+  return {
+    pricing_mode: "fallback" as const,
+    source_pair: sourcePair,
+    warning: `Preco estimado via ${sourcePair} + USD/BRL; pode haver variacao.`,
+    price_brl: priceBrl,
+    volume_24h: volumeUsd > 0 ? volumeUsd * usdBrl : 0,
+    change_24h: opts?.change_24h ?? 0,
+    high_24h: highUsd * usdBrl,
+    low_24h: lowUsd * usdBrl,
+    source_url: sourceUrl,
+  };
 }
 
 async function fetchBinance() {
@@ -199,63 +251,107 @@ async function fetchOkx() {
 async function fetchBingx() {
   const payload = await fetchJson("https://open-api.bingx.com/openApi/spot/v1/ticker/price?symbol=USDT-BRL");
 
-  if (safeNumber(payload.code) !== 0) {
-    const msg = String(payload.msg ?? "BingX ticker indisponivel");
-    if (msg.toLowerCase().includes("symbol is not found")) {
-      throw new Error("Par USDT/BRL nao disponivel na BingX");
+  if (safeNumber(payload.code) === 0) {
+    const data = payload.data ?? {};
+    const price = safeNumber(data.price);
+    if (price > 0) {
+      return {
+        price_brl: price,
+        volume_24h: 0,
+        change_24h: 0,
+        high_24h: price,
+        low_24h: price,
+        source_url: "https://bingx.com/pt-br/spot/USDTBRL",
+      };
     }
+  }
+
+  // Fallback: usa USDC/USDT e converte USDT para BRL via USD/BRL.
+  const stablePayload = await fetchJson("https://open-api.bingx.com/openApi/spot/v1/ticker/price?symbol=USDC-USDT");
+  if (safeNumber(stablePayload.code) !== 0) {
+    const msg = String(payload.msg ?? "BingX ticker indisponivel");
     throw new Error(msg);
   }
 
-  const data = payload.data ?? {};
-  const price = safeNumber(data.price);
-  if (price <= 0) {
-    throw new Error("Par USDT/BRL nao disponivel na BingX");
+  const tradePrice = safeNumber(stablePayload.data?.[0]?.trades?.[0]?.price);
+  if (tradePrice <= 0) {
+    const fallbackFromPriceField = safeNumber(stablePayload.data?.[0]?.price);
+    if (fallbackFromPriceField > 0) {
+      const usdtUsd = 1 / fallbackFromPriceField;
+      const usdBrl = await fetchUsdBrlRate();
+      return buildUsdFallback(usdtUsd, usdBrl, "https://bingx.com/pt-br/spot/USDCUSDT", "USDC/USDT");
+    }
   }
 
-  return {
-    price_brl: price,
-    volume_24h: 0,
-    change_24h: 0,
-    high_24h: price,
-    low_24h: price,
-    source_url: "https://bingx.com/pt-br/spot/USDTBRL",
-  };
+  if (tradePrice <= 0) {
+    throw new Error("BingX ticker indisponivel");
+  }
+
+  const usdtUsd = 1 / tradePrice;
+  const usdBrl = await fetchUsdBrlRate();
+
+  return buildUsdFallback(usdtUsd, usdBrl, "https://bingx.com/pt-br/spot/USDCUSDT", "USDC/USDT");
 }
 
 async function fetchKraken() {
-  const pairsPayload = await fetchJson("https://api.kraken.com/0/public/AssetPairs?pair=USDTBRL");
-  if (Array.isArray(pairsPayload.error) && pairsPayload.error.length > 0) {
-    throw new Error("Par USDT/BRL nao disponivel na Kraken");
+  try {
+    const pairsPayload = await fetchJson("https://api.kraken.com/0/public/AssetPairs?pair=USDTBRL");
+    if (Array.isArray(pairsPayload.error) && pairsPayload.error.length > 0) {
+      throw new Error("Par USDT/BRL nao disponivel na Kraken");
+    }
+
+    const pairKey = Object.keys(pairsPayload.result ?? {})[0];
+    if (!pairKey) {
+      throw new Error("Par USDT/BRL nao disponivel na Kraken");
+    }
+
+    const tickerPayload = await fetchJson(`https://api.kraken.com/0/public/Ticker?pair=${pairKey}`);
+    if (Array.isArray(tickerPayload.error) && tickerPayload.error.length > 0) {
+      throw new Error("Par USDT/BRL nao disponivel na Kraken");
+    }
+
+    const ticker = tickerPayload.result?.[pairKey] ?? {};
+    const price = safeNumber(Array.isArray(ticker.c) ? ticker.c[0] : 0);
+    if (price <= 0) {
+      throw new Error("Par USDT/BRL nao disponivel na Kraken");
+    }
+
+    const open = safeNumber(ticker.o);
+    const baseVolume = safeNumber(Array.isArray(ticker.v) ? ticker.v[1] : 0);
+
+    return {
+      price_brl: price,
+      volume_24h: baseVolume > 0 ? baseVolume * price : 0,
+      change_24h: open > 0 ? ((price - open) / open) * 100 : 0,
+      high_24h: safeNumber(Array.isArray(ticker.h) ? ticker.h[1] : 0),
+      low_24h: safeNumber(Array.isArray(ticker.l) ? ticker.l[1] : 0),
+      source_url: "https://pro.kraken.com/app/trade/usdt-brl",
+    };
+  } catch {
+    const tickerPayload = await fetchJson("https://api.kraken.com/0/public/Ticker?pair=USDTUSD");
+    if (Array.isArray(tickerPayload.error) && tickerPayload.error.length > 0) {
+      throw new Error("Kraken ticker indisponivel");
+    }
+
+    const pairKey = Object.keys(tickerPayload.result ?? {})[0];
+    const ticker = pairKey ? tickerPayload.result?.[pairKey] ?? {} : {};
+    const usdtUsd = safeNumber(Array.isArray(ticker.c) ? ticker.c[0] : 0);
+    if (usdtUsd <= 0) {
+      throw new Error("Kraken ticker indisponivel");
+    }
+
+    const usdBrl = await fetchUsdBrlRate();
+    const openUsd = safeNumber(ticker.o);
+    const volumeUsdt = safeNumber(Array.isArray(ticker.v) ? ticker.v[1] : 0);
+    const volumeUsd = volumeUsdt > 0 ? volumeUsdt * usdtUsd : 0;
+
+    return buildUsdFallback(usdtUsd, usdBrl, "https://pro.kraken.com/app/trade/usdt-usd", "USDT/USD", {
+      change_24h: openUsd > 0 ? ((usdtUsd - openUsd) / openUsd) * 100 : 0,
+      high_usd: safeNumber(Array.isArray(ticker.h) ? ticker.h[1] : 0),
+      low_usd: safeNumber(Array.isArray(ticker.l) ? ticker.l[1] : 0),
+      volume_usd: volumeUsd,
+    });
   }
-
-  const pairKey = Object.keys(pairsPayload.result ?? {})[0];
-  if (!pairKey) {
-    throw new Error("Par USDT/BRL nao disponivel na Kraken");
-  }
-
-  const tickerPayload = await fetchJson(`https://api.kraken.com/0/public/Ticker?pair=${pairKey}`);
-  if (Array.isArray(tickerPayload.error) && tickerPayload.error.length > 0) {
-    throw new Error("Par USDT/BRL nao disponivel na Kraken");
-  }
-
-  const ticker = tickerPayload.result?.[pairKey] ?? {};
-  const price = safeNumber(Array.isArray(ticker.c) ? ticker.c[0] : 0);
-  if (price <= 0) {
-    throw new Error("Par USDT/BRL nao disponivel na Kraken");
-  }
-
-  const open = safeNumber(ticker.o);
-  const baseVolume = safeNumber(Array.isArray(ticker.v) ? ticker.v[1] : 0);
-
-  return {
-    price_brl: price,
-    volume_24h: baseVolume > 0 ? baseVolume * price : 0,
-    change_24h: open > 0 ? ((price - open) / open) * 100 : 0,
-    high_24h: safeNumber(Array.isArray(ticker.h) ? ticker.h[1] : 0),
-    low_24h: safeNumber(Array.isArray(ticker.l) ? ticker.l[1] : 0),
-    source_url: "https://pro.kraken.com/app/trade/usdt-brl",
-  };
 }
 
 async function fetchCoinbase() {
@@ -264,10 +360,27 @@ async function fetchCoinbase() {
     payload = await fetchJson("https://api.exchange.coinbase.com/products/USDT-BRL/ticker");
   } catch (err) {
     const msg = String(err ?? "");
-    if (msg.includes("HTTP 404")) {
-      throw new Error("Par USDT/BRL nao disponivel na Coinbase");
+    if (!msg.includes("HTTP 404")) {
+      throw err;
     }
-    throw err;
+
+    const usdPayload = await fetchJson("https://api.exchange.coinbase.com/products/USDT-USD/ticker");
+    const usdtUsd = safeNumber(usdPayload.price);
+    if (usdtUsd <= 0) {
+      throw new Error("Coinbase ticker indisponivel");
+    }
+
+    const usdBrl = await fetchUsdBrlRate();
+    const openUsd = safeNumber(usdPayload.open);
+    const volumeUsdt = safeNumber(usdPayload.volume);
+    const volumeUsd = volumeUsdt > 0 ? volumeUsdt * usdtUsd : 0;
+
+    return buildUsdFallback(usdtUsd, usdBrl, "https://www.coinbase.com/advanced-trade/spot/USDT-USD", "USDT/USD", {
+      change_24h: openUsd > 0 ? ((usdtUsd - openUsd) / openUsd) * 100 : 0,
+      high_usd: safeNumber(usdPayload.high),
+      low_usd: safeNumber(usdPayload.low),
+      volume_usd: volumeUsd,
+    });
   }
 
   const price = safeNumber(payload.price);
@@ -288,41 +401,12 @@ async function fetchCoinbase() {
   };
 }
 
-async function fetchBitmart() {
-  const payload = await fetchJson("https://api-cloud.bitmart.com/spot/v1/ticker?symbol=USDT_BRL");
-  if (safeNumber(payload.code) !== 1000) {
-    const msg = String(payload.msg ?? "Bitmart ticker indisponivel");
-    if (msg.toLowerCase().includes("symbol not found")) {
-      throw new Error("Par USDT/BRL nao disponivel na Bitmart");
-    }
-    throw new Error(msg);
-  }
-
-  const ticker = payload.data?.tickers?.[0] ?? {};
-  const price = safeNumber(ticker.last_price);
-  if (price <= 0) {
-    throw new Error("Par USDT/BRL nao disponivel na Bitmart");
-  }
-
-  const open = safeNumber(ticker.open_24h);
-
-  return {
-    price_brl: price,
-    volume_24h: safeNumber(ticker.quote_volume_24h),
-    change_24h: open > 0 ? ((price - open) / open) * 100 : 0,
-    high_24h: safeNumber(ticker.high_24h),
-    low_24h: safeNumber(ticker.low_24h),
-    source_url: "https://www.bitmart.com/trade/pt-BR?symbol=USDT_BRL",
-  };
-}
-
 const EXCHANGES: ExchangeDef[] = [
   { key: "binance", label: "Binance", fetcher: fetchBinance },
   { key: "bybit", label: "Bybit", fetcher: fetchBybit },
   { key: "bingx", label: "BingX", fetcher: fetchBingx },
   { key: "kraken", label: "Kraken", fetcher: fetchKraken },
   { key: "coinbase", label: "Coinbase", fetcher: fetchCoinbase },
-  { key: "bitmart", label: "Bitmart", fetcher: fetchBitmart },
   { key: "bitget", label: "Bitget", fetcher: fetchBitget },
   { key: "okx", label: "OKX", fetcher: fetchOkx },
   { key: "kucoin", label: "KuCoin", fetcher: fetchKucoin },
@@ -349,6 +433,9 @@ export async function GET() {
             status: "ok",
             label,
             pair: "USDT/BRL",
+            pricing_mode: data.pricing_mode ?? "direct",
+            source_pair: data.source_pair,
+            warning: data.warning,
             price_brl: Number((data.price_brl ?? 0).toFixed(4)),
             volume_24h: Number((data.volume_24h ?? 0).toFixed(4)),
             change_24h: Number((data.change_24h ?? 0).toFixed(4)),
@@ -392,7 +479,7 @@ export async function GET() {
   const payload: PricesResponse = {
     timestamp: new Date().toISOString(),
     ok_count: okList.length,
-    total_count: EXCHANGES.length,
+    total_count: entries.length,
     exchanges,
     summary,
   };

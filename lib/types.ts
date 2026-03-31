@@ -2,6 +2,9 @@ export interface ExchangeData {
   status: "ok" | "error";
   label: string;
   pair: "USDT/BRL";
+  pricing_mode?: "direct" | "fallback";
+  source_pair?: string;
+  warning?: string;
   price_brl?: number;
   volume_24h?: number;
   change_24h?: number;

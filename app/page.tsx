@@ -10,7 +10,6 @@ const ORDER = [
   "bingx",
   "kraken",
   "coinbase",
-  "bitmart",
   "bitget",
   "okx",
   "kucoin",
@@ -25,7 +24,6 @@ const EXCHANGE_META: Record<string, { domain: string }> = {
   bingx: { domain: "bingx.com" },
   kraken: { domain: "kraken.com" },
   coinbase: { domain: "coinbase.com" },
-  bitmart: { domain: "bitmart.com" },
   bitget: { domain: "bitget.com" },
   okx: { domain: "okx.com" },
   kucoin: { domain: "kucoin.com" },
@@ -41,7 +39,6 @@ const DEFAULT_FEES: Record<string, { buy: number; sell: number }> = {
   bingx: { buy: 0.20, sell: 0.20 },
   kraken: { buy: 0.40, sell: 0.40 },
   coinbase: { buy: 0.60, sell: 0.60 },
-  bitmart: { buy: 0.25, sell: 0.25 },
   bitget: { buy: 0.20, sell: 0.20 },
   okx: { buy: 0.20, sell: 0.20 },
   kucoin: { buy: 0.20, sell: 0.20 },
@@ -315,6 +312,14 @@ export default function HomePage() {
                 {ok ? (
                   <>
                     <div className="price-value" style={{ fontSize: 30, fontWeight: 800, marginTop: 8, letterSpacing: "-0.5px" }}>{money(ex.price_brl ?? 0)}</div>
+                    {(ex.pricing_mode === "fallback" || ex.warning || ex.source_pair) && (
+                      <div
+                        className="metric-line"
+                        style={{ marginTop: 8, fontSize: 12, color: "#f4b860", lineHeight: 1.45 }}
+                      >
+                        {ex.warning ?? `Preco estimado sem par BRL direto; fonte: ${ex.source_pair ?? "USDT/USD"}. Pode haver variacao.`}
+                      </div>
+                    )}
                     <div className="metric-line" style={{ marginTop: 9, fontSize: 13, color: "var(--muted)" }}>
                       24h: {ex.change_24h?.toFixed(4)}% · Vol: {vol(ex.volume_24h ?? 0)}
                     </div>
