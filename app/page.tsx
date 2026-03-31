@@ -4,12 +4,28 @@ import { useEffect, useMemo, useState } from "react";
 import type { PricesResponse } from "@/lib/types";
 
 const REFRESH_SECONDS = 5;
-const ORDER = ["binance", "bybit", "bitget", "okx", "kucoin", "novadax", "mercadobitcoin"];
+const ORDER = [
+  "binance",
+  "bybit",
+  "bingx",
+  "kraken",
+  "coinbase",
+  "bitmart",
+  "bitget",
+  "okx",
+  "kucoin",
+  "novadax",
+  "mercadobitcoin",
+];
 type ThemeMode = "auto" | "light" | "dark";
 
 const EXCHANGE_META: Record<string, { domain: string }> = {
   binance: { domain: "binance.com" },
   bybit: { domain: "bybit.com" },
+  bingx: { domain: "bingx.com" },
+  kraken: { domain: "kraken.com" },
+  coinbase: { domain: "coinbase.com" },
+  bitmart: { domain: "bitmart.com" },
   bitget: { domain: "bitget.com" },
   okx: { domain: "okx.com" },
   kucoin: { domain: "kucoin.com" },
@@ -22,6 +38,10 @@ const EXCHANGE_META: Record<string, { domain: string }> = {
 const DEFAULT_FEES: Record<string, { buy: number; sell: number }> = {
   binance: { buy: 0.20, sell: 0.20 },
   bybit: { buy: 0.20, sell: 0.20 },
+  bingx: { buy: 0.20, sell: 0.20 },
+  kraken: { buy: 0.40, sell: 0.40 },
+  coinbase: { buy: 0.60, sell: 0.60 },
+  bitmart: { buy: 0.25, sell: 0.25 },
   bitget: { buy: 0.20, sell: 0.20 },
   okx: { buy: 0.20, sell: 0.20 },
   kucoin: { buy: 0.20, sell: 0.20 },

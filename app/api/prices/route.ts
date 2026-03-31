@@ -196,9 +196,133 @@ async function fetchOkx() {
   };
 }
 
+async function fetchBingx() {
+  const payload = await fetchJson("https://open-api.bingx.com/openApi/spot/v1/ticker/price?symbol=USDT-BRL");
+
+  if (safeNumber(payload.code) !== 0) {
+    const msg = String(payload.msg ?? "BingX ticker indisponivel");
+    if (msg.toLowerCase().includes("symbol is not found")) {
+      throw new Error("Par USDT/BRL nao disponivel na BingX");
+    }
+    throw new Error(msg);
+  }
+
+  const data = payload.data ?? {};
+  const price = safeNumber(data.price);
+  if (price <= 0) {
+    throw new Error("Par USDT/BRL nao disponivel na BingX");
+  }
+
+  return {
+    price_brl: price,
+    volume_24h: 0,
+    change_24h: 0,
+    high_24h: price,
+    low_24h: price,
+    source_url: "https://bingx.com/pt-br/spot/USDTBRL",
+  };
+}
+
+async function fetchKraken() {
+  const pairsPayload = await fetchJson("https://api.kraken.com/0/public/AssetPairs?pair=USDTBRL");
+  if (Array.isArray(pairsPayload.error) && pairsPayload.error.length > 0) {
+    throw new Error("Par USDT/BRL nao disponivel na Kraken");
+  }
+
+  const pairKey = Object.keys(pairsPayload.result ?? {})[0];
+  if (!pairKey) {
+    throw new Error("Par USDT/BRL nao disponivel na Kraken");
+  }
+
+  const tickerPayload = await fetchJson(`https://api.kraken.com/0/public/Ticker?pair=${pairKey}`);
+  if (Array.isArray(tickerPayload.error) && tickerPayload.error.length > 0) {
+    throw new Error("Par USDT/BRL nao disponivel na Kraken");
+  }
+
+  const ticker = tickerPayload.result?.[pairKey] ?? {};
+  const price = safeNumber(Array.isArray(ticker.c) ? ticker.c[0] : 0);
+  if (price <= 0) {
+    throw new Error("Par USDT/BRL nao disponivel na Kraken");
+  }
+
+  const open = safeNumber(ticker.o);
+  const baseVolume = safeNumber(Array.isArray(ticker.v) ? ticker.v[1] : 0);
+
+  return {
+    price_brl: price,
+    volume_24h: baseVolume > 0 ? baseVolume * price : 0,
+    change_24h: open > 0 ? ((price - open) / open) * 100 : 0,
+    high_24h: safeNumber(Array.isArray(ticker.h) ? ticker.h[1] : 0),
+    low_24h: safeNumber(Array.isArray(ticker.l) ? ticker.l[1] : 0),
+    source_url: "https://pro.kraken.com/app/trade/usdt-brl",
+  };
+}
+
+async function fetchCoinbase() {
+  let payload: Record<string, any>;
+  try {
+    payload = await fetchJson("https://api.exchange.coinbase.com/products/USDT-BRL/ticker");
+  } catch (err) {
+    const msg = String(err ?? "");
+    if (msg.includes("HTTP 404")) {
+      throw new Error("Par USDT/BRL nao disponivel na Coinbase");
+    }
+    throw err;
+  }
+
+  const price = safeNumber(payload.price);
+  if (price <= 0) {
+    throw new Error("Par USDT/BRL nao disponivel na Coinbase");
+  }
+
+  const open = safeNumber(payload.open);
+  const baseVolume = safeNumber(payload.volume);
+
+  return {
+    price_brl: price,
+    volume_24h: baseVolume > 0 ? baseVolume * price : 0,
+    change_24h: open > 0 ? ((price - open) / open) * 100 : 0,
+    high_24h: safeNumber(payload.high),
+    low_24h: safeNumber(payload.low),
+    source_url: "https://www.coinbase.com/advanced-trade/spot/USDT-BRL",
+  };
+}
+
+async function fetchBitmart() {
+  const payload = await fetchJson("https://api-cloud.bitmart.com/spot/v1/ticker?symbol=USDT_BRL");
+  if (safeNumber(payload.code) !== 1000) {
+    const msg = String(payload.msg ?? "Bitmart ticker indisponivel");
+    if (msg.toLowerCase().includes("symbol not found")) {
+      throw new Error("Par USDT/BRL nao disponivel na Bitmart");
+    }
+    throw new Error(msg);
+  }
+
+  const ticker = payload.data?.tickers?.[0] ?? {};
+  const price = safeNumber(ticker.last_price);
+  if (price <= 0) {
+    throw new Error("Par USDT/BRL nao disponivel na Bitmart");
+  }
+
+  const open = safeNumber(ticker.open_24h);
+
+  return {
+    price_brl: price,
+    volume_24h: safeNumber(ticker.quote_volume_24h),
+    change_24h: open > 0 ? ((price - open) / open) * 100 : 0,
+    high_24h: safeNumber(ticker.high_24h),
+    low_24h: safeNumber(ticker.low_24h),
+    source_url: "https://www.bitmart.com/trade/pt-BR?symbol=USDT_BRL",
+  };
+}
+
 const EXCHANGES: ExchangeDef[] = [
   { key: "binance", label: "Binance", fetcher: fetchBinance },
   { key: "bybit", label: "Bybit", fetcher: fetchBybit },
+  { key: "bingx", label: "BingX", fetcher: fetchBingx },
+  { key: "kraken", label: "Kraken", fetcher: fetchKraken },
+  { key: "coinbase", label: "Coinbase", fetcher: fetchCoinbase },
+  { key: "bitmart", label: "Bitmart", fetcher: fetchBitmart },
   { key: "bitget", label: "Bitget", fetcher: fetchBitget },
   { key: "okx", label: "OKX", fetcher: fetchOkx },
   { key: "kucoin", label: "KuCoin", fetcher: fetchKucoin },
