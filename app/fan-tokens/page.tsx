@@ -56,6 +56,32 @@ type FanTokensResponse = {
 
 const REFRESH_SECONDS = 45;
 
+const CATEGORY_GROUPS: {
+  key: "major" | "altcoin" | "fan_token";
+  label: string;
+  subtitle: string;
+  color: string;
+}[] = [
+  {
+    key: "major",
+    label: "Grandes do Mercado",
+    subtitle: "Maior volume global (bilhões/dia) — spreads frequentes entre corretoras",
+    color: "#7c3aed",
+  },
+  {
+    key: "altcoin",
+    label: "Altcoins de Alta Liquidez",
+    subtitle: "Alta liquidez e boas janelas de arbitragem",
+    color: "#0891b2",
+  },
+  {
+    key: "fan_token",
+    label: "Fan Tokens",
+    subtitle: "Tokens de times esportivos e organizações de esports",
+    color: "#f59e0b",
+  },
+];
+
 function tierColor(tier: 1 | 2 | 3 | 4) {
   if (tier === 1) return "#f59e0b";
   if (tier === 2) return "#2563eb";
@@ -106,14 +132,33 @@ export default function FanTokensPage() {
     };
   }, []);
 
-  const sorted = useMemo(() => {
-    if (!data?.tokens) return [];
-    return [...data.tokens].sort((a, b) => {
-      const sa = a.best_arb?.spread_pct ?? -1;
-      const sb = b.best_arb?.spread_pct ?? -1;
-      return sb - sa;
-    });
+  const groups = useMemo(() => {
+    const empty = { major: [] as TokenRow[], altcoin: [] as TokenRow[], fan_token: [] as TokenRow[] };
+    if (!data?.tokens) return empty;
+    const sortFn = (a: TokenRow, b: TokenRow) =>
+      (b.best_arb?.spread_pct ?? -1) - (a.best_arb?.spread_pct ?? -1);
+    return {
+      major: data.tokens.filter((t) => t.category === "major").sort(sortFn),
+      altcoin: data.tokens.filter((t) => t.category === "altcoin").sort(sortFn),
+      fan_token: data.tokens.filter((t) => t.category === "fan_token" || !t.category).sort(sortFn),
+    };
   }, [data]);
+
+  const spreadChampions = useMemo(() => {
+    if (!data?.tokens) return [] as TokenRow[];
+    return data.tokens
+      .filter((t) => (t.best_arb?.spread_pct ?? 0) > 0)
+      .sort((a, b) => (b.best_arb?.spread_pct ?? 0) - (a.best_arb?.spread_pct ?? 0))
+      .slice(0, 6);
+  }, [data]);
+
+  function openTokenCard(tokenId: string) {
+    setExpanded((s) => ({ ...s, [tokenId]: true }));
+    setTimeout(() => {
+      const el = document.getElementById(`token-card-${tokenId}`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+  }
 
   return (
     <main className="page-shell" style={{ minHeight: "100vh", padding: 24 }}>
@@ -163,144 +208,184 @@ export default function FanTokensPage() {
               borderRadius: 16,
               padding: 18,
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
               gap: 12,
             }}
           >
             <div>
-              <div style={{ fontSize: 12, color: "var(--muted)" }}>USD/BRL</div>
-              <div style={{ fontSize: 20, fontWeight: 800 }}>{data.summary.usd_brl.toFixed(4)}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 12, color: "var(--muted)" }}>Spread acima de 1%</div>
-              <div style={{ fontSize: 20, fontWeight: 800 }}>{data.summary.above_1_pct}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 12, color: "var(--muted)" }}>Spread acima de 3%</div>
-              <div style={{ fontSize: 20, fontWeight: 800 }}>{data.summary.above_3_pct}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 12, color: "var(--muted)" }}>Melhor oportunidade</div>
-              <div style={{ fontSize: 14, fontWeight: 700 }}>
-                {data.summary.best_opportunity
-                  ? `${data.summary.best_opportunity.symbol} (${data.summary.best_opportunity.spread_pct.toFixed(2)}%)`
-                  : "Sem oportunidade agora"}
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Campeoes de spread (clique para abrir)</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
+                {spreadChampions.length > 0 ? (
+                  spreadChampions.map((token, index) => (
+                    <button
+                      key={`champion-${token.id}`}
+                      onClick={() => openTokenCard(token.id)}
+                      style={{
+                        textAlign: "left",
+                        border: "1px solid var(--card-border)",
+                        borderRadius: 12,
+                        padding: "10px 12px",
+                        background: "rgba(255,255,255,0.03)",
+                        color: "var(--text)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <div style={{ fontSize: 11, color: "var(--muted)" }}>#{index + 1}</div>
+                      <div style={{ fontWeight: 800 }}>{token.symbol}</div>
+                      <div style={{ fontSize: 12, color: "#16a34a" }}>
+                        {token.best_arb ? `${token.best_arb.spread_pct.toFixed(2)}%` : "0.00%"}
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div style={{ fontSize: 13, color: "var(--muted)" }}>Sem oportunidades no momento.</div>
+                )}
               </div>
             </div>
           </section>
         )}
 
-        <section
-          style={{
-            marginTop: 16,
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))",
-            gap: 12,
-          }}
-        >
-          {sorted.map((token) => {
-            const isOpen = !!expanded[token.id];
-            return (
-              <article
-                key={token.id}
+        {CATEGORY_GROUPS.map(({ key, label, subtitle, color }) => {
+          const tokens = groups[key];
+          if (tokens.length === 0) return null;
+          return (
+            <div key={key} style={{ marginTop: 28 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <span
+                  style={{
+                    width: 4,
+                    height: 22,
+                    background: color,
+                    borderRadius: 2,
+                    display: "inline-block",
+                    flexShrink: 0,
+                  }}
+                />
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 17 }}>{label}</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>{subtitle}</div>
+                </div>
+              </div>
+              <section
                 style={{
-                  border: "1px solid var(--card-border)",
-                  borderRadius: 14,
-                  background: "var(--card)",
-                  overflow: "hidden",
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))",
+                  gap: 12,
                 }}
               >
-                <button
-                  onClick={() => setExpanded((s) => ({ ...s, [token.id]: !isOpen }))}
-                  style={{
-                    width: "100%",
-                    textAlign: "left",
-                    padding: 14,
-                    border: "none",
-                    background: "transparent",
-                    color: "var(--text)",
-                    cursor: "pointer",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <strong>{token.symbol}</strong>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            borderRadius: 999,
-                            padding: "2px 8px",
-                            border: `1px solid ${getCategoryBadge(token).color}`,
-                            color: getCategoryBadge(token).color,
-                          }}
-                        >
-                          {getCategoryBadge(token).label}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>{token.team}</div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontWeight: 800 }}>
-                        {token.avg_price_brl ? `R$ ${formatPrice(token.avg_price_brl)}` : "Sem dados"}
-                      </div>
-                      <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                        {token.best_arb ? `Spread ${token.best_arb.spread_pct.toFixed(2)}%` : "Sem arbitragem"}
-                      </div>
-                    </div>
-                  </div>
-                </button>
-
-                {isOpen && (
-                  <div style={{ borderTop: "1px solid var(--card-border)", padding: 12 }}>
-                    {token.best_arb && (
-                      <div style={{ fontSize: 12, marginBottom: 10, color: "var(--muted)" }}>
-                        Comprar em <strong>{token.best_arb.buy_exchange_label}</strong> e vender em <strong>{token.best_arb.sell_exchange_label}</strong>.
-                      </div>
-                    )}
-
-                    <div style={{ display: "grid", gap: 8 }}>
-                      {(token.exchanges ?? []).map((ex) => (
-                        <div
-                          key={`${token.id}-${ex.exchange}`}
-                          style={{
-                            border: "1px solid var(--card-border)",
-                            borderRadius: 10,
-                            padding: "8px 10px",
-                            display: "flex",
-                            justifyContent: "space-between",
-                            gap: 8,
-                          }}
-                        >
+                {tokens.map((token) => {
+                  const isOpen = !!expanded[token.id];
+                  const spread = token.best_arb?.spread_pct ?? 0;
+                  const spreadColor = spread >= 3 ? "#16a34a" : spread >= 1 ? "#ca8a04" : "var(--muted)";
+                  return (
+                    <article
+                      key={token.id}
+                      id={`token-card-${token.id}`}
+                      style={{
+                        border: spread >= 1 ? `1px solid ${spreadColor}44` : "1px solid var(--card-border)",
+                        borderRadius: 14,
+                        background: "var(--card)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <button
+                        onClick={() => setExpanded((s) => ({ ...s, [token.id]: !isOpen }))}
+                        style={{
+                          width: "100%",
+                          textAlign: "left",
+                          padding: 14,
+                          border: "none",
+                          background: "transparent",
+                          color: "var(--text)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                           <div>
-                            <div style={{ fontSize: 13, fontWeight: 700 }}>{ex.label}</div>
-                            <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                              {ex.pix ? "PIX" : "Sem PIX"} · {ex.accepts_brl ? "BRL direto" : "USDT convertido"}
-                              {ex.estimated ? " · estimado" : ""}
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <strong>{token.symbol}</strong>
+                              <span
+                                style={{
+                                  fontSize: 11,
+                                  borderRadius: 999,
+                                  padding: "2px 8px",
+                                  border: `1px solid ${getCategoryBadge(token).color}`,
+                                  color: getCategoryBadge(token).color,
+                                }}
+                              >
+                                {getCategoryBadge(token).label}
+                              </span>
                             </div>
+                            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>{token.team}</div>
                           </div>
                           <div style={{ textAlign: "right" }}>
-                            {ex.status === "ok" ? (
-                              <>
-                                <div style={{ fontWeight: 700 }}>R$ {formatPrice(ex.price_brl ?? 0)}</div>
-                                <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                                  {(ex.change_24h ?? 0) >= 0 ? "+" : ""}
-                                  {(ex.change_24h ?? 0).toFixed(2)}% · Vol R$ {((ex.volume_24h_brl ?? 0) / 1000).toFixed(1)}K
-                                </div>
-                              </>
-                            ) : (
-                              <div style={{ fontSize: 12, color: "var(--muted)" }}>Nao listado</div>
-                            )}
+                            <div style={{ fontWeight: 800 }}>
+                              {token.avg_price_brl ? `R$ ${formatPrice(token.avg_price_brl)}` : "Sem dados"}
+                            </div>
+                            <div style={{ fontSize: 12, fontWeight: token.best_arb ? 700 : 400, color: spreadColor }}>
+                              {token.best_arb ? `▲ ${token.best_arb.spread_pct.toFixed(2)}%` : "Sem arbitragem"}
+                            </div>
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </article>
-            );
-          })}
-        </section>
+                      </button>
+
+                      {isOpen && (
+                        <div style={{ borderTop: "1px solid var(--card-border)", padding: 12 }}>
+                          {token.best_arb && (
+                            <div style={{ fontSize: 12, marginBottom: 10, color: "var(--muted)" }}>
+                              Comprar em <strong>{token.best_arb.buy_exchange_label}</strong> e vender em{" "}
+                              <strong>{token.best_arb.sell_exchange_label}</strong>.
+                            </div>
+                          )}
+                          <div style={{ display: "grid", gap: 8 }}>
+                            {(token.exchanges ?? [])
+                              .slice()
+                              .sort((a, b) => (b.price_brl ?? 0) - (a.price_brl ?? 0))
+                              .map((ex) => (
+                                <div
+                                  key={`${token.id}-${ex.exchange}`}
+                                  style={{
+                                    border: "1px solid var(--card-border)",
+                                    borderRadius: 10,
+                                    padding: "8px 10px",
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    gap: 8,
+                                  }}
+                                >
+                                  <div>
+                                    <div style={{ fontSize: 13, fontWeight: 700 }}>{ex.label}</div>
+                                    <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                                      {ex.pix ? "PIX" : "Sem PIX"} ·{" "}
+                                      {ex.accepts_brl ? "BRL direto" : "USDT convertido"}
+                                      {ex.estimated ? " · estimado" : ""}
+                                    </div>
+                                  </div>
+                                  <div style={{ textAlign: "right" }}>
+                                    {ex.status === "ok" ? (
+                                      <>
+                                        <div style={{ fontWeight: 700 }}>R$ {formatPrice(ex.price_brl ?? 0)}</div>
+                                        <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                                          {(ex.change_24h ?? 0) >= 0 ? "+" : ""}
+                                          {(ex.change_24h ?? 0).toFixed(2)}% · Vol R${" "}
+                                          {((ex.volume_24h_brl ?? 0) / 1000).toFixed(1)}K
+                                        </div>
+                                      </>
+                                    ) : (
+                                      <div style={{ fontSize: 12, color: "var(--muted)" }}>Nao listado</div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+                    </article>
+                  );
+                })}
+              </section>
+            </div>
+          );
+        })}
 
         {data?.error && (
           <div style={{ marginTop: 16, color: "var(--error)", fontSize: 13 }}>

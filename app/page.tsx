@@ -214,7 +214,7 @@ export default function HomePage() {
                 fontWeight: 600,
               }}
             >
-              Abrir Fan Tokens
+              Abrir Geral
             </Link>
             <select
               className="theme-select"
