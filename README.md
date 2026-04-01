@@ -26,3 +26,9 @@ App: `http://localhost:3000`
 
 - `GET /api/health`
 - `GET /api/prices`
+- `GET /api/fan-tokens`
+
+## Paginas
+
+- `/` monitor USDT/BRL
+- `/fan-tokens` monitor de fan tokens

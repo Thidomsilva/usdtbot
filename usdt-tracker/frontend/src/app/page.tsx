@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { usePrices } from "../lib/usePrices";
 import type { ExchangeData, Summary } from "../lib/types";
 
@@ -233,6 +234,11 @@ export default function Home() {
               <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
                 Monitoramento em tempo real do par USDT/BRL
               </p>
+              <div style={{ marginTop: 8 }}>
+                <Link href="/fan-tokens" style={{ fontSize: 13, color: "#4f46e5", textDecoration: "none", fontWeight: 600 }}>
+                  Abrir Fan Tokens
+                </Link>
+              </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               {lastUpdated && (
