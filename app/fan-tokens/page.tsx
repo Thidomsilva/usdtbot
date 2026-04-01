@@ -20,6 +20,7 @@ type TokenRow = {
   symbol: string;
   team: string;
   tier: 1 | 2 | 3 | 4;
+  category?: "fan_token" | "major" | "altcoin";
   status: "ok" | "error";
   avg_price_brl?: number | null;
   exchanges?: ExchangeQuote[];
@@ -60,6 +61,21 @@ function tierColor(tier: 1 | 2 | 3 | 4) {
   if (tier === 2) return "#2563eb";
   if (tier === 3) return "#059669";
   return "#dc2626";
+}
+
+function getCategoryBadge(token: TokenRow): { label: string; color: string } {
+  if (token.category === "major") return { label: "Major", color: "#7c3aed" };
+  if (token.category === "altcoin") return { label: "Altcoin", color: "#0891b2" };
+  return { label: `Tier ${token.tier}`, color: tierColor(token.tier) };
+}
+
+function formatPrice(price: number): string {
+  if (price === 0) return "0";
+  if (price < 0.0001) return price.toFixed(8);
+  if (price < 0.01) return price.toFixed(6);
+  if (price < 1) return price.toFixed(4);
+  if (price < 1000) return price.toFixed(2);
+  return price.toFixed(0);
 }
 
 export default function FanTokensPage() {
@@ -107,9 +123,9 @@ export default function FanTokensPage() {
             <div style={{ fontSize: 13, marginBottom: 8 }}>
               <Link href="/" style={{ textDecoration: "none", color: "var(--muted)" }}>Voltar para USDT/BRL</Link>
             </div>
-            <h1 style={{ margin: 0, fontSize: 34, letterSpacing: "-0.8px", fontWeight: 800 }}>Fan Tokens Pulse</h1>
+            <h1 style={{ margin: 0, fontSize: 34, letterSpacing: "-0.8px", fontWeight: 800 }}>Arbitragem Geral</h1>
             <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 15 }}>
-              Monitoramento de oportunidades entre corretoras com atualizacao a cada 45 segundos.
+              Monitoramento de oportunidades entre corretoras — criptos, altcoins e fan tokens. Atualizado a cada 45s.
             </p>
           </div>
           <button
@@ -133,7 +149,7 @@ export default function FanTokensPage() {
 
         <div style={{ marginTop: 14, color: "var(--muted)", fontSize: 13 }}>
           {data?.summary
-            ? `${data.summary.with_arbitrage} tokens com arbitragem em ${data.summary.total_tokens} monitorados`
+            ? `${data.summary.with_arbitrage} ativos com arbitragem em ${data.summary.total_tokens} monitorados`
             : "Carregando dados..."}
           {" · "}proxima atualizacao em {countdown}s
         </div>
@@ -215,18 +231,18 @@ export default function FanTokensPage() {
                             fontSize: 11,
                             borderRadius: 999,
                             padding: "2px 8px",
-                            border: `1px solid ${tierColor(token.tier)}`,
-                            color: tierColor(token.tier),
+                            border: `1px solid ${getCategoryBadge(token).color}`,
+                            color: getCategoryBadge(token).color,
                           }}
                         >
-                          Tier {token.tier}
+                          {getCategoryBadge(token).label}
                         </span>
                       </div>
                       <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>{token.team}</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontWeight: 800 }}>
-                        {token.avg_price_brl ? `R$ ${token.avg_price_brl.toFixed(4)}` : "Sem dados"}
+                        {token.avg_price_brl ? `R$ ${formatPrice(token.avg_price_brl)}` : "Sem dados"}
                       </div>
                       <div style={{ fontSize: 12, color: "var(--muted)" }}>
                         {token.best_arb ? `Spread ${token.best_arb.spread_pct.toFixed(2)}%` : "Sem arbitragem"}
@@ -266,7 +282,7 @@ export default function FanTokensPage() {
                           <div style={{ textAlign: "right" }}>
                             {ex.status === "ok" ? (
                               <>
-                                <div style={{ fontWeight: 700 }}>R$ {(ex.price_brl ?? 0).toFixed(4)}</div>
+                                <div style={{ fontWeight: 700 }}>R$ {formatPrice(ex.price_brl ?? 0)}</div>
                                 <div style={{ fontSize: 11, color: "var(--muted)" }}>
                                   {(ex.change_24h ?? 0) >= 0 ? "+" : ""}
                                   {(ex.change_24h ?? 0).toFixed(2)}% · Vol R$ {((ex.volume_24h_brl ?? 0) / 1000).toFixed(1)}K

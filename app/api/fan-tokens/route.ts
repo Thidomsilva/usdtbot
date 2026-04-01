@@ -15,6 +15,7 @@ type FanToken = {
   symbol: string;
   team: string;
   tier: Tier;
+  category?: "fan_token" | "major" | "altcoin";
 };
 
 type ExchangeMeta = {
@@ -52,26 +53,47 @@ type Arb = {
 };
 
 const TOKENS: FanToken[] = [
-  { id: "santos-fc-fan-token", symbol: "SANTOS", team: "Santos FC", tier: 1 },
-  { id: "og-fan-token", symbol: "OG", team: "OG Esports", tier: 1 },
-  { id: "fc-porto", symbol: "PORTO", team: "FC Porto", tier: 1 },
-  { id: "lazio-fan-token", symbol: "LAZIO", team: "SS Lazio", tier: 1 },
-  { id: "argentina-fan-token", symbol: "ARG", team: "AFA", tier: 1 },
-  { id: "as-roma-fan-token", symbol: "ASR", team: "AS Roma", tier: 2 },
-  { id: "paris-saint-germain-fan-token", symbol: "PSG", team: "PSG", tier: 2 },
-  { id: "fc-barcelona-fan-token", symbol: "BAR", team: "FC Barcelona", tier: 2 },
-  { id: "galatasaray-fan-token", symbol: "GAL", team: "Galatasaray", tier: 2 },
-  { id: "ac-milan-fan-token", symbol: "ACM", team: "AC Milan", tier: 2 },
-  { id: "juventus-fan-token", symbol: "JUV", team: "Juventus", tier: 3 },
-  { id: "manchester-city-fan-token", symbol: "CITY", team: "Man City", tier: 3 },
-  { id: "atletico-de-madrid", symbol: "ATM", team: "Atletico Madrid", tier: 3 },
-  { id: "arsenal-fan-token", symbol: "AFC", team: "Arsenal", tier: 3 },
-  { id: "inter-milan-fan-token", symbol: "INTER", team: "Inter Milan", tier: 3 },
-  { id: "flamengo-fan-token", symbol: "MENGO", team: "Flamengo", tier: 4 },
-  { id: "corinthians-fan-token", symbol: "SCCP", team: "Corinthians", tier: 4 },
-  { id: "trabzonspor-fan-token", symbol: "TRA", team: "Trabzonspor", tier: 4 },
-  { id: "alpine-f1-team-fan-token", symbol: "ALPINE", team: "Alpine F1", tier: 4 },
-  { id: "ufc-fan-token", symbol: "UFC", team: "UFC", tier: 4 },
+  // === Grandes do mercado ===
+  { id: "BTC", symbol: "BTC", team: "Bitcoin", tier: 1, category: "major" },
+  { id: "ETH", symbol: "ETH", team: "Ethereum", tier: 1, category: "major" },
+  { id: "USDT", symbol: "USDT", team: "Tether", tier: 1, category: "major" },
+  { id: "USDC", symbol: "USDC", team: "USD Coin", tier: 1, category: "major" },
+  { id: "BNB", symbol: "BNB", team: "Binance Coin", tier: 1, category: "major" },
+  { id: "XRP", symbol: "XRP", team: "XRP", tier: 1, category: "major" },
+  { id: "SOL", symbol: "SOL", team: "Solana", tier: 1, category: "major" },
+  { id: "TRX", symbol: "TRX", team: "Tron", tier: 1, category: "major" },
+  // === Altcoins de alta liquidez ===
+  { id: "ADA", symbol: "ADA", team: "Cardano", tier: 2, category: "altcoin" },
+  { id: "DOGE", symbol: "DOGE", team: "Dogecoin", tier: 2, category: "altcoin" },
+  { id: "MATIC", symbol: "MATIC", team: "Polygon", tier: 2, category: "altcoin" },
+  { id: "AVAX", symbol: "AVAX", team: "Avalanche", tier: 2, category: "altcoin" },
+  { id: "DOT", symbol: "DOT", team: "Polkadot", tier: 2, category: "altcoin" },
+  { id: "LINK", symbol: "LINK", team: "Chainlink", tier: 2, category: "altcoin" },
+  { id: "LTC", symbol: "LTC", team: "Litecoin", tier: 2, category: "altcoin" },
+  { id: "TON", symbol: "TON", team: "Toncoin", tier: 2, category: "altcoin" },
+  { id: "SHIB", symbol: "SHIB", team: "Shiba Inu", tier: 2, category: "altcoin" },
+  { id: "HBAR", symbol: "HBAR", team: "Hedera", tier: 2, category: "altcoin" },
+  // === Fan Tokens ===
+  { id: "santos-fc-fan-token", symbol: "SANTOS", team: "Santos FC", tier: 1, category: "fan_token" },
+  { id: "og-fan-token", symbol: "OG", team: "OG Esports", tier: 1, category: "fan_token" },
+  { id: "fc-porto", symbol: "PORTO", team: "FC Porto", tier: 1, category: "fan_token" },
+  { id: "lazio-fan-token", symbol: "LAZIO", team: "SS Lazio", tier: 1, category: "fan_token" },
+  { id: "argentina-fan-token", symbol: "ARG", team: "AFA", tier: 1, category: "fan_token" },
+  { id: "as-roma-fan-token", symbol: "ASR", team: "AS Roma", tier: 2, category: "fan_token" },
+  { id: "paris-saint-germain-fan-token", symbol: "PSG", team: "PSG", tier: 2, category: "fan_token" },
+  { id: "fc-barcelona-fan-token", symbol: "BAR", team: "FC Barcelona", tier: 2, category: "fan_token" },
+  { id: "galatasaray-fan-token", symbol: "GAL", team: "Galatasaray", tier: 2, category: "fan_token" },
+  { id: "ac-milan-fan-token", symbol: "ACM", team: "AC Milan", tier: 2, category: "fan_token" },
+  { id: "juventus-fan-token", symbol: "JUV", team: "Juventus", tier: 3, category: "fan_token" },
+  { id: "manchester-city-fan-token", symbol: "CITY", team: "Man City", tier: 3, category: "fan_token" },
+  { id: "atletico-de-madrid", symbol: "ATM", team: "Atletico Madrid", tier: 3, category: "fan_token" },
+  { id: "arsenal-fan-token", symbol: "AFC", team: "Arsenal", tier: 3, category: "fan_token" },
+  { id: "inter-milan-fan-token", symbol: "INTER", team: "Inter Milan", tier: 3, category: "fan_token" },
+  { id: "flamengo-fan-token", symbol: "MENGO", team: "Flamengo", tier: 4, category: "fan_token" },
+  { id: "corinthians-fan-token", symbol: "SCCP", team: "Corinthians", tier: 4, category: "fan_token" },
+  { id: "trabzonspor-fan-token", symbol: "TRA", team: "Trabzonspor", tier: 4, category: "fan_token" },
+  { id: "alpine-f1-team-fan-token", symbol: "ALPINE", team: "Alpine F1", tier: 4, category: "fan_token" },
+  { id: "ufc-fan-token", symbol: "UFC", team: "UFC", tier: 4, category: "fan_token" },
 ];
 
 const EXCHANGES: ExchangeMeta[] = [
@@ -337,11 +359,11 @@ async function fetchTokenOnExchange(tokenSymbol: string, exchange: ExchangeMeta,
       accepts_brl: exchange.accepts_brl,
       estimated: exchange.estimated,
       status: "ok",
-      price_brl: Number(priceBrl.toFixed(4)),
+      price_brl: Number(priceBrl.toFixed(8)),
       volume_24h_brl: Number(volumeBrl.toFixed(2)),
       change_24h: Number(raw.change_24h.toFixed(4)),
-      high_24h_brl: Number(highBrl.toFixed(4)),
-      low_24h_brl: Number(lowBrl.toFixed(4)),
+      high_24h_brl: Number(highBrl.toFixed(8)),
+      low_24h_brl: Number(lowBrl.toFixed(8)),
     };
   } catch (err) {
     return {
@@ -409,6 +431,7 @@ export async function GET() {
           symbol: token.symbol,
           team: token.team,
           tier: token.tier,
+          category: token.category ?? "fan_token",
           status: "ok",
           avg_price_brl: avg,
           exchanges,
