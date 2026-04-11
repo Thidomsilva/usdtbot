@@ -205,11 +205,58 @@ export default function P2PArbitragePage() {
 
           <div style={{ fontSize: 13, color: "var(--muted)" }}>
             {data
-              ? `${data.summary.opportunities_count} oportunidades encontradas · melhor spread bruto ${data.summary.gross_spread_pct.toFixed(3)}%`
+              ? `${data.summary.api_connected ? "API conectada" : "API desconectada"} · ${data.summary.buy_count} ofertas compra · ${data.summary.sell_count} ofertas venda · ${data.summary.profitable_count} cenarios com spread positivo · melhor spread bruto ${data.summary.gross_spread_pct.toFixed(3)}%`
               : "Carregando oportunidades..."}
             {" · "}proxima atualizacao em {countdown}s
           </div>
         </section>
+
+        {data && (
+          <section
+            style={{
+              marginTop: 12,
+              background: "var(--card)",
+              border: "1px solid var(--card-border)",
+              borderRadius: 16,
+              padding: 14,
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+              gap: 12,
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Top ofertas de compra (voce compra USDT)</div>
+              <div style={{ display: "grid", gap: 8 }}>
+                {data.buy_offers.slice(0, 5).map((offer) => (
+                  <div key={`buy-${offer.id}`} style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "8px 10px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                      <strong>{brl(offer.price_brl)}</strong>
+                      <span style={{ fontSize: 12, color: "var(--muted)" }}>{offer.available_usdt.toFixed(2)} USDT</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{offer.seller_name}</div>
+                  </div>
+                ))}
+                {data.buy_offers.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>Sem anuncios de compra.</div>}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Top ofertas de venda (voce vende USDT)</div>
+              <div style={{ display: "grid", gap: 8 }}>
+                {data.sell_offers.slice(0, 5).map((offer) => (
+                  <div key={`sell-${offer.id}`} style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "8px 10px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                      <strong>{brl(offer.price_brl)}</strong>
+                      <span style={{ fontSize: 12, color: "var(--muted)" }}>{offer.available_usdt.toFixed(2)} USDT</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{offer.seller_name}</div>
+                  </div>
+                ))}
+                {data.sell_offers.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>Sem anuncios de venda.</div>}
+              </div>
+            </div>
+          </section>
+        )}
 
         {data?.warning && (
           <div
@@ -268,6 +315,7 @@ export default function P2PArbitragePage() {
                       : op.est_net_profit_brl >= 0
                         ? "var(--ok)"
                         : "var(--error)";
+                    const spreadColor = op.gross_spread_pct >= 0 ? "var(--ok)" : "var(--error)";
 
                     return (
                       <tr key={`${op.buy_offer_id}-${op.sell_offer_id}`} style={{ borderTop: "1px solid var(--card-border)" }}>
@@ -282,12 +330,14 @@ export default function P2PArbitragePage() {
                           <div style={{ fontSize: 11, color: "var(--muted)" }}>{op.sell_buyer}</div>
                           <div style={{ fontSize: 11, color: "var(--muted)" }}>{op.sell_payment_methods.join(", ") || "-"}</div>
                         </td>
-                        <td style={{ padding: "10px 12px", fontSize: 13, color: op.gross_spread_pct >= 0.5 ? "var(--ok)" : "var(--muted)" }}>
+                        <td style={{ padding: "10px 12px", fontSize: 13, color: spreadColor }}>
                           {op.gross_spread_pct.toFixed(3)}%<div style={{ fontSize: 11, color: "var(--muted)" }}>R$ {op.gross_spread_brl_per_1000.toFixed(2)} / 1000</div>
                         </td>
                         <td style={{ padding: "10px 12px", fontSize: 13 }}>{op.est_liquidity_usdt.toFixed(2)} USDT</td>
                         <td style={{ padding: "10px 12px", fontSize: 13 }}>
-                          {compactBrl(op.executable_min_brl)} ate {compactBrl(op.executable_max_brl)}
+                          {op.executable
+                            ? `${compactBrl(op.executable_min_brl)} ate ${compactBrl(op.executable_max_brl)}`
+                            : "Sem intersecao de limites"}
                         </td>
                         <td style={{ padding: "10px 12px", fontSize: 13, color: netColor }}>
                           {validAmount

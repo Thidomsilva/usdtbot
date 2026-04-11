@@ -9,7 +9,7 @@ const CACHE_TTL_MS = 15_000;
 const MAX_RAW_OFFERS = 20;
 const MAX_OPPORTUNITIES = 20;
 
-let cache: { expiresAt: number; payload: P2PArbitrageResponse } | null = null;
+const cache = new Map<string, { expiresAt: number; payload: P2PArbitrageResponse }>();
 
 type BinanceTradeMethod = {
   tradeMethodName?: string;
@@ -118,14 +118,13 @@ function buildOpportunities(buyOffers: P2POffer[], sellOffers: P2POffer[]): P2PA
   for (const buy of buyOffers.slice(0, 10)) {
     for (const sell of sellOffers.slice(0, 10)) {
       if (buy.id === sell.id) continue;
-      if (sell.price_brl <= buy.price_brl) continue;
 
       const grossSpreadPct = ((sell.price_brl - buy.price_brl) / buy.price_brl) * 100;
       const grossSpreadBrlPer1000 = (1000 / buy.price_brl) * (sell.price_brl - buy.price_brl);
 
       const minAmount = Math.max(buy.min_order_brl, sell.min_order_brl);
       const maxAmount = Math.min(buy.max_order_brl, sell.max_order_brl);
-      if (maxAmount <= 0 || maxAmount < minAmount) continue;
+      const executable = maxAmount > 0 && maxAmount >= minAmount;
 
       opportunities.push({
         buy_offer_id: buy.id,
@@ -135,6 +134,7 @@ function buildOpportunities(buyOffers: P2POffer[], sellOffers: P2POffer[]): P2PA
         gross_spread_pct: Number(grossSpreadPct.toFixed(4)),
         gross_spread_brl_per_1000: Number(grossSpreadBrlPer1000.toFixed(4)),
         est_liquidity_usdt: Number(Math.min(buy.available_usdt, sell.available_usdt).toFixed(4)),
+        executable,
         executable_min_brl: Number(minAmount.toFixed(2)),
         executable_max_brl: Number(maxAmount.toFixed(2)),
         buy_seller: buy.seller_name,
@@ -156,17 +156,27 @@ function parsePositiveNumber(value: string | null, fallback: number): number {
   return num;
 }
 
+function ensureBinanceSuccess(payload: BinanceResponse, side: "BUY" | "SELL") {
+  if (payload.code && payload.code !== "000000") {
+    throw new Error(`Binance P2P ${side} falhou: ${payload.code} ${payload.message ?? ""}`.trim());
+  }
+}
+
 export async function GET(request: NextRequest) {
   const now = Date.now();
   const amountBrl = parsePositiveNumber(request.nextUrl.searchParams.get("amount_brl"), 1000);
   const safetyBufferPct = parsePositiveNumber(request.nextUrl.searchParams.get("safety_buffer_pct"), 0.2);
+  const cacheKey = `${amountBrl.toFixed(2)}|${safetyBufferPct.toFixed(4)}`;
+  const cacheHit = cache.get(cacheKey);
 
-  if (cache && cache.expiresAt > now) {
-    return NextResponse.json(cache.payload, { status: 200 });
+  if (cacheHit && cacheHit.expiresAt > now) {
+    return NextResponse.json(cacheHit.payload, { status: 200 });
   }
 
   try {
     const [buyPayload, sellPayload] = await Promise.all([postBinanceP2P("BUY"), postBinanceP2P("SELL")]);
+    ensureBinanceSuccess(buyPayload, "BUY");
+    ensureBinanceSuccess(sellPayload, "SELL");
 
     const rawBuyRows = Array.isArray(buyPayload.data) ? buyPayload.data : [];
     const rawSellRows = Array.isArray(sellPayload.data) ? sellPayload.data : [];
@@ -182,16 +192,17 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => b.price_brl - a.price_brl);
 
     const opportunities = buildOpportunities(buyOffers, sellOffers);
+    const profitableCount = opportunities.filter((opp) => opp.gross_spread_pct > 0).length;
     const bestBuy = buyOffers[0] ?? null;
     const bestSell = sellOffers[0] ?? null;
 
     const grossSpreadPct =
-      bestBuy && bestSell && bestSell.price_brl > bestBuy.price_brl
+      bestBuy && bestSell
         ? Number((((bestSell.price_brl - bestBuy.price_brl) / bestBuy.price_brl) * 100).toFixed(4))
         : 0;
 
     const bestNetForAmount = opportunities
-      .filter((opp) => amountBrl >= opp.executable_min_brl && amountBrl <= opp.executable_max_brl)
+      .filter((opp) => opp.executable && amountBrl >= opp.executable_min_brl && amountBrl <= opp.executable_max_brl)
       .map((opp) => {
         const usdt = amountBrl / opp.buy_price_brl;
         const gross = usdt * opp.sell_price_brl - amountBrl;
@@ -203,16 +214,20 @@ export async function GET(request: NextRequest) {
 
     const payload: P2PArbitrageResponse = {
       timestamp: new Date().toISOString(),
-      source: "binance-p2p",
+      source: "binance-p2p-usdt",
       fiat: "BRL",
       asset: "USDT",
       buy_offers: buyOffers,
       sell_offers: sellOffers,
       opportunities,
       summary: {
+        api_connected: true,
         buy_count: buyOffers.length,
         sell_count: sellOffers.length,
+        raw_buy_rows: rawBuyRows.length,
+        raw_sell_rows: rawSellRows.length,
         opportunities_count: opportunities.length,
+        profitable_count: profitableCount,
         best_buy_price_brl: bestBuy?.price_brl ?? null,
         best_sell_price_brl: bestSell?.price_brl ?? null,
         gross_spread_pct: grossSpreadPct,
@@ -228,29 +243,35 @@ export async function GET(request: NextRequest) {
           : null,
       },
       warning:
-        "Estimativa para monitoramento. Considere risco de execucao, latencia, bloqueio de conta e limites dinamicos dos anuncios.",
+        rawBuyRows.length === 0 || rawSellRows.length === 0
+          ? "API conectada, mas sem anuncios para este par/filtro neste momento."
+          : "Estimativa para monitoramento. Considere risco de execucao, latencia, bloqueio de conta e limites dinamicos dos anuncios.",
     };
 
-    cache = {
+    cache.set(cacheKey, {
       expiresAt: now + CACHE_TTL_MS,
       payload,
-    };
+    });
 
     return NextResponse.json(payload, { status: 200 });
   } catch (err) {
     return NextResponse.json(
       {
         timestamp: new Date().toISOString(),
-        source: "binance-p2p",
+        source: "binance-p2p-usdt",
         fiat: "BRL",
         asset: "USDT",
         buy_offers: [],
         sell_offers: [],
         opportunities: [],
         summary: {
+          api_connected: false,
           buy_count: 0,
           sell_count: 0,
+          raw_buy_rows: 0,
+          raw_sell_rows: 0,
           opportunities_count: 0,
+          profitable_count: 0,
           best_buy_price_brl: null,
           best_sell_price_brl: null,
           gross_spread_pct: 0,

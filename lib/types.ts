@@ -52,6 +52,7 @@ export interface P2PArbitrageOpportunity {
   gross_spread_pct: number;
   gross_spread_brl_per_1000: number;
   est_liquidity_usdt: number;
+  executable: boolean;
   executable_min_brl: number;
   executable_max_brl: number;
   buy_seller: string;
@@ -61,9 +62,13 @@ export interface P2PArbitrageOpportunity {
 }
 
 export interface P2PArbitrageSummary {
+  api_connected: boolean;
   buy_count: number;
   sell_count: number;
+  raw_buy_rows: number;
+  raw_sell_rows: number;
   opportunities_count: number;
+  profitable_count: number;
   best_buy_price_brl: number | null;
   best_sell_price_brl: number | null;
   gross_spread_pct: number;
