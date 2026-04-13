@@ -8,11 +8,25 @@ const CACHE_TTL_MS = 15_000;
 
 const SYMBOLS = ["BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "ADA", "AVAX", "LINK", "TON", "TRX"];
 
-type Venue = "binance" | "bybit";
+type Venue = "binance" | "bybit" | "okx" | "bitget" | "gate" | "mexc";
 
 type VenueFees = {
   spot_taker_pct: number;
   futures_taker_pct: number;
+};
+
+type QuoteRow = {
+  spot_bid: number;
+  spot_ask: number;
+  futures_bid: number;
+  futures_ask: number;
+  funding_pct_8h: number;
+};
+
+type VenueConfig = {
+  id: Venue;
+  label: string;
+  fetcher: (symbol: string) => Promise<QuoteRow | null>;
 };
 
 type SpotFuturesRow = {
@@ -89,7 +103,7 @@ async function fetchJson(url: string): Promise<any> {
   return res.json();
 }
 
-async function fetchBinanceSymbol(symbol: string): Promise<{ spot_bid: number; spot_ask: number; futures_bid: number; futures_ask: number; funding_pct_8h: number } | null> {
+async function fetchBinanceSymbol(symbol: string): Promise<QuoteRow | null> {
   const pair = `${symbol}USDT`;
   const [spotBook, futuresBook, funding] = await Promise.all([
     fetchJson(`https://api.binance.com/api/v3/ticker/bookTicker?symbol=${pair}`),
@@ -116,7 +130,7 @@ async function fetchBinanceSymbol(symbol: string): Promise<{ spot_bid: number; s
   };
 }
 
-async function fetchBybitSymbol(symbol: string): Promise<{ spot_bid: number; spot_ask: number; futures_bid: number; futures_ask: number; funding_pct_8h: number } | null> {
+async function fetchBybitSymbol(symbol: string): Promise<QuoteRow | null> {
   const pair = `${symbol}USDT`;
   const [spotTickers, futuresTickers] = await Promise.all([
     fetchJson(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${pair}`),
@@ -145,12 +159,131 @@ async function fetchBybitSymbol(symbol: string): Promise<{ spot_bid: number; spo
   };
 }
 
+async function fetchOkxSymbol(symbol: string): Promise<QuoteRow | null> {
+  const pair = `${symbol}-USDT`;
+  const [spotBook, futuresBook, funding] = await Promise.all([
+    fetchJson(`https://www.okx.com/api/v5/market/books?instId=${pair}&sz=1`),
+    fetchJson(`https://www.okx.com/api/v5/market/books?instId=${pair}-SWAP&sz=1`),
+    fetchJson(`https://www.okx.com/api/v5/public/funding-rate?instId=${pair}-SWAP`),
+  ]);
+
+  const s0 = Array.isArray(spotBook?.data) ? spotBook.data[0] ?? {} : {};
+  const f0 = Array.isArray(futuresBook?.data) ? futuresBook.data[0] ?? {} : {};
+  const fr0 = Array.isArray(funding?.data) ? funding.data[0] ?? {} : {};
+
+  const spotBid = safeNumber(Array.isArray(s0.bids) ? s0.bids[0]?.[0] : 0);
+  const spotAsk = safeNumber(Array.isArray(s0.asks) ? s0.asks[0]?.[0] : 0);
+  const futBid = safeNumber(Array.isArray(f0.bids) ? f0.bids[0]?.[0] : 0);
+  const futAsk = safeNumber(Array.isArray(f0.asks) ? f0.asks[0]?.[0] : 0);
+  const fundingPct8h = safeNumber(fr0.fundingRate) * 100;
+
+  if (spotBid <= 0 || spotAsk <= 0 || futBid <= 0 || futAsk <= 0) {
+    return null;
+  }
+
+  return {
+    spot_bid: spotBid,
+    spot_ask: spotAsk,
+    futures_bid: futBid,
+    futures_ask: futAsk,
+    funding_pct_8h: fundingPct8h,
+  };
+}
+
+async function fetchBitgetSymbol(symbol: string): Promise<QuoteRow | null> {
+  const pair = `${symbol}USDT`;
+  const [spotBook, futuresBook, funding] = await Promise.all([
+    fetchJson(`https://api.bitget.com/api/v2/spot/market/orderbook?symbol=${pair}&type=step0&limit=1`),
+    fetchJson(`https://api.bitget.com/api/v2/mix/market/orderbook?symbol=${symbol}USDT&productType=USDT-FUTURES&limit=1`),
+    fetchJson(`https://api.bitget.com/api/v2/mix/market/current-fund-rate?symbol=${symbol}USDT&productType=USDT-FUTURES`),
+  ]);
+
+  const s0 = Array.isArray(spotBook?.data?.bids) ? spotBook.data : {};
+  const f0 = futuresBook?.data ?? {};
+  const fr0 = funding?.data?.[0] ?? funding?.data ?? {};
+
+  const spotBid = safeNumber(Array.isArray(s0.bids) ? s0.bids[0]?.[0] : 0);
+  const spotAsk = safeNumber(Array.isArray(s0.asks) ? s0.asks[0]?.[0] : 0);
+  const futBid = safeNumber(Array.isArray(f0.bids) ? f0.bids[0]?.[0] : 0);
+  const futAsk = safeNumber(Array.isArray(f0.asks) ? f0.asks[0]?.[0] : 0);
+  const fundingPct8h = safeNumber(fr0.fundingRate) * 100;
+
+  if (spotBid <= 0 || spotAsk <= 0 || futBid <= 0 || futAsk <= 0) {
+    return null;
+  }
+
+  return {
+    spot_bid: spotBid,
+    spot_ask: spotAsk,
+    futures_bid: futBid,
+    futures_ask: futAsk,
+    funding_pct_8h: fundingPct8h,
+  };
+}
+
+async function fetchGateSymbol(symbol: string): Promise<QuoteRow | null> {
+  const pair = `${symbol}_USDT`;
+  const [spotBook, futuresBook, funding] = await Promise.all([
+    fetchJson(`https://api.gateio.ws/api/v4/spot/order_book?currency_pair=${pair}&limit=1`),
+    fetchJson(`https://api.gateio.ws/api/v4/futures/usdt/order_book?contract=${pair}&limit=1`),
+    fetchJson(`https://api.gateio.ws/api/v4/futures/usdt/contracts/${pair}`),
+  ]);
+
+  const spotBid = safeNumber(Array.isArray(spotBook?.bids) ? spotBook.bids[0]?.[0] : 0);
+  const spotAsk = safeNumber(Array.isArray(spotBook?.asks) ? spotBook.asks[0]?.[0] : 0);
+  const futBid = safeNumber(Array.isArray(futuresBook?.bids) ? futuresBook.bids[0]?.p : 0);
+  const futAsk = safeNumber(Array.isArray(futuresBook?.asks) ? futuresBook.asks[0]?.p : 0);
+  const fundingPct8h = safeNumber(funding?.funding_rate) * 100;
+
+  if (spotBid <= 0 || spotAsk <= 0 || futBid <= 0 || futAsk <= 0) {
+    return null;
+  }
+
+  return {
+    spot_bid: spotBid,
+    spot_ask: spotAsk,
+    futures_bid: futBid,
+    futures_ask: futAsk,
+    funding_pct_8h: fundingPct8h,
+  };
+}
+
+async function fetchMexcSymbol(symbol: string): Promise<QuoteRow | null> {
+  const pair = `${symbol}USDT`;
+  const [spotBook, futuresBook, funding] = await Promise.all([
+    fetchJson(`https://api.mexc.com/api/v3/depth?symbol=${pair}&limit=1`),
+    fetchJson(`https://contract.mexc.com/api/v1/contract/depth/${pair}?limit=1`),
+    fetchJson(`https://contract.mexc.com/api/v1/contract/funding_rate/${pair}`),
+  ]);
+
+  const spotBid = safeNumber(Array.isArray(spotBook?.bids) ? spotBook.bids[0]?.[0] : 0);
+  const spotAsk = safeNumber(Array.isArray(spotBook?.asks) ? spotBook.asks[0]?.[0] : 0);
+
+  const fdata = futuresBook?.data ?? {};
+  const futBid = safeNumber(Array.isArray(fdata.bids) ? fdata.bids[0]?.[0] ?? fdata.bids[0]?.price : 0);
+  const futAsk = safeNumber(Array.isArray(fdata.asks) ? fdata.asks[0]?.[0] ?? fdata.asks[0]?.price : 0);
+  const fr = funding?.data ?? {};
+  const fundingPct8h = safeNumber(fr.fundingRate ?? fr.funding_rate) * 100;
+
+  if (spotBid <= 0 || spotAsk <= 0 || futBid <= 0 || futAsk <= 0) {
+    return null;
+  }
+
+  return {
+    spot_bid: spotBid,
+    spot_ask: spotAsk,
+    futures_bid: futBid,
+    futures_ask: futAsk,
+    funding_pct_8h: fundingPct8h,
+  };
+}
+
 function buildOpportunity(
   symbol: string,
   venue: Venue,
   venueLabel: string,
   fees: VenueFees,
-  row: { spot_bid: number; spot_ask: number; futures_bid: number; futures_ask: number; funding_pct_8h: number },
+  row: QuoteRow,
   slippageBufferPct: number
 ): SpotFuturesRow {
   const basisPct = ((row.futures_bid - row.spot_ask) / row.spot_ask) * 100;
@@ -192,33 +325,39 @@ export async function GET(request: NextRequest) {
   const feesByVenue: Record<Venue, VenueFees> = {
     binance: { spot_taker_pct: 0.1, futures_taker_pct: 0.05 },
     bybit: { spot_taker_pct: 0.1, futures_taker_pct: 0.055 },
+    okx: { spot_taker_pct: 0.1, futures_taker_pct: 0.05 },
+    bitget: { spot_taker_pct: 0.1, futures_taker_pct: 0.06 },
+    gate: { spot_taker_pct: 0.2, futures_taker_pct: 0.05 },
+    mexc: { spot_taker_pct: 0.1, futures_taker_pct: 0.04 },
   };
 
+  const venues: VenueConfig[] = [
+    { id: "binance", label: "Binance", fetcher: fetchBinanceSymbol },
+    { id: "bybit", label: "Bybit", fetcher: fetchBybitSymbol },
+    { id: "okx", label: "OKX", fetcher: fetchOkxSymbol },
+    { id: "bitget", label: "Bitget", fetcher: fetchBitgetSymbol },
+    { id: "gate", label: "Gate.io", fetcher: fetchGateSymbol },
+    { id: "mexc", label: "MEXC", fetcher: fetchMexcSymbol },
+  ];
+
   const opportunities: SpotFuturesRow[] = [];
-  const warnings = new Set<string>();
+  const warningByVenue = new Map<string, Set<string>>();
 
   await Promise.all(
     SYMBOLS.map(async (symbol) => {
-      const jobs: Array<Promise<void>> = [
-        (async () => {
-          try {
-            const row = await fetchBinanceSymbol(symbol);
-            if (!row) return;
-            opportunities.push(buildOpportunity(symbol, "binance", "Binance", feesByVenue.binance, row, slippageBufferPct));
-          } catch (err) {
-            warnings.add(`Binance ${symbol}: ${normalizeError(err)}`);
-          }
-        })(),
-        (async () => {
-          try {
-            const row = await fetchBybitSymbol(symbol);
-            if (!row) return;
-            opportunities.push(buildOpportunity(symbol, "bybit", "Bybit", feesByVenue.bybit, row, slippageBufferPct));
-          } catch (err) {
-            warnings.add(`Bybit ${symbol}: ${normalizeError(err)}`);
-          }
-        })(),
-      ];
+      const jobs: Array<Promise<void>> = venues.map(async (venue) => {
+        try {
+          const row = await venue.fetcher(symbol);
+          if (!row) return;
+          opportunities.push(buildOpportunity(symbol, venue.id, venue.label, feesByVenue[venue.id], row, slippageBufferPct));
+        } catch (err) {
+          const key = venue.label;
+          const msg = normalizeError(err);
+          const current = warningByVenue.get(key) ?? new Set<string>();
+          current.add(msg);
+          warningByVenue.set(key, current);
+        }
+      });
 
       await Promise.all(jobs);
     })
@@ -232,15 +371,18 @@ export async function GET(request: NextRequest) {
     opportunities: sorted,
     summary: {
       symbols_monitored: SYMBOLS.length,
-      venues: ["binance", "bybit"],
+      venues: venues.map((v) => v.id),
       profitable_count: profitableCount,
       best_opportunity: sorted[0] ?? null,
       slippage_buffer_pct: slippageBufferPct,
     },
   };
 
-  if (warnings.size > 0) {
-    payload.warning = [...warnings].slice(0, 6).join(" | ");
+  if (warningByVenue.size > 0) {
+    payload.warning = [...warningByVenue.entries()]
+      .map(([venue, msgs]) => `${venue}: ${[...msgs].join(", ")}`)
+      .slice(0, 6)
+      .join(" | ");
   }
 
   cache.set(cacheKey, {

@@ -217,21 +217,6 @@ export default function HomePage() {
               Abrir Geral
             </Link>
             <Link
-              href="/p2p"
-              style={{
-                border: "1px solid var(--card-border)",
-                borderRadius: 12,
-                padding: "10px 12px",
-                textDecoration: "none",
-                background: "var(--card)",
-                color: "var(--text)",
-                fontSize: 13,
-                fontWeight: 600,
-              }}
-            >
-              Abrir P2P
-            </Link>
-            <Link
               href="/spot-futures"
               style={{
                 border: "1px solid var(--card-border)",

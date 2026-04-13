@@ -98,7 +98,6 @@ export default function SpotFuturesPage() {
             <div style={{ display: "flex", gap: 10, fontSize: 13, marginBottom: 8, flexWrap: "wrap" }}>
               <Link href="/" style={{ textDecoration: "none", color: "var(--muted)" }}>USDT/BRL</Link>
               <Link href="/fan-tokens" style={{ textDecoration: "none", color: "var(--muted)" }}>Arbitragem Geral</Link>
-              <Link href="/p2p" style={{ textDecoration: "none", color: "var(--muted)" }}>Arbitragem P2P</Link>
             </div>
             <h1 style={{ margin: 0, fontSize: 34, letterSpacing: "-0.8px", fontWeight: 800 }}>Spot x Futuro</h1>
             <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 15 }}>
@@ -181,6 +180,9 @@ export default function SpotFuturesPage() {
           </div>
 
           {data?.warning && <div style={{ fontSize: 12, color: "#f59e0b" }}>Aviso: {data.warning}</div>}
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>
+            Se uma corretora retornar 403/451, a API dela esta bloqueada para a regiao/IP atual e os calculos seguem com as demais.
+          </div>
         </section>
 
         <section
