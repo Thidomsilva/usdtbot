@@ -13,6 +13,10 @@ type ExchangeQuote = {
   price_brl?: number;
   bid_price_brl?: number;
   ask_price_brl?: number;
+  original_currency?: "BRL" | "USDT";
+  original_price?: number;
+  original_bid_price?: number;
+  original_ask_price?: number;
   volume_24h_brl?: number;
   change_24h?: number;
 };
@@ -25,6 +29,8 @@ type TokenRow = {
   category?: "fan_token" | "major" | "altcoin";
   status: "ok" | "error";
   avg_price_brl?: number | null;
+  avg_original_price?: number | null;
+  avg_original_currency?: "BRL" | "USDT" | null;
   exchanges?: ExchangeQuote[];
   best_arb?: {
     buy_exchange: string;
@@ -59,6 +65,7 @@ type FanTokensResponse = {
 };
 
 const REFRESH_SECONDS = 45;
+type DisplayMode = "brl" | "original";
 
 const CATEGORY_GROUPS: {
   key: "major" | "altcoin" | "fan_token";
@@ -112,11 +119,33 @@ function hasValue(value: number | null | undefined): value is number {
   return value !== null && value !== undefined;
 }
 
+function formatPriceWithCurrency(price: number, currency: "BRL" | "USDT") {
+  if (currency === "BRL") return `R$ ${formatPrice(price)}`;
+  return `${formatPrice(price)} ${currency}`;
+}
+
+function getExchangeDisplayValue(
+  exchange: ExchangeQuote,
+  kind: "reference" | "buy" | "sell",
+  mode: DisplayMode
+): { price?: number; currency?: "BRL" | "USDT" } {
+  if (mode === "original") {
+    if (kind === "reference") return { price: exchange.original_price, currency: exchange.original_currency };
+    if (kind === "buy") return { price: exchange.original_ask_price, currency: exchange.original_currency };
+    return { price: exchange.original_bid_price, currency: exchange.original_currency };
+  }
+
+  if (kind === "reference") return { price: exchange.price_brl, currency: "BRL" };
+  if (kind === "buy") return { price: exchange.ask_price_brl, currency: "BRL" };
+  return { price: exchange.bid_price_brl, currency: "BRL" };
+}
+
 export default function FanTokensPage() {
   const [data, setData] = useState<FanTokensResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [countdown, setCountdown] = useState(REFRESH_SECONDS);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [displayMode, setDisplayMode] = useState<DisplayMode>("brl");
 
   async function load() {
     try {
@@ -129,6 +158,17 @@ export default function FanTokensPage() {
       setCountdown(REFRESH_SECONDS);
     }
   }
+
+  useEffect(() => {
+    const saved = localStorage.getItem("fan-tokens-display-mode");
+    if (saved === "brl" || saved === "original") {
+      setDisplayMode(saved);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("fan-tokens-display-mode", displayMode);
+  }, [displayMode]);
 
   useEffect(() => {
     load();
@@ -185,23 +225,56 @@ export default function FanTokensPage() {
               O spread usa ask para compra e bid para venda no livro. O preço de referência continua sendo exibido separado.
             </p>
           </div>
-          <button
-            onClick={() => {
-              setLoading(true);
-              load();
-            }}
-            disabled={loading}
-            style={{
-              border: "1px solid var(--card-border)",
-              borderRadius: 12,
-              padding: "10px 14px",
-              background: "linear-gradient(135deg, var(--card), rgba(255,255,255,0.12))",
-              color: "var(--text)",
-              cursor: "pointer",
-            }}
-          >
-            {loading ? "Atualizando..." : "Atualizar"}
-          </button>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", border: "1px solid var(--card-border)", borderRadius: 12, overflow: "hidden", background: "var(--card)" }}>
+              <button
+                onClick={() => setDisplayMode("brl")}
+                style={{
+                  border: "none",
+                  padding: "10px 12px",
+                  background: displayMode === "brl" ? "rgba(255,255,255,0.08)" : "transparent",
+                  color: "var(--text)",
+                  cursor: "pointer",
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+              >
+                Exibir em BRL
+              </button>
+              <button
+                onClick={() => setDisplayMode("original")}
+                style={{
+                  border: "none",
+                  borderLeft: "1px solid var(--card-border)",
+                  padding: "10px 12px",
+                  background: displayMode === "original" ? "rgba(255,255,255,0.08)" : "transparent",
+                  color: "var(--text)",
+                  cursor: "pointer",
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+              >
+                Exibir em moeda original
+              </button>
+            </div>
+            <button
+              onClick={() => {
+                setLoading(true);
+                load();
+              }}
+              disabled={loading}
+              style={{
+                border: "1px solid var(--card-border)",
+                borderRadius: 12,
+                padding: "10px 14px",
+                background: "linear-gradient(135deg, var(--card), rgba(255,255,255,0.12))",
+                color: "var(--text)",
+                cursor: "pointer",
+              }}
+            >
+              {loading ? "Atualizando..." : "Atualizar"}
+            </button>
+          </div>
         </header>
 
         <div style={{ marginTop: 14, color: "var(--muted)", fontSize: 13 }}>
@@ -331,10 +404,16 @@ export default function FanTokensPage() {
                           </div>
                           <div style={{ textAlign: "right" }}>
                             <div style={{ fontWeight: 800, fontSize: 12, color: "var(--muted)" }}>
-                              Referencia
+                              {displayMode === "brl" ? "Referencia" : "Moeda original"}
                             </div>
                             <div style={{ fontWeight: 800 }}>
-                              {hasValue(token.avg_price_brl) ? `R$ ${formatPrice(token.avg_price_brl)}` : "Sem dados"}
+                              {displayMode === "brl"
+                                ? hasValue(token.avg_price_brl)
+                                  ? formatPriceWithCurrency(token.avg_price_brl, "BRL")
+                                  : "Sem dados"
+                                : hasValue(token.avg_original_price) && token.avg_original_currency
+                                  ? formatPriceWithCurrency(token.avg_original_price, token.avg_original_currency)
+                                  : "Misto"}
                             </div>
                             <div style={{ fontSize: 12, fontWeight: token.best_arb ? 700 : 400, color: spreadColor }}>
                               {token.best_arb ? `▲ ${token.best_arb.spread_pct.toFixed(2)}%` : "Sem arbitragem"}
@@ -345,57 +424,72 @@ export default function FanTokensPage() {
 
                       {isOpen && (
                         <div style={{ borderTop: "1px solid var(--card-border)", padding: 12 }}>
-                          {token.best_arb && (
-                            <div style={{ fontSize: 12, marginBottom: 10, color: "var(--muted)" }}>
-                              Comprar no ask de <strong>{token.best_arb.buy_exchange_label}</strong> por R$ {formatPrice(token.best_arb.buy_price_brl)} e vender no bid de{" "}
-                              <strong>{token.best_arb.sell_exchange_label}</strong> por R$ {formatPrice(token.best_arb.sell_price_brl)}.
-                            </div>
-                          )}
+                          {token.best_arb && (() => {
+                            const buyExchange = (token.exchanges ?? []).find((ex) => ex.exchange === token.best_arb?.buy_exchange);
+                            const sellExchange = (token.exchanges ?? []).find((ex) => ex.exchange === token.best_arb?.sell_exchange);
+                            const buyValue = buyExchange ? getExchangeDisplayValue(buyExchange, "buy", displayMode) : { price: token.best_arb.buy_price_brl, currency: "BRL" as const };
+                            const sellValue = sellExchange ? getExchangeDisplayValue(sellExchange, "sell", displayMode) : { price: token.best_arb.sell_price_brl, currency: "BRL" as const };
+
+                            return (
+                              <div style={{ fontSize: 12, marginBottom: 10, color: "var(--muted)" }}>
+                                Comprar no ask de <strong>{token.best_arb.buy_exchange_label}</strong> por {buyValue.price && buyValue.currency ? formatPriceWithCurrency(buyValue.price, buyValue.currency) : "-"} e vender no bid de{" "}
+                                <strong>{token.best_arb.sell_exchange_label}</strong> por {sellValue.price && sellValue.currency ? formatPriceWithCurrency(sellValue.price, sellValue.currency) : "-"}.
+                              </div>
+                            );
+                          })()}
                           <div style={{ display: "grid", gap: 8 }}>
                             {(token.exchanges ?? [])
                               .slice()
                               .sort((a, b) => (a.ask_price_brl ?? a.price_brl ?? Number.POSITIVE_INFINITY) - (b.ask_price_brl ?? b.price_brl ?? Number.POSITIVE_INFINITY))
-                              .map((ex) => (
-                                <div
-                                  key={`${token.id}-${ex.exchange}`}
-                                  style={{
-                                    border: "1px solid var(--card-border)",
-                                    borderRadius: 10,
-                                    padding: "8px 10px",
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    gap: 8,
-                                  }}
-                                >
-                                  <div>
-                                    <div style={{ fontSize: 13, fontWeight: 700 }}>{ex.label}</div>
-                                    <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                                      {ex.pix ? "PIX" : "Sem PIX"} ·{" "}
-                                      {ex.accepts_brl ? "BRL direto" : "USDT convertido"}
-                                      {ex.estimated ? " · estimado" : ""}
+                              .map((ex) => {
+                                const refValue = getExchangeDisplayValue(ex, "reference", displayMode);
+                                const buyValue = getExchangeDisplayValue(ex, "buy", displayMode);
+                                const sellValue = getExchangeDisplayValue(ex, "sell", displayMode);
+
+                                return (
+                                  <div
+                                    key={`${token.id}-${ex.exchange}`}
+                                    style={{
+                                      border: "1px solid var(--card-border)",
+                                      borderRadius: 10,
+                                      padding: "8px 10px",
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      gap: 8,
+                                    }}
+                                  >
+                                    <div>
+                                      <div style={{ fontSize: 13, fontWeight: 700 }}>{ex.label}</div>
+                                      <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                                        {ex.pix ? "PIX" : "Sem PIX"} ·{" "}
+                                        {ex.accepts_brl ? "BRL direto" : "USDT convertido"}
+                                        {ex.estimated ? " · estimado" : ""}
+                                      </div>
+                                    </div>
+                                    <div style={{ textAlign: "right" }}>
+                                      {ex.status === "ok" ? (
+                                        <>
+                                          <div style={{ fontWeight: 700 }}>
+                                            Ref. {refValue.price && refValue.currency ? formatPriceWithCurrency(refValue.price, refValue.currency) : "-"}
+                                          </div>
+                                          {((buyValue.price ?? 0) > 0 || (sellValue.price ?? 0) > 0) && (
+                                            <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                                              Comprar {buyValue.price && buyValue.currency ? formatPriceWithCurrency(buyValue.price, buyValue.currency) : "-"} · Vender {sellValue.price && sellValue.currency ? formatPriceWithCurrency(sellValue.price, sellValue.currency) : "-"}
+                                            </div>
+                                          )}
+                                          <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                                            {(ex.change_24h ?? 0) >= 0 ? "+" : ""}
+                                            {(ex.change_24h ?? 0).toFixed(2)}% · Vol R${" "}
+                                            {((ex.volume_24h_brl ?? 0) / 1000).toFixed(1)}K
+                                          </div>
+                                        </>
+                                      ) : (
+                                        <div style={{ fontSize: 12, color: "var(--muted)" }}>Nao listado</div>
+                                      )}
                                     </div>
                                   </div>
-                                  <div style={{ textAlign: "right" }}>
-                                    {ex.status === "ok" ? (
-                                      <>
-                                        <div style={{ fontWeight: 700 }}>Ref. R$ {formatPrice(ex.price_brl ?? 0)}</div>
-                                        {((ex.ask_price_brl ?? 0) > 0 || (ex.bid_price_brl ?? 0) > 0) && (
-                                          <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                                            Comprar {ex.ask_price_brl ? `R$ ${formatPrice(ex.ask_price_brl)}` : "-"} · Vender {ex.bid_price_brl ? `R$ ${formatPrice(ex.bid_price_brl)}` : "-"}
-                                          </div>
-                                        )}
-                                        <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                                          {(ex.change_24h ?? 0) >= 0 ? "+" : ""}
-                                          {(ex.change_24h ?? 0).toFixed(2)}% · Vol R${" "}
-                                          {((ex.volume_24h_brl ?? 0) / 1000).toFixed(1)}K
-                                        </div>
-                                      </>
-                                    ) : (
-                                      <div style={{ fontSize: 12, color: "var(--muted)" }}>Nao listado</div>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
+                                );
+                              })}
                           </div>
                         </div>
                       )}

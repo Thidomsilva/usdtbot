@@ -37,6 +37,10 @@ type ExchangeQuote = {
   price_brl?: number;
   bid_price_brl?: number;
   ask_price_brl?: number;
+  original_currency?: "BRL" | "USDT";
+  original_price?: number;
+  original_bid_price?: number;
+  original_ask_price?: number;
   volume_24h_brl?: number;
   change_24h?: number;
   high_24h_brl?: number;
@@ -423,6 +427,10 @@ async function fetchTokenOnExchange(tokenSymbol: string, exchange: ExchangeMeta,
     const priceBrl = raw.price_brl_direct ?? raw.price_usdt * usdBrl;
     const bidPriceBrl = raw.bid_brl_direct ?? ((raw.bid_usdt ?? 0) > 0 ? (raw.bid_usdt ?? 0) * usdBrl : 0);
     const askPriceBrl = raw.ask_brl_direct ?? ((raw.ask_usdt ?? 0) > 0 ? (raw.ask_usdt ?? 0) * usdBrl : 0);
+  const originalCurrency = raw.price_brl_direct ? "BRL" : "USDT";
+  const originalPrice = raw.price_brl_direct ?? raw.price_usdt;
+  const originalBidPrice = raw.bid_brl_direct ?? raw.bid_usdt;
+  const originalAskPrice = raw.ask_brl_direct ?? raw.ask_usdt;
     const highBrl = raw.high > 0 ? raw.high * (raw.price_brl_direct ? 1 : usdBrl) : priceBrl;
     const lowBrl = raw.low > 0 ? raw.low * (raw.price_brl_direct ? 1 : usdBrl) : priceBrl;
     const volumeBrl = raw.price_brl_direct ? raw.volume : raw.volume * usdBrl;
@@ -437,6 +445,10 @@ async function fetchTokenOnExchange(tokenSymbol: string, exchange: ExchangeMeta,
       price_brl: Number(priceBrl.toFixed(8)),
       bid_price_brl: bidPriceBrl > 0 ? Number(bidPriceBrl.toFixed(8)) : undefined,
       ask_price_brl: askPriceBrl > 0 ? Number(askPriceBrl.toFixed(8)) : undefined,
+      original_currency: originalCurrency,
+      original_price: originalPrice > 0 ? Number(originalPrice.toFixed(8)) : undefined,
+      original_bid_price: (originalBidPrice ?? 0) > 0 ? Number((originalBidPrice ?? 0).toFixed(8)) : undefined,
+      original_ask_price: (originalAskPrice ?? 0) > 0 ? Number((originalAskPrice ?? 0).toFixed(8)) : undefined,
       volume_24h_brl: Number(volumeBrl.toFixed(2)),
       change_24h: Number(raw.change_24h.toFixed(4)),
       high_24h_brl: Number(highBrl.toFixed(8)),
@@ -499,8 +511,12 @@ export async function GET() {
           EXCHANGES.map((exchange) => fetchTokenOnExchange(token.symbol, exchange, usdBrl))
         );
         const okQuotes = exchanges.filter((e) => e.status === "ok" && (e.price_brl ?? 0) > 0);
+        const originalCurrencies = [...new Set(okQuotes.map((e) => e.original_currency).filter(Boolean))] as Array<"BRL" | "USDT">;
         const avg = okQuotes.length
           ? Number((okQuotes.reduce((acc, e) => acc + (e.price_brl ?? 0), 0) / okQuotes.length).toFixed(8))
+          : null;
+        const avgOriginal = okQuotes.length > 0 && originalCurrencies.length === 1
+          ? Number((okQuotes.reduce((acc, e) => acc + (e.original_price ?? 0), 0) / okQuotes.length).toFixed(8))
           : null;
 
         return {
@@ -511,6 +527,8 @@ export async function GET() {
           category: token.category ?? "fan_token",
           status: "ok",
           avg_price_brl: avg,
+          avg_original_price: avgOriginal,
+          avg_original_currency: originalCurrencies.length === 1 ? originalCurrencies[0] : null,
           exchanges,
           best_arb: getBestArb(exchanges),
         };
