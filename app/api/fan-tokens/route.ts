@@ -55,8 +55,32 @@ type Arb = {
   buy_price_brl: number;
   sell_price_brl: number;
   spread_pct: number;
+  net_spread_pct: number;
+  buy_fee_pct: number;
+  sell_fee_pct: number;
+  quality: "inviavel" | "apertada" | "executavel";
   profit_est_brl_per_100: number;
 };
+
+const FEES_BY_EXCHANGE: Record<string, { buy_pct: number; sell_pct: number }> = {
+  binance: { buy_pct: 0.2, sell_pct: 0.2 },
+  coinbase: { buy_pct: 0.6, sell_pct: 0.6 },
+  kraken: { buy_pct: 0.4, sell_pct: 0.4 },
+  bybit: { buy_pct: 0.2, sell_pct: 0.2 },
+  bingx: { buy_pct: 0.2, sell_pct: 0.2 },
+  mercadobitcoin: { buy_pct: 0.45, sell_pct: 0.45 },
+  okx: { buy_pct: 0.2, sell_pct: 0.2 },
+  kucoin: { buy_pct: 0.2, sell_pct: 0.2 },
+  bitget: { buy_pct: 0.2, sell_pct: 0.2 },
+  novadax: { buy_pct: 0.35, sell_pct: 0.35 },
+  gate: { buy_pct: 0.2, sell_pct: 0.2 },
+};
+
+function classifyOpportunity(netSpreadPct: number): Arb["quality"] {
+  if (netSpreadPct <= 0) return "inviavel";
+  if (netSpreadPct < 0.8) return "apertada";
+  return "executavel";
+}
 
 const TOKENS: FanToken[] = [
   // === Grandes do mercado ===
@@ -478,7 +502,10 @@ function getBestArb(quotes: ExchangeQuote[]): Arb | null {
       if ((sell.bid_price_brl ?? 0) <= (buy.ask_price_brl ?? 0)) continue;
 
       const spread = (((sell.bid_price_brl ?? 0) - (buy.ask_price_brl ?? 0)) / (buy.ask_price_brl ?? 1)) * 100;
-      if (!best || spread > best.spread_pct) {
+      const buyFeePct = FEES_BY_EXCHANGE[buy.exchange]?.buy_pct ?? 0.2;
+      const sellFeePct = FEES_BY_EXCHANGE[sell.exchange]?.sell_pct ?? 0.2;
+      const netSpreadPct = spread - buyFeePct - sellFeePct;
+      if (!best || netSpreadPct > best.net_spread_pct) {
         best = {
           buy_exchange: buy.exchange,
           buy_exchange_label: buy.label,
@@ -487,6 +514,10 @@ function getBestArb(quotes: ExchangeQuote[]): Arb | null {
           buy_price_brl: buy.ask_price_brl ?? 0,
           sell_price_brl: sell.bid_price_brl ?? 0,
           spread_pct: Number(spread.toFixed(4)),
+          net_spread_pct: Number(netSpreadPct.toFixed(4)),
+          buy_fee_pct: buyFeePct,
+          sell_fee_pct: sellFeePct,
+          quality: classifyOpportunity(netSpreadPct),
           profit_est_brl_per_100: Number((((100 / (buy.ask_price_brl ?? 1)) * ((sell.bid_price_brl ?? 0) - (buy.ask_price_brl ?? 0))).toFixed(4))),
         };
       }

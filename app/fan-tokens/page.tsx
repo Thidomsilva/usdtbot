@@ -3,6 +3,17 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+type OpportunityQuality = "inviavel" | "apertada" | "executavel";
+
+type HistoryPoint = {
+  timestamp: string;
+  buyExchangeLabel: string;
+  sellExchangeLabel: string;
+  grossSpreadPct: number;
+  netSpreadPct: number;
+  quality: OpportunityQuality;
+};
+
 type ExchangeQuote = {
   exchange: string;
   label: string;
@@ -40,6 +51,10 @@ type TokenRow = {
     buy_price_brl: number;
     sell_price_brl: number;
     spread_pct: number;
+    net_spread_pct: number;
+    buy_fee_pct: number;
+    sell_fee_pct: number;
+    quality: OpportunityQuality;
   } | null;
   error?: string;
 };
@@ -66,6 +81,8 @@ type FanTokensResponse = {
 
 const REFRESH_SECONDS = 45;
 type DisplayMode = "brl" | "original";
+const ALERT_THRESHOLD_DEFAULT = "0.8";
+const HISTORY_LIMIT = 24;
 
 const CATEGORY_GROUPS: {
   key: "major" | "altcoin" | "fan_token";
@@ -140,12 +157,20 @@ function getExchangeDisplayValue(
   return { price: exchange.bid_price_brl, currency: "BRL" };
 }
 
+function qualityMeta(quality: OpportunityQuality) {
+  if (quality === "executavel") return { label: "Executavel", color: "#16a34a", background: "rgba(22,163,74,0.14)" };
+  if (quality === "apertada") return { label: "Apertada", color: "#ca8a04", background: "rgba(202,138,4,0.14)" };
+  return { label: "Inviavel", color: "#dc2626", background: "rgba(220,38,38,0.14)" };
+}
+
 export default function FanTokensPage() {
   const [data, setData] = useState<FanTokensResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [countdown, setCountdown] = useState(REFRESH_SECONDS);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [displayMode, setDisplayMode] = useState<DisplayMode>("brl");
+  const [alertThreshold, setAlertThreshold] = useState(ALERT_THRESHOLD_DEFAULT);
+  const [historyByToken, setHistoryByToken] = useState<Record<string, HistoryPoint[]>>({});
 
   async function load() {
     try {
@@ -164,11 +189,33 @@ export default function FanTokensPage() {
     if (saved === "brl" || saved === "original") {
       setDisplayMode(saved);
     }
+
+    const savedThreshold = localStorage.getItem("fan-tokens-alert-threshold");
+    if (savedThreshold) {
+      setAlertThreshold(savedThreshold);
+    }
+
+    const savedHistory = localStorage.getItem("fan-tokens-history");
+    if (savedHistory) {
+      try {
+        setHistoryByToken(JSON.parse(savedHistory) as Record<string, HistoryPoint[]>);
+      } catch {
+        localStorage.removeItem("fan-tokens-history");
+      }
+    }
   }, []);
 
   useEffect(() => {
     localStorage.setItem("fan-tokens-display-mode", displayMode);
   }, [displayMode]);
+
+  useEffect(() => {
+    localStorage.setItem("fan-tokens-alert-threshold", alertThreshold);
+  }, [alertThreshold]);
+
+  useEffect(() => {
+    localStorage.setItem("fan-tokens-history", JSON.stringify(historyByToken));
+  }, [historyByToken]);
 
   useEffect(() => {
     load();
@@ -195,9 +242,58 @@ export default function FanTokensPage() {
   const spreadChampions = useMemo(() => {
     if (!data?.tokens) return [] as TokenRow[];
     return data.tokens
-      .filter((t) => (t.best_arb?.spread_pct ?? 0) > 0)
-      .sort((a, b) => (b.best_arb?.spread_pct ?? 0) - (a.best_arb?.spread_pct ?? 0))
+      .filter((t) => (t.best_arb?.net_spread_pct ?? 0) > 0)
+      .sort((a, b) => (b.best_arb?.net_spread_pct ?? 0) - (a.best_arb?.net_spread_pct ?? 0))
       .slice(0, 6);
+  }, [data]);
+
+  const alertThresholdNum = useMemo(() => {
+    const value = Number(alertThreshold.replace(",", "."));
+    return Number.isFinite(value) && value >= 0 ? value : 0.8;
+  }, [alertThreshold]);
+
+  const activeAlerts = useMemo(() => {
+    if (!data?.tokens) return [] as TokenRow[];
+    return data.tokens
+      .filter((token) => (token.best_arb?.net_spread_pct ?? Number.NEGATIVE_INFINITY) >= alertThresholdNum)
+      .sort((a, b) => (b.best_arb?.net_spread_pct ?? 0) - (a.best_arb?.net_spread_pct ?? 0));
+  }, [data, alertThresholdNum]);
+
+  useEffect(() => {
+    if (!data?.tokens?.length) return;
+
+    setHistoryByToken((current) => {
+      const next = { ...current };
+
+      for (const token of data.tokens) {
+        const best = token.best_arb;
+        if (!best) continue;
+
+        const previous = next[token.id] ?? [];
+        const point: HistoryPoint = {
+          timestamp: data.timestamp,
+          buyExchangeLabel: best.buy_exchange_label,
+          sellExchangeLabel: best.sell_exchange_label,
+          grossSpreadPct: best.spread_pct,
+          netSpreadPct: best.net_spread_pct,
+          quality: best.quality,
+        };
+
+        const last = previous[previous.length - 1];
+        if (
+          last &&
+          last.buyExchangeLabel === point.buyExchangeLabel &&
+          last.sellExchangeLabel === point.sellExchangeLabel &&
+          Math.abs(last.netSpreadPct - point.netSpreadPct) < 0.0001
+        ) {
+          continue;
+        }
+
+        next[token.id] = [...previous, point].slice(-HISTORY_LIMIT);
+      }
+
+      return next;
+    });
   }, [data]);
 
   function openTokenCard(tokenId: string) {
@@ -284,6 +380,84 @@ export default function FanTokensPage() {
           {" · "}proxima atualizacao em {countdown}s
         </div>
 
+        <section
+          style={{
+            marginTop: 18,
+            background: "var(--card)",
+            border: "1px solid var(--card-border)",
+            borderRadius: 16,
+            padding: 18,
+            display: "grid",
+            gap: 12,
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 16 }}>Alertas de spread liquido</div>
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                Dispara visualmente quando a oportunidade fica acima do limite configurado.
+              </div>
+            </div>
+            <label style={{ fontSize: 12, color: "var(--muted)" }}>
+              Limite liquido (%)
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={alertThreshold}
+                onChange={(e) => setAlertThreshold(e.target.value)}
+                style={{
+                  marginLeft: 8,
+                  width: 92,
+                  border: "1px solid var(--card-border)",
+                  borderRadius: 8,
+                  padding: "6px 8px",
+                  background: "var(--bg)",
+                  color: "var(--text)",
+                }}
+              />
+            </label>
+          </div>
+
+          {activeAlerts.length === 0 ? (
+            <div style={{ fontSize: 13, color: "var(--muted)" }}>
+              Nenhum ativo acima de {alertThresholdNum.toFixed(2)}% liquido no momento.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+              {activeAlerts.slice(0, 8).map((token) => {
+                const quality = qualityMeta(token.best_arb?.quality ?? "inviavel");
+                return (
+                  <button
+                    key={`alert-${token.id}`}
+                    onClick={() => openTokenCard(token.id)}
+                    style={{
+                      textAlign: "left",
+                      border: `1px solid ${quality.color}55`,
+                      borderRadius: 12,
+                      padding: "10px 12px",
+                      background: quality.background,
+                      color: "var(--text)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                      <strong>{token.symbol}</strong>
+                      <span style={{ fontSize: 11, color: quality.color, fontWeight: 700 }}>{quality.label}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+                      {token.best_arb?.buy_exchange_label} → {token.best_arb?.sell_exchange_label}
+                    </div>
+                    <div style={{ fontSize: 13, color: quality.color, fontWeight: 800, marginTop: 6 }}>
+                      Liquido {token.best_arb?.net_spread_pct.toFixed(2)}%
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
         {data?.summary && (
           <section
             style={{
@@ -317,7 +491,7 @@ export default function FanTokensPage() {
                       <div style={{ fontSize: 11, color: "var(--muted)" }}>#{index + 1}</div>
                       <div style={{ fontWeight: 800 }}>{token.symbol}</div>
                       <div style={{ fontSize: 12, color: "#16a34a" }}>
-                        {token.best_arb ? `${token.best_arb.spread_pct.toFixed(2)}%` : "0.00%"}
+                        {token.best_arb ? `${token.best_arb.net_spread_pct.toFixed(2)}% liquido` : "0.00%"}
                       </div>
                     </button>
                   ))
@@ -359,8 +533,9 @@ export default function FanTokensPage() {
               >
                 {tokens.map((token) => {
                   const isOpen = !!expanded[token.id];
-                  const spread = token.best_arb?.spread_pct ?? 0;
-                  const spreadColor = spread >= 3 ? "#16a34a" : spread >= 1 ? "#ca8a04" : "var(--muted)";
+                  const spread = token.best_arb?.net_spread_pct ?? 0;
+                  const quality = qualityMeta(token.best_arb?.quality ?? "inviavel");
+                  const spreadColor = quality.color;
                   return (
                     <article
                       key={token.id}
@@ -399,6 +574,20 @@ export default function FanTokensPage() {
                               >
                                 {getCategoryBadge(token).label}
                               </span>
+                              {token.best_arb && (
+                                <span
+                                  style={{
+                                    fontSize: 11,
+                                    borderRadius: 999,
+                                    padding: "2px 8px",
+                                    background: quality.background,
+                                    color: quality.color,
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  {quality.label}
+                                </span>
+                              )}
                             </div>
                             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>{token.team}</div>
                           </div>
@@ -416,7 +605,7 @@ export default function FanTokensPage() {
                                   : "Misto"}
                             </div>
                             <div style={{ fontSize: 12, fontWeight: token.best_arb ? 700 : 400, color: spreadColor }}>
-                              {token.best_arb ? `▲ ${token.best_arb.spread_pct.toFixed(2)}%` : "Sem arbitragem"}
+                              {token.best_arb ? `▲ ${token.best_arb.net_spread_pct.toFixed(2)}% liquido` : "Sem arbitragem"}
                             </div>
                           </div>
                         </div>
@@ -434,9 +623,50 @@ export default function FanTokensPage() {
                               <div style={{ fontSize: 12, marginBottom: 10, color: "var(--muted)" }}>
                                 Comprar no ask de <strong>{token.best_arb.buy_exchange_label}</strong> por {buyValue.price && buyValue.currency ? formatPriceWithCurrency(buyValue.price, buyValue.currency) : "-"} e vender no bid de{" "}
                                 <strong>{token.best_arb.sell_exchange_label}</strong> por {sellValue.price && sellValue.currency ? formatPriceWithCurrency(sellValue.price, sellValue.currency) : "-"}.
+                                {" "}Bruto {token.best_arb.spread_pct.toFixed(2)}% · Liquido {token.best_arb.net_spread_pct.toFixed(2)}% · Taxas {token.best_arb.buy_fee_pct.toFixed(2)}% + {token.best_arb.sell_fee_pct.toFixed(2)}%.
                               </div>
                             );
                           })()}
+
+                          {(historyByToken[token.id]?.length ?? 0) > 0 && (
+                            <div style={{ marginBottom: 12 }}>
+                              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>
+                                Historico local de spread por ativo e rota
+                              </div>
+                              <div style={{ display: "grid", gap: 6 }}>
+                                {[...(historyByToken[token.id] ?? [])].slice(-6).reverse().map((point, index) => {
+                                  const historyQuality = qualityMeta(point.quality);
+                                  const timeLabel = new Date(point.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+                                  return (
+                                    <div
+                                      key={`${token.id}-history-${index}-${point.timestamp}`}
+                                      style={{
+                                        border: "1px solid var(--card-border)",
+                                        borderRadius: 10,
+                                        padding: "8px 10px",
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        gap: 8,
+                                        alignItems: "center",
+                                      }}
+                                    >
+                                      <div>
+                                        <div style={{ fontSize: 12, fontWeight: 700 }}>{point.buyExchangeLabel} → {point.sellExchangeLabel}</div>
+                                        <div style={{ fontSize: 11, color: "var(--muted)" }}>{timeLabel}</div>
+                                      </div>
+                                      <div style={{ textAlign: "right" }}>
+                                        <div style={{ fontSize: 12, color: historyQuality.color, fontWeight: 800 }}>
+                                          {point.netSpreadPct.toFixed(2)}% liquido
+                                        </div>
+                                        <div style={{ fontSize: 11, color: "var(--muted)" }}>Bruto {point.grossSpreadPct.toFixed(2)}% · {historyQuality.label}</div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
                           <div style={{ display: "grid", gap: 8 }}>
                             {(token.exchanges ?? [])
                               .slice()
