@@ -35,6 +35,8 @@ type ExchangeQuote = {
   status: "ok" | "not_listed";
   error?: string;
   price_brl?: number;
+  bid_price_brl?: number;
+  ask_price_brl?: number;
   volume_24h_brl?: number;
   change_24h?: number;
   high_24h_brl?: number;
@@ -133,6 +135,10 @@ type RawQuote = {
   high: number;
   low: number;
   price_brl_direct?: number;
+  bid_usdt?: number;
+  ask_usdt?: number;
+  bid_brl_direct?: number;
+  ask_brl_direct?: number;
 };
 
 type Fetcher = (symbol: string, usdBrl: number) => Promise<RawQuote | null>;
@@ -173,10 +179,15 @@ async function fetchUsdBrlRate(): Promise<number> {
 }
 
 async function fxBinance(symbol: string): Promise<RawQuote | null> {
-  const d = await fetchJson(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}USDT`);
+  const [d, book] = await Promise.all([
+    fetchJson(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}USDT`),
+    fetchJson(`https://api.binance.com/api/v3/ticker/bookTicker?symbol=${symbol}USDT`),
+  ]);
   if (!d.lastPrice) return null;
   return {
     price_usdt: safeNumber(d.lastPrice),
+    bid_usdt: safeNumber(book.bidPrice),
+    ask_usdt: safeNumber(book.askPrice),
     volume: safeNumber(d.quoteVolume),
     change_24h: safeNumber(d.priceChangePercent),
     high: safeNumber(d.highPrice),
@@ -189,6 +200,8 @@ async function fxCoinbase(symbol: string): Promise<RawQuote | null> {
   if (!d.price) return null;
   return {
     price_usdt: safeNumber(d.price),
+    bid_usdt: safeNumber(d.best_bid),
+    ask_usdt: safeNumber(d.best_ask),
     volume: safeNumber(d.volume_24h),
     change_24h: safeNumber(d.price_percentage_change_24h),
     high: 0,
@@ -207,6 +220,8 @@ async function fxKraken(symbol: string): Promise<RawQuote | null> {
   const open = safeNumber(t.o);
   return {
     price_usdt: last,
+    bid_usdt: safeNumber(Array.isArray(t.b) ? t.b[0] : 0),
+    ask_usdt: safeNumber(Array.isArray(t.a) ? t.a[0] : 0),
     volume: safeNumber(Array.isArray(t.v) ? t.v[1] : 0),
     change_24h: open > 0 ? ((last - open) / open) * 100 : 0,
     high: safeNumber(Array.isArray(t.h) ? t.h[1] : 0),
@@ -221,6 +236,8 @@ async function fxBybit(symbol: string): Promise<RawQuote | null> {
   if (!t.lastPrice) return null;
   return {
     price_usdt: safeNumber(t.lastPrice),
+    bid_usdt: safeNumber(t.bid1Price),
+    ask_usdt: safeNumber(t.ask1Price),
     volume: safeNumber(t.volume24h),
     change_24h: safeNumber(t.price24hPcnt) * 100,
     high: safeNumber(t.highPrice24h),
@@ -229,11 +246,19 @@ async function fxBybit(symbol: string): Promise<RawQuote | null> {
 }
 
 async function fxBingx(symbol: string): Promise<RawQuote | null> {
-  const d = await fetchJson(`https://open-api.bingx.com/openApi/spot/v1/ticker/24hr?symbol=${symbol}-USDT`);
+  const [d, bookRes] = await Promise.all([
+    fetchJson(`https://open-api.bingx.com/openApi/spot/v1/ticker/24hr?symbol=${symbol}-USDT`),
+    fetchJson(`https://open-api.bingx.com/openApi/spot/v1/ticker/bookTicker?symbol=${symbol}-USDT`).catch(
+      () => ({ data: {} } as Record<string, any>)
+    ),
+  ]);
   const p = d.data ?? {};
+  const book = bookRes.data ?? {};
   if (!p.lastPrice) return null;
   return {
     price_usdt: safeNumber(p.lastPrice),
+    bid_usdt: safeNumber(book.bidPrice),
+    ask_usdt: safeNumber(book.askPrice),
     volume: safeNumber(p.quoteVolume),
     change_24h: safeNumber(p.priceChangePercent),
     high: safeNumber(p.highPrice),
@@ -251,6 +276,8 @@ async function fxMercadoBitcoin(symbol: string, usdBrl: number): Promise<RawQuot
   return {
     price_usdt: priceBrl / usdBrl,
     price_brl_direct: priceBrl,
+    bid_brl_direct: safeNumber(t.buy),
+    ask_brl_direct: safeNumber(t.sell),
     volume: safeNumber(t.vol) * priceBrl,
     change_24h: change,
     high: safeNumber(t.high),
@@ -266,6 +293,8 @@ async function fxOkx(symbol: string): Promise<RawQuote | null> {
   const open = safeNumber(t.open24h) || last;
   return {
     price_usdt: last,
+    bid_usdt: safeNumber(t.bidPx),
+    ask_usdt: safeNumber(t.askPx),
     volume: safeNumber(t.volCcy24h),
     change_24h: open > 0 ? ((last - open) / open) * 100 : 0,
     high: safeNumber(t.high24h),
@@ -274,13 +303,19 @@ async function fxOkx(symbol: string): Promise<RawQuote | null> {
 }
 
 async function fxKucoin(symbol: string): Promise<RawQuote | null> {
-  const d = await fetchJson(`https://api.kucoin.com/api/v1/market/stats?symbol=${symbol}-USDT`);
+  const [d, level1] = await Promise.all([
+    fetchJson(`https://api.kucoin.com/api/v1/market/stats?symbol=${symbol}-USDT`),
+    fetchJson(`https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${symbol}-USDT`),
+  ]);
   const t = d.data ?? {};
+  const book = level1.data ?? {};
   if (!t.last) return null;
   const last = safeNumber(t.last);
   const open = safeNumber(t.open) || last;
   return {
-    price_usdt: last,
+    price_usdt: safeNumber(book.price) || last,
+    bid_usdt: safeNumber(book.bestBid) || safeNumber(t.buy),
+    ask_usdt: safeNumber(book.bestAsk) || safeNumber(t.sell),
     volume: safeNumber(t.volValue),
     change_24h: open > 0 ? ((last - open) / open) * 100 : 0,
     high: safeNumber(t.high),
@@ -294,6 +329,8 @@ async function fxBitget(symbol: string): Promise<RawQuote | null> {
   if (!t.lastPr) return null;
   return {
     price_usdt: safeNumber(t.lastPr),
+    bid_usdt: safeNumber(t.bidPr),
+    ask_usdt: safeNumber(t.askPr),
     volume: safeNumber(t.quoteVolume),
     change_24h: safeNumber(t.change24h) * 100,
     high: safeNumber(t.high24h),
@@ -311,6 +348,8 @@ async function fxNovadax(symbol: string, usdBrl: number): Promise<RawQuote | nul
   return {
     price_usdt: priceBrl / usdBrl,
     price_brl_direct: priceBrl,
+    bid_brl_direct: safeNumber(t.bidPrice) || safeNumber(t.buy),
+    ask_brl_direct: safeNumber(t.askPrice) || safeNumber(t.sell),
     volume: safeNumber(t.volume24h) * priceBrl,
     change_24h: change,
     high: safeNumber(t.high24h) / usdBrl,
@@ -327,6 +366,8 @@ async function fxGate(symbol: string): Promise<RawQuote | null> {
   const open = safeNumber(t.open_24h) || last;
   return {
     price_usdt: last,
+    bid_usdt: safeNumber(t.highest_bid),
+    ask_usdt: safeNumber(t.lowest_ask),
     volume: safeNumber(t.quote_volume),
     change_24h: open > 0 ? ((last - open) / open) * 100 : 0,
     high: safeNumber(t.high_24h),
@@ -364,6 +405,8 @@ async function fetchTokenOnExchange(tokenSymbol: string, exchange: ExchangeMeta,
     }
 
     const priceBrl = raw.price_brl_direct ?? raw.price_usdt * usdBrl;
+    const bidPriceBrl = raw.bid_brl_direct ?? ((raw.bid_usdt ?? 0) > 0 ? (raw.bid_usdt ?? 0) * usdBrl : 0);
+    const askPriceBrl = raw.ask_brl_direct ?? ((raw.ask_usdt ?? 0) > 0 ? (raw.ask_usdt ?? 0) * usdBrl : 0);
     const highBrl = raw.high > 0 ? raw.high * (raw.price_brl_direct ? 1 : usdBrl) : priceBrl;
     const lowBrl = raw.low > 0 ? raw.low * (raw.price_brl_direct ? 1 : usdBrl) : priceBrl;
     const volumeBrl = raw.price_brl_direct ? raw.volume : raw.volume * usdBrl;
@@ -376,6 +419,8 @@ async function fetchTokenOnExchange(tokenSymbol: string, exchange: ExchangeMeta,
       estimated: exchange.estimated,
       status: "ok",
       price_brl: Number(priceBrl.toFixed(8)),
+      bid_price_brl: bidPriceBrl > 0 ? Number(bidPriceBrl.toFixed(8)) : undefined,
+      ask_price_brl: askPriceBrl > 0 ? Number(askPriceBrl.toFixed(8)) : undefined,
       volume_24h_brl: Number(volumeBrl.toFixed(2)),
       change_24h: Number(raw.change_24h.toFixed(4)),
       high_24h_brl: Number(highBrl.toFixed(8)),
@@ -395,26 +440,26 @@ async function fetchTokenOnExchange(tokenSymbol: string, exchange: ExchangeMeta,
 }
 
 function getBestArb(quotes: ExchangeQuote[]): Arb | null {
-  const ok = quotes.filter((q) => q.status === "ok" && (q.price_brl ?? 0) > 0);
+  const ok = quotes.filter((q) => q.status === "ok" && (q.bid_price_brl ?? 0) > 0 && (q.ask_price_brl ?? 0) > 0);
   if (ok.length < 2) return null;
 
   let best: Arb | null = null;
   for (const buy of ok) {
     for (const sell of ok) {
       if (buy.exchange === sell.exchange) continue;
-      if ((sell.price_brl ?? 0) <= (buy.price_brl ?? 0)) continue;
+      if ((sell.bid_price_brl ?? 0) <= (buy.ask_price_brl ?? 0)) continue;
 
-      const spread = (((sell.price_brl ?? 0) - (buy.price_brl ?? 0)) / (buy.price_brl ?? 1)) * 100;
+      const spread = (((sell.bid_price_brl ?? 0) - (buy.ask_price_brl ?? 0)) / (buy.ask_price_brl ?? 1)) * 100;
       if (!best || spread > best.spread_pct) {
         best = {
           buy_exchange: buy.exchange,
           buy_exchange_label: buy.label,
           sell_exchange: sell.exchange,
           sell_exchange_label: sell.label,
-          buy_price_brl: buy.price_brl ?? 0,
-          sell_price_brl: sell.price_brl ?? 0,
+          buy_price_brl: buy.ask_price_brl ?? 0,
+          sell_price_brl: sell.bid_price_brl ?? 0,
           spread_pct: Number(spread.toFixed(4)),
-          profit_est_brl_per_100: Number((((100 / (buy.price_brl ?? 1)) * ((sell.price_brl ?? 0) - (buy.price_brl ?? 0))).toFixed(4))),
+          profit_est_brl_per_100: Number((((100 / (buy.ask_price_brl ?? 1)) * ((sell.bid_price_brl ?? 0) - (buy.ask_price_brl ?? 0))).toFixed(4))),
         };
       }
     }

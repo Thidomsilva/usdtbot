@@ -11,6 +11,8 @@ type ExchangeQuote = {
   estimated: boolean;
   status: "ok" | "not_listed";
   price_brl?: number;
+  bid_price_brl?: number;
+  ask_price_brl?: number;
   volume_24h_brl?: number;
   change_24h?: number;
 };
@@ -29,6 +31,8 @@ type TokenRow = {
     buy_exchange_label: string;
     sell_exchange: string;
     sell_exchange_label: string;
+    buy_price_brl: number;
+    sell_price_brl: number;
     spread_pct: number;
   } | null;
   error?: string;
@@ -172,6 +176,9 @@ export default function FanTokensPage() {
             <h1 style={{ margin: 0, fontSize: 34, letterSpacing: "-0.8px", fontWeight: 800 }}>Arbitragem Geral</h1>
             <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 15 }}>
               Monitoramento de oportunidades entre corretoras — criptos, altcoins e fan tokens. Atualizado a cada 45s.
+            </p>
+            <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 13 }}>
+              O spread usa ask para compra e bid para venda no livro. O preço de referência continua sendo exibido separado.
             </p>
           </div>
           <button
@@ -319,6 +326,9 @@ export default function FanTokensPage() {
                             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>{token.team}</div>
                           </div>
                           <div style={{ textAlign: "right" }}>
+                            <div style={{ fontWeight: 800, fontSize: 12, color: "var(--muted)" }}>
+                              Referencia
+                            </div>
                             <div style={{ fontWeight: 800 }}>
                               {token.avg_price_brl ? `R$ ${formatPrice(token.avg_price_brl)}` : "Sem dados"}
                             </div>
@@ -333,14 +343,14 @@ export default function FanTokensPage() {
                         <div style={{ borderTop: "1px solid var(--card-border)", padding: 12 }}>
                           {token.best_arb && (
                             <div style={{ fontSize: 12, marginBottom: 10, color: "var(--muted)" }}>
-                              Comprar em <strong>{token.best_arb.buy_exchange_label}</strong> e vender em{" "}
-                              <strong>{token.best_arb.sell_exchange_label}</strong>.
+                              Comprar no ask de <strong>{token.best_arb.buy_exchange_label}</strong> por R$ {formatPrice(token.best_arb.buy_price_brl)} e vender no bid de{" "}
+                              <strong>{token.best_arb.sell_exchange_label}</strong> por R$ {formatPrice(token.best_arb.sell_price_brl)}.
                             </div>
                           )}
                           <div style={{ display: "grid", gap: 8 }}>
                             {(token.exchanges ?? [])
                               .slice()
-                              .sort((a, b) => (b.price_brl ?? 0) - (a.price_brl ?? 0))
+                              .sort((a, b) => (a.ask_price_brl ?? a.price_brl ?? Number.POSITIVE_INFINITY) - (b.ask_price_brl ?? b.price_brl ?? Number.POSITIVE_INFINITY))
                               .map((ex) => (
                                 <div
                                   key={`${token.id}-${ex.exchange}`}
@@ -364,7 +374,12 @@ export default function FanTokensPage() {
                                   <div style={{ textAlign: "right" }}>
                                     {ex.status === "ok" ? (
                                       <>
-                                        <div style={{ fontWeight: 700 }}>R$ {formatPrice(ex.price_brl ?? 0)}</div>
+                                        <div style={{ fontWeight: 700 }}>Ref. R$ {formatPrice(ex.price_brl ?? 0)}</div>
+                                        {((ex.ask_price_brl ?? 0) > 0 || (ex.bid_price_brl ?? 0) > 0) && (
+                                          <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                                            Comprar {ex.ask_price_brl ? `R$ ${formatPrice(ex.ask_price_brl)}` : "-"} · Vender {ex.bid_price_brl ? `R$ ${formatPrice(ex.bid_price_brl)}` : "-"}
+                                          </div>
+                                        )}
                                         <div style={{ fontSize: 11, color: "var(--muted)" }}>
                                           {(ex.change_24h ?? 0) >= 0 ? "+" : ""}
                                           {(ex.change_24h ?? 0).toFixed(2)}% · Vol R${" "}

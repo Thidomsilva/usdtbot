@@ -58,10 +58,6 @@ function vol(v: number) {
   return `R$ ${v.toFixed(0)}`;
 }
 
-function hasOrderBook(ex: PricesResponse["exchanges"][string]) {
-  return ex.status === "ok" && ex.pricing_mode === "direct" && (ex.bid_price_brl ?? 0) > 0 && (ex.ask_price_brl ?? 0) > 0;
-}
-
 export default function HomePage() {
   const [data, setData] = useState<PricesResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -138,11 +134,6 @@ export default function HomePage() {
     [cards]
   );
 
-  const arbCards = useMemo(
-    () => cards.filter(({ ex }) => hasOrderBook(ex)),
-    [cards]
-  );
-
   const arbResult = useMemo(():
     | null
     | { sameExchange: true }
@@ -155,21 +146,21 @@ export default function HomePage() {
         usdtReceived: number; brlReceived: number;
         profit: number; profitPct: number; amount: number;
       } => {
-    if (!data || arbCards.length < 2) return null;
+    if (!data || okCards.length < 2) return null;
     const amount = parseFloat(arbAmount);
     if (!Number.isFinite(amount) || amount <= 0) return null;
 
-    // Melhor compra: usa o ask do livro, que e o preco executavel para comprar agora.
-    const autoBuy = [...arbCards].reduce((best, cur) => {
-      const curEff = (cur.ex.ask_price_brl ?? Infinity) / (1 - (customFees[cur.key]?.buy ?? 0.10) / 100);
-      const bestEff = (best.ex.ask_price_brl ?? Infinity) / (1 - (customFees[best.key]?.buy ?? 0.10) / 100);
+    // Melhor compra: minimiza custo efetivo = preço / (1 - taxa)
+    const autoBuy = [...okCards].reduce((best, cur) => {
+      const curEff = (cur.ex.price_brl ?? Infinity) / (1 - (customFees[cur.key]?.buy ?? 0.10) / 100);
+      const bestEff = (best.ex.price_brl ?? Infinity) / (1 - (customFees[best.key]?.buy ?? 0.10) / 100);
       return curEff < bestEff ? cur : best;
     });
 
-    // Melhor venda: usa o bid do livro, que e o preco executavel para vender agora.
-    const autoSell = [...arbCards].reduce((best, cur) => {
-      const curEff = (cur.ex.bid_price_brl ?? 0) * (1 - (customFees[cur.key]?.sell ?? 0.10) / 100);
-      const bestEff = (best.ex.bid_price_brl ?? 0) * (1 - (customFees[best.key]?.sell ?? 0.10) / 100);
+    // Melhor venda: maximiza retorno efetivo = preço * (1 - taxa)
+    const autoSell = [...okCards].reduce((best, cur) => {
+      const curEff = (cur.ex.price_brl ?? 0) * (1 - (customFees[cur.key]?.sell ?? 0.10) / 100);
+      const bestEff = (best.ex.price_brl ?? 0) * (1 - (customFees[best.key]?.sell ?? 0.10) / 100);
       return curEff > bestEff ? cur : best;
     });
 
@@ -180,26 +171,24 @@ export default function HomePage() {
 
     const buyEx = data.exchanges[buyKey];
     const sellEx = data.exchanges[sellKey];
-    if (!buyEx || !sellEx || !hasOrderBook(buyEx) || !hasOrderBook(sellEx)) return null;
+    if (!buyEx?.price_brl || !sellEx?.price_brl || buyEx.status !== "ok" || sellEx.status !== "ok") return null;
 
     const buyFeeVal = (customFees[buyKey]?.buy ?? 0.10) / 100;
     const sellFeeVal = (customFees[sellKey]?.sell ?? 0.10) / 100;
-    const buyAsk = buyEx.ask_price_brl ?? 0;
-    const sellBid = sellEx.bid_price_brl ?? 0;
-    const usdtReceived = (amount / buyAsk) * (1 - buyFeeVal);
-    const brlReceived = usdtReceived * sellBid * (1 - sellFeeVal);
+    const usdtReceived = (amount / buyEx.price_brl) * (1 - buyFeeVal);
+    const brlReceived = usdtReceived * sellEx.price_brl * (1 - sellFeeVal);
     const profit = brlReceived - amount;
 
     return {
       sameExchange: false as const,
       buyKey, sellKey,
       buyLabel: buyEx.label, sellLabel: sellEx.label,
-      buyPrice: buyAsk, sellPrice: sellBid,
+      buyPrice: buyEx.price_brl, sellPrice: sellEx.price_brl,
       buyFee: buyFeeVal * 100, sellFee: sellFeeVal * 100,
       usdtReceived, brlReceived,
       profit, profitPct: (profit / amount) * 100, amount,
     };
-  }, [data, arbCards, arbAmount, arbBuyEx, arbSellEx, customFees]);
+  }, [data, okCards, arbAmount, arbBuyEx, arbSellEx, customFees]);
 
   return (
     <main className="page-shell" style={{ minHeight: "100vh", padding: "24px" }}>
@@ -354,18 +343,6 @@ export default function HomePage() {
                 {ok ? (
                   <>
                     <div className="price-value" style={{ fontSize: 30, fontWeight: 800, marginTop: 8, letterSpacing: "-0.5px" }}>{money(ex.price_brl ?? 0)}</div>
-                    <div className="metric-line" style={{ marginTop: 6, fontSize: 12, color: "var(--muted)" }}>
-                      Ultimo negocio
-                    </div>
-                    {hasOrderBook(ex) ? (
-                      <div className="metric-line" style={{ marginTop: 8, fontSize: 13, color: "var(--muted)" }}>
-                        Livro: compra {money(ex.ask_price_brl ?? 0)} · venda {money(ex.bid_price_brl ?? 0)}
-                      </div>
-                    ) : (
-                      <div className="metric-line" style={{ marginTop: 8, fontSize: 13, color: "#f4b860" }}>
-                        Livro BRL indisponivel para arbitragem nesta consulta.
-                      </div>
-                    )}
                     {(ex.pricing_mode === "fallback" || ex.warning || ex.source_pair) && (
                       <div
                         className="metric-line"
@@ -405,9 +382,6 @@ export default function HomePage() {
           <h2 style={{ margin: "0 0 16px", fontSize: 20, fontWeight: 700, letterSpacing: "-0.4px" }}>
             Calculadora de Arbitragem
           </h2>
-          <div style={{ marginBottom: 16, fontSize: 13, color: "var(--muted)" }}>
-            O calculo usa ask para compra e bid para venda no livro BRL. Precos estimados via fallback nao entram na arbitragem.
-          </div>
 
           {/* Inputs */}
           <div className="arb-inputs" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
@@ -431,7 +405,7 @@ export default function HomePage() {
                 style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "9px 11px", background: "var(--card)", color: "var(--text)", fontSize: 14, width: "100%" }}
               >
                 <option value="">Auto (mais barata)</option>
-                {arbCards.map(({ key, ex }) => (
+                {okCards.map(({ key, ex }) => (
                   <option key={key} value={key}>{ex.label}</option>
                 ))}
               </select>
@@ -444,18 +418,12 @@ export default function HomePage() {
                 style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "9px 11px", background: "var(--card)", color: "var(--text)", fontSize: 14, width: "100%" }}
               >
                 <option value="">Auto (mais cara)</option>
-                {arbCards.map(({ key, ex }) => (
+                {okCards.map(({ key, ex }) => (
                   <option key={key} value={key}>{ex.label}</option>
                 ))}
               </select>
             </div>
           </div>
-
-          {arbCards.length < 2 && (
-            <div style={{ marginTop: 14, padding: "12px 16px", border: "1px solid #f4b860", borderRadius: 10, color: "#f4b860", fontSize: 14 }}>
-              Ha menos de duas exchanges com bid e ask BRL validos neste momento, entao a arbitragem fica desativada.
-            </div>
-          )}
 
           {/* Resultado */}
           {arbResult && (
@@ -472,12 +440,12 @@ export default function HomePage() {
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
                   <div style={{ fontSize: 13, background: "var(--card)", border: "1px solid var(--card-border)", borderRadius: 8, padding: "6px 12px" }}>
                     <span style={{ color: "var(--muted)" }}>Comprar:</span>{" "}
-                    <strong>{arbResult.buyLabel}</strong> · ask {money(arbResult.buyPrice)} · taxa {arbResult.buyFee.toFixed(2)}%
+                    <strong>{arbResult.buyLabel}</strong> · {money(arbResult.buyPrice)} · taxa {arbResult.buyFee.toFixed(2)}%
                   </div>
                   <span style={{ color: "var(--muted)", fontSize: 20 }}>→</span>
                   <div style={{ fontSize: 13, background: "var(--card)", border: "1px solid var(--card-border)", borderRadius: 8, padding: "6px 12px" }}>
                     <span style={{ color: "var(--muted)" }}>Vender:</span>{" "}
-                    <strong>{arbResult.sellLabel}</strong> · bid {money(arbResult.sellPrice)} · taxa {arbResult.sellFee.toFixed(2)}%
+                    <strong>{arbResult.sellLabel}</strong> · {money(arbResult.sellPrice)} · taxa {arbResult.sellFee.toFixed(2)}%
                   </div>
                 </div>
 
