@@ -70,7 +70,7 @@ const TOKENS: FanToken[] = [
   // === Altcoins de alta liquidez ===
   { id: "ADA", symbol: "ADA", team: "Cardano", tier: 2, category: "altcoin" },
   { id: "DOGE", symbol: "DOGE", team: "Dogecoin", tier: 2, category: "altcoin" },
-  { id: "MATIC", symbol: "MATIC", team: "Polygon", tier: 2, category: "altcoin" },
+  { id: "POL", symbol: "POL", team: "Polygon", tier: 2, category: "altcoin" },
   { id: "AVAX", symbol: "AVAX", team: "Avalanche", tier: 2, category: "altcoin" },
   { id: "DOT", symbol: "DOT", team: "Polkadot", tier: 2, category: "altcoin" },
   { id: "LINK", symbol: "LINK", team: "Chainlink", tier: 2, category: "altcoin" },
@@ -484,7 +484,7 @@ export async function GET() {
         );
         const okQuotes = exchanges.filter((e) => e.status === "ok" && (e.price_brl ?? 0) > 0);
         const avg = okQuotes.length
-          ? Number((okQuotes.reduce((acc, e) => acc + (e.price_brl ?? 0), 0) / okQuotes.length).toFixed(4))
+          ? Number((okQuotes.reduce((acc, e) => acc + (e.price_brl ?? 0), 0) / okQuotes.length).toFixed(8))
           : null;
 
         return {

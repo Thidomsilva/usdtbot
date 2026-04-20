@@ -108,6 +108,10 @@ function formatPrice(price: number): string {
   return price.toFixed(0);
 }
 
+function hasValue(value: number | null | undefined): value is number {
+  return value !== null && value !== undefined;
+}
+
 export default function FanTokensPage() {
   const [data, setData] = useState<FanTokensResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -330,7 +334,7 @@ export default function FanTokensPage() {
                               Referencia
                             </div>
                             <div style={{ fontWeight: 800 }}>
-                              {token.avg_price_brl ? `R$ ${formatPrice(token.avg_price_brl)}` : "Sem dados"}
+                              {hasValue(token.avg_price_brl) ? `R$ ${formatPrice(token.avg_price_brl)}` : "Sem dados"}
                             </div>
                             <div style={{ fontSize: 12, fontWeight: token.best_arb ? 700 : 400, color: spreadColor }}>
                               {token.best_arb ? `▲ ${token.best_arb.spread_pct.toFixed(2)}%` : "Sem arbitragem"}
