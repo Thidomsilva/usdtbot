@@ -16,6 +16,10 @@ type ExchangeDef = {
   fetcher: Fetcher;
 };
 
+function roundIfPositive(value: number | undefined): number | undefined {
+  return value && value > 0 ? Number(value.toFixed(4)) : undefined;
+}
+
 async function fetchJson(url: string): Promise<Record<string, any>> {
   const res = await fetch(url, {
     method: "GET",
@@ -95,11 +99,16 @@ async function fetchBinance() {
 
   for (const host of hosts) {
     try {
-      const data = await fetchJson(`https://${host}/api/v3/ticker/24hr?symbol=USDTBRL`);
+      const [data, book] = await Promise.all([
+        fetchJson(`https://${host}/api/v3/ticker/24hr?symbol=USDTBRL`),
+        fetchJson(`https://${host}/api/v3/ticker/bookTicker?symbol=USDTBRL`),
+      ]);
       const price = safeNumber(data.lastPrice);
       if (price > 0) {
         return {
           price_brl: price,
+          bid_price_brl: safeNumber(book.bidPrice),
+          ask_price_brl: safeNumber(book.askPrice),
           volume_24h: safeNumber(data.quoteVolume),
           change_24h: safeNumber(data.priceChangePercent),
           high_24h: safeNumber(data.highPrice),
@@ -140,6 +149,8 @@ async function fetchBybit() {
       if (last > 0) {
         return {
           price_brl: last,
+          bid_price_brl: safeNumber(data.bid1Price),
+          ask_price_brl: safeNumber(data.ask1Price),
           volume_24h: safeNumber(data.turnover24h),
           change_24h: safeNumber(data.price24hPcnt) * 100,
           high_24h: safeNumber(data.highPrice24h),
@@ -170,10 +181,16 @@ async function fetchBybit() {
 }
 
 async function fetchKucoin() {
-  const payload = await fetchJson("https://api.kucoin.com/api/v1/market/stats?symbol=USDT-BRL");
+  const [payload, level1] = await Promise.all([
+    fetchJson("https://api.kucoin.com/api/v1/market/stats?symbol=USDT-BRL"),
+    fetchJson("https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=USDT-BRL"),
+  ]);
   const data = payload.data ?? {};
+  const book = level1.data ?? {};
   return {
-    price_brl: safeNumber(data.last),
+    price_brl: safeNumber(book.price) || safeNumber(data.last),
+    bid_price_brl: safeNumber(book.bestBid) || safeNumber(data.buy),
+    ask_price_brl: safeNumber(book.bestAsk) || safeNumber(data.sell),
     volume_24h: safeNumber(data.volValue),
     change_24h: safeNumber(data.changeRate) * 100,
     high_24h: safeNumber(data.high),
@@ -190,6 +207,8 @@ async function fetchNovadax() {
   const change = open > 0 ? ((last - open) / open) * 100 : 0;
   return {
     price_brl: last,
+    bid_price_brl: safeNumber(data.bidPrice) || safeNumber(data.buy),
+    ask_price_brl: safeNumber(data.askPrice) || safeNumber(data.sell),
     volume_24h: safeNumber(data.volume24h),
     change_24h: change,
     high_24h: safeNumber(data.high24h),
@@ -206,6 +225,8 @@ async function fetchMercadoBitcoin() {
   const change = open > 0 ? ((last - open) / open) * 100 : 0;
   return {
     price_brl: last,
+    bid_price_brl: safeNumber(data.buy),
+    ask_price_brl: safeNumber(data.sell),
     volume_24h: safeNumber(data.vol),
     change_24h: change,
     high_24h: safeNumber(data.high),
@@ -219,6 +240,8 @@ async function fetchBitget() {
   const data = Array.isArray(payload.data) ? payload.data[0] ?? {} : {};
   return {
     price_brl: safeNumber(data.lastPr),
+    bid_price_brl: safeNumber(data.bidPr),
+    ask_price_brl: safeNumber(data.askPr),
     volume_24h: safeNumber(data.quoteVolume),
     change_24h: (() => {
       const open = safeNumber(data.open);
@@ -236,6 +259,8 @@ async function fetchOkx() {
   const data = Array.isArray(payload.data) ? payload.data[0] ?? {} : {};
   return {
     price_brl: safeNumber(data.last),
+    bid_price_brl: safeNumber(data.bidPx),
+    ask_price_brl: safeNumber(data.askPx),
     volume_24h: safeNumber(data.volCcy24h),
     change_24h: (() => {
       const open = safeNumber(data.open24h);
@@ -249,14 +274,22 @@ async function fetchOkx() {
 }
 
 async function fetchBingx() {
-  const payload = await fetchJson("https://open-api.bingx.com/openApi/spot/v1/ticker/price?symbol=USDT-BRL");
+  const [payload, bookPayload] = await Promise.all([
+    fetchJson("https://open-api.bingx.com/openApi/spot/v1/ticker/price?symbol=USDT-BRL"),
+    fetchJson("https://open-api.bingx.com/openApi/spot/v1/ticker/bookTicker?symbol=USDT-BRL").catch(
+      () => ({ data: {} } as Record<string, any>)
+    ),
+  ]);
 
   if (safeNumber(payload.code) === 0) {
     const data = payload.data ?? {};
+    const book = bookPayload.data ?? {};
     const price = safeNumber(data.price);
     if (price > 0) {
       return {
         price_brl: price,
+        bid_price_brl: safeNumber(book.bidPrice),
+        ask_price_brl: safeNumber(book.askPrice),
         volume_24h: 0,
         change_24h: 0,
         high_24h: price,
@@ -321,6 +354,8 @@ async function fetchKraken() {
 
     return {
       price_brl: price,
+      bid_price_brl: safeNumber(Array.isArray(ticker.b) ? ticker.b[0] : 0),
+      ask_price_brl: safeNumber(Array.isArray(ticker.a) ? ticker.a[0] : 0),
       volume_24h: baseVolume > 0 ? baseVolume * price : 0,
       change_24h: open > 0 ? ((price - open) / open) * 100 : 0,
       high_24h: safeNumber(Array.isArray(ticker.h) ? ticker.h[1] : 0),
@@ -393,6 +428,8 @@ async function fetchCoinbase() {
 
   return {
     price_brl: price,
+    bid_price_brl: safeNumber(payload.bid),
+    ask_price_brl: safeNumber(payload.ask),
     volume_24h: baseVolume > 0 ? baseVolume * price : 0,
     change_24h: open > 0 ? ((price - open) / open) * 100 : 0,
     high_24h: safeNumber(payload.high),
@@ -437,6 +474,8 @@ export async function GET() {
             source_pair: data.source_pair,
             warning: data.warning,
             price_brl: Number((data.price_brl ?? 0).toFixed(4)),
+            bid_price_brl: roundIfPositive(data.bid_price_brl),
+            ask_price_brl: roundIfPositive(data.ask_price_brl),
             volume_24h: Number((data.volume_24h ?? 0).toFixed(4)),
             change_24h: Number((data.change_24h ?? 0).toFixed(4)),
             high_24h: Number((data.high_24h ?? 0).toFixed(4)),

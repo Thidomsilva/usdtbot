@@ -6,6 +6,8 @@ export interface ExchangeData {
   source_pair?: string;
   warning?: string;
   price_brl?: number;
+  bid_price_brl?: number;
+  ask_price_brl?: number;
   volume_24h?: number;
   change_24h?: number;
   high_24h?: number;
