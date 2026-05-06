@@ -13,7 +13,8 @@ type User = {
 
 export default function AdminPage() {
   const telegramHref = "tg://resolve?phone=5543999027395&text=Ol%C3%A1%20da%20ferramenta%20USDBot%20e%20gostaria%20de%20liberar%20meu%20acesso%20full";
-  const telegramQrSrc = "https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=tg%3A%2F%2Fresolve%3Fphone%3D5543999027395%26text%3DOl%25C3%25A1%2520da%2520ferramenta%2520USDBot%2520e%2520gostaria%2520de%2520liberar%2520meu%2520acesso%2520full";
+  const telegramQrTarget = "https://t.me/share/url?url=&text=Ol%C3%A1%20da%20ferramenta%20USDBot%20e%20gostaria%20de%20liberar%20meu%20acesso%20full";
+  const telegramQrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(telegramQrTarget)}`;
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [canManage, setCanManage] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
