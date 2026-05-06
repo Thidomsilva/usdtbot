@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionSecret, readSessionFromToken, SESSION_COOKIE } from './lib/session'
 
+const PUBLIC_FILE_PATTERN = /\.[^/]+$/
+
 function isPublicPath(pathname: string): boolean {
-  return pathname === '/login' || pathname === '/api/auth/login'
+  return pathname === '/login' || pathname === '/api/auth/login' || PUBLIC_FILE_PATTERN.test(pathname)
 }
 
 export async function middleware(request: NextRequest) {
