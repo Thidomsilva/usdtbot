@@ -7,6 +7,8 @@ export default function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") || "/";
+  const whatsappHref =
+    "https://wa.me/5543999027395?text=Ol%C3%A1%20da%20ferramenta%20USDBot%20e%20gostaria%20de%20liberar%20meu%20acesso%20full";
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -112,6 +114,28 @@ export default function LoginForm() {
           {loading ? "Entrando..." : "Entrar"}
         </button>
       </form>
+
+      <a
+        href={whatsappHref}
+        target="_blank"
+        rel="noreferrer"
+        style={{
+          marginTop: 14,
+          display: "inline-flex",
+          width: "100%",
+          justifyContent: "center",
+          border: "1px solid var(--card-border)",
+          borderRadius: 12,
+          padding: "10px 12px",
+          textDecoration: "none",
+          color: "var(--text)",
+          fontSize: 13,
+          fontWeight: 600,
+          background: "var(--card)",
+        }}
+      >
+        para solicitar seu acesso fale com o desenvolvedor clicando aqui
+      </a>
     </section>
   );
 }

@@ -23,6 +23,7 @@ export default function AdminPage() {
   const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState<"admin" | "user">("user");
   const [submitting, setSubmitting] = useState(false);
+  const [updatingUsername, setUpdatingUsername] = useState<string | null>(null);
 
   const sortedUsers = useMemo(
     () => [...users].sort((a, b) => a.username.localeCompare(b.username)),
@@ -113,6 +114,36 @@ export default function AdminPage() {
     await loadUsers();
   }
 
+  async function handleToggleActive(user: User) {
+    const shouldActivate = !user.active;
+    const actionLabel = shouldActivate ? "reativar" : "travar";
+    const confirmed = window.confirm(`Deseja ${actionLabel} o usuario ${user.username}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setUpdatingUsername(user.username);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: user.username, active: shouldActivate }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(payload?.error || "Falha ao atualizar status do usuario");
+        return;
+      }
+
+      await loadUsers();
+    } finally {
+      setUpdatingUsername(null);
+    }
+  }
+
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/login";
@@ -161,7 +192,7 @@ export default function AdminPage() {
           <div>
             <h1 style={{ margin: 0 }}>Administracao de acessos</h1>
             <p style={{ marginTop: 8, color: "var(--muted)", fontSize: 14 }}>
-              Inclua ou exclua usuarios sem sair do sistema.
+              Inclua, trave, reative ou exclua usuarios sem sair do sistema.
             </p>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
@@ -222,6 +253,7 @@ export default function AdminPage() {
                   <tr style={{ textAlign: "left", borderBottom: "1px solid var(--card-border)" }}>
                     <th style={{ padding: "10px 8px" }}>Usuario</th>
                     <th style={{ padding: "10px 8px" }}>Perfil</th>
+                    <th style={{ padding: "10px 8px" }}>Status</th>
                     <th style={{ padding: "10px 8px" }}>Criado em</th>
                     <th style={{ padding: "10px 8px" }}>Acao</th>
                   </tr>
@@ -231,14 +263,39 @@ export default function AdminPage() {
                     <tr key={user.username} style={{ borderBottom: "1px solid var(--card-border)" }}>
                       <td style={{ padding: "10px 8px" }}>{user.username}</td>
                       <td style={{ padding: "10px 8px" }}>{user.role}</td>
+                      <td style={{ padding: "10px 8px" }}>
+                        <span
+                          style={{
+                            border: "1px solid var(--card-border)",
+                            borderRadius: 999,
+                            padding: "4px 10px",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: user.active ? "#0b8f57" : "#a63c3c",
+                            background: user.active ? "rgba(24, 201, 122, 0.12)" : "rgba(246, 88, 88, 0.14)",
+                          }}
+                        >
+                          {user.active ? "ativo" : "travado"}
+                        </span>
+                      </td>
                       <td style={{ padding: "10px 8px" }}>{new Date(user.createdAt).toLocaleString("pt-BR")}</td>
                       <td style={{ padding: "10px 8px" }}>
-                        <button
-                          onClick={() => handleDelete(user.username)}
-                          style={{ border: "1px solid var(--card-border)", borderRadius: 8, padding: "7px 10px", background: "var(--card)", color: "var(--text)", cursor: "pointer" }}
-                        >
-                          Excluir
-                        </button>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <button
+                            onClick={() => handleToggleActive(user)}
+                            disabled={updatingUsername === user.username}
+                            style={{ border: "1px solid var(--card-border)", borderRadius: 8, padding: "7px 10px", background: "var(--card)", color: "var(--text)", cursor: "pointer" }}
+                          >
+                            {user.active ? "Travar" : "Reativar"}
+                          </button>
+                          <button
+                            onClick={() => handleDelete(user.username)}
+                            disabled={updatingUsername === user.username}
+                            style={{ border: "1px solid var(--card-border)", borderRadius: 8, padding: "7px 10px", background: "var(--card)", color: "var(--text)", cursor: "pointer" }}
+                          >
+                            Excluir
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

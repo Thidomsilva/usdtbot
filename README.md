@@ -37,13 +37,25 @@ SESSION_SECRET="opcional-mas-recomendado-em-producao"
 ```
 
 2. Inicie o projeto e entre em `/login` com o admin.
-3. Abra `/admin` para incluir e excluir usuarios sem sair do sistema.
+3. Abra `/admin` para incluir, travar, reativar e excluir usuarios sem sair do sistema.
 
 Observacoes:
-- Os usuarios sao persistidos em `data/users.json` com senha hasheada.
-- Em plataformas sem disco persistente, use um storage externo (exemplo: banco de dados/KV).
+- Em producao na Vercel, conecte um Redis da Marketplace (Upstash) para persistencia real.
+- Com `KV_REST_API_URL` + `KV_REST_API_TOKEN` ou `KV_REST_API_REDIS_URL`, os usuarios passam a ser salvos no Redis.
+- Sem KV configurado, o projeto usa fallback local em `data/users.json` (bom para desenvolvimento).
 - Se `SESSION_SECRET` nao estiver configurada, a aplicacao usa `ADMIN_EMAIL` + `ADMIN_PASSWORD` para assinar a sessao.
 - Em producao, prefira definir `SESSION_SECRET` explicitamente para desacoplar a sessao da senha do admin.
+
+## Persistencia no Vercel (recomendado)
+
+1. No projeto da Vercel, acesse `Storage` e conecte um Redis (Upstash) pela Marketplace.
+2. Confirme que pelo menos uma destas opcoes de env foi adicionada no projeto:
+	- `KV_REST_API_URL` + `KV_REST_API_TOKEN`
+	- `KV_REST_API_REDIS_URL`
+3. Mantenha tambem `ADMIN_EMAIL`, `ADMIN_PASSWORD` e `SESSION_SECRET` nas env vars.
+4. Faça um novo deploy.
+
+Com isso, um usuario criado pelo admin continua funcionando ate ser travado ou excluido no `/admin`.
 
 ## Endpoints
 

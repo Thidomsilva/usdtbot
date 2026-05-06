@@ -1,6 +1,8 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'crypto'
 import { mkdir, readFile, rename, writeFile } from 'fs/promises'
 import path from 'path'
+import { Redis } from '@upstash/redis'
+import { createClient, type RedisClientType } from 'redis'
 
 export type UserRole = 'admin' | 'user'
 
@@ -28,6 +30,60 @@ export type PublicUser = {
 
 const DATA_DIR = path.join(process.cwd(), 'data')
 const USERS_FILE = path.join(DATA_DIR, 'users.json')
+const KV_USERS_KEY = 'usdtbot:users:v1'
+
+type StorageBackend = 'file' | 'kv-rest' | 'kv-redis-url'
+
+let redisClient: Redis | null = null
+let redisUrlClient: RedisClientType | null = null
+let redisUrlConnecting: Promise<RedisClientType> | null = null
+
+function getStorageBackend(): StorageBackend {
+  if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
+    return 'kv-rest'
+  }
+
+  if (process.env.KV_REST_API_REDIS_URL || process.env.REDIS_URL || process.env.KV_URL) {
+    return 'kv-redis-url'
+  }
+
+  return 'file'
+}
+
+function getRedisClient(): Redis {
+  if (!redisClient) {
+    redisClient = Redis.fromEnv()
+  }
+
+  return redisClient
+}
+
+function getRedisUrl(): string {
+  const url = process.env.KV_REST_API_REDIS_URL || process.env.REDIS_URL || process.env.KV_URL
+  if (!url) {
+    throw new Error('URL do Redis nao configurada')
+  }
+
+  return url
+}
+
+async function getRedisUrlClient(): Promise<RedisClientType> {
+  if (!redisUrlClient) {
+    redisUrlClient = createClient({ url: getRedisUrl() })
+  }
+
+  if (!redisUrlClient.isOpen) {
+    if (!redisUrlConnecting) {
+      redisUrlConnecting = redisUrlClient.connect().finally(() => {
+        redisUrlConnecting = null
+      })
+    }
+
+    await redisUrlConnecting
+  }
+
+  return redisUrlClient
+}
 
 function hashPassword(password: string, salt: string): string {
   return scryptSync(password, salt, 64).toString('hex')
@@ -69,14 +125,37 @@ function parseSeedUsers(raw: string | undefined): Array<{ username: string; pass
     .filter((entry): entry is { username: string; password: string } => Boolean(entry))
 }
 
-async function saveStore(store: UserStore): Promise<void> {
+async function saveStoreToFile(store: UserStore): Promise<void> {
   await mkdir(DATA_DIR, { recursive: true })
   const tmpFile = `${USERS_FILE}.tmp`
   await writeFile(tmpFile, JSON.stringify(store, null, 2), 'utf8')
   await rename(tmpFile, USERS_FILE)
 }
 
-async function initializeStore(): Promise<UserStore> {
+async function saveStoreToKv(store: UserStore): Promise<void> {
+  await getRedisClient().set(KV_USERS_KEY, store)
+}
+
+async function saveStoreToRedisUrl(store: UserStore): Promise<void> {
+  const client = await getRedisUrlClient()
+  await client.set(KV_USERS_KEY, JSON.stringify(store))
+}
+
+async function saveStore(store: UserStore, backend: StorageBackend): Promise<void> {
+  if (backend === 'kv-rest') {
+    await saveStoreToKv(store)
+    return
+  }
+
+  if (backend === 'kv-redis-url') {
+    await saveStoreToRedisUrl(store)
+    return
+  }
+
+  await saveStoreToFile(store)
+}
+
+async function initializeStore(backend: StorageBackend): Promise<UserStore> {
   const now = new Date().toISOString()
   const seedUsers = parseSeedUsers(process.env.AUTH_USERS)
   const adminEmail = (process.env.ADMIN_EMAIL ?? 'thiago@sagacy.com.br').trim().toLowerCase()
@@ -119,11 +198,11 @@ async function initializeStore(): Promise<UserStore> {
   }
 
   const store = { users }
-  await saveStore(store)
+  await saveStore(store, backend)
   return store
 }
 
-async function loadStore(): Promise<UserStore> {
+async function loadStoreFromFile(): Promise<UserStore> {
   try {
     const raw = await readFile(USERS_FILE, 'utf8')
     const store = JSON.parse(raw) as UserStore
@@ -136,11 +215,56 @@ async function loadStore(): Promise<UserStore> {
   } catch (error) {
     const message = error instanceof Error ? error.message : ''
     if (message.includes('ENOENT')) {
-      return initializeStore()
+      return initializeStore('file')
     }
 
     throw error
   }
+}
+
+async function loadStoreFromKv(): Promise<UserStore> {
+  const store = await getRedisClient().get<UserStore>(KV_USERS_KEY)
+
+  if (!store || !Array.isArray(store.users)) {
+    return initializeStore('kv-rest')
+  }
+
+  return store
+}
+
+async function loadStoreFromRedisUrl(): Promise<UserStore> {
+  const client = await getRedisUrlClient()
+  const raw = await client.get(KV_USERS_KEY)
+
+  if (!raw || typeof raw !== 'string') {
+    return initializeStore('kv-redis-url')
+  }
+
+  const store = JSON.parse(raw) as UserStore
+  if (!Array.isArray(store.users)) {
+    return initializeStore('kv-redis-url')
+  }
+
+  return store
+}
+
+async function loadStore(): Promise<UserStore> {
+  const backend = getStorageBackend()
+
+  if (backend === 'kv-rest') {
+    return loadStoreFromKv()
+  }
+
+  if (backend === 'kv-redis-url') {
+    return loadStoreFromRedisUrl()
+  }
+
+  return loadStoreFromFile()
+}
+
+async function persistStore(store: UserStore): Promise<void> {
+  const backend = getStorageBackend()
+  await saveStore(store, backend)
 }
 
 export async function listUsers(): Promise<PublicUser[]> {
@@ -181,9 +305,54 @@ export async function createUser(input: {
   }
 
   store.users.push(created)
-  await saveStore(store)
+  await persistStore(store)
 
   return toPublicUser(created)
+}
+
+export async function setUserActive(
+  username: string,
+  active: boolean,
+  actorUsername: string
+): Promise<PublicUser> {
+  const normalizedUsername = username.trim().toLowerCase()
+  const normalizedActor = actorUsername.trim().toLowerCase()
+
+  if (!normalizedUsername) {
+    throw new Error('Usuario invalido')
+  }
+
+  if (!active && normalizedUsername === normalizedActor) {
+    throw new Error('Nao e permitido travar seu proprio usuario')
+  }
+
+  const store = await loadStore()
+  const user = store.users.find((entry) => entry.username === normalizedUsername)
+
+  if (!user) {
+    throw new Error('Usuario nao encontrado')
+  }
+
+  if (user.active === active) {
+    return toPublicUser(user)
+  }
+
+  if (user.role === 'admin' && !active) {
+    const remainingAdmins = store.users.filter(
+      (entry) => entry.username !== normalizedUsername && entry.role === 'admin' && entry.active
+    )
+
+    if (remainingAdmins.length === 0) {
+      throw new Error('Nao e permitido travar o ultimo admin ativo')
+    }
+  }
+
+  user.active = active
+  user.updatedAt = new Date().toISOString()
+
+  await persistStore(store)
+
+  return toPublicUser(user)
 }
 
 export async function deleteUser(username: string, actorUsername: string): Promise<void> {
@@ -213,7 +382,7 @@ export async function deleteUser(username: string, actorUsername: string): Promi
   }
 
   store.users = remaining
-  await saveStore(store)
+  await persistStore(store)
 }
 
 export async function verifyUserCredentials(username: string, password: string): Promise<PublicUser | null> {
