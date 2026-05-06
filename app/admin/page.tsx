@@ -1,0 +1,239 @@
+"use client";
+
+import Link from "next/link";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+
+type User = {
+  username: string;
+  role: "admin" | "user";
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export default function AdminPage() {
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [canManage, setCanManage] = useState(false);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [newUsername, setNewUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newRole, setNewRole] = useState<"admin" | "user">("user");
+  const [submitting, setSubmitting] = useState(false);
+
+  const sortedUsers = useMemo(
+    () => [...users].sort((a, b) => a.username.localeCompare(b.username)),
+    [users]
+  );
+
+  async function loadUsers() {
+    setLoadingUsers(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/admin/users", { cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setError(payload?.error || "Falha ao carregar usuarios");
+        return;
+      }
+
+      setUsers(payload.users || []);
+    } finally {
+      setLoadingUsers(false);
+    }
+  }
+
+  useEffect(() => {
+    (async () => {
+      const me = await fetch("/api/auth/me", { cache: "no-store" });
+      const payload = await me.json().catch(() => ({}));
+
+      const isAdmin = Boolean(me.ok && payload?.user?.role === "admin");
+      setCanManage(isAdmin);
+      setCheckingAuth(false);
+
+      if (isAdmin) {
+        loadUsers();
+      }
+    })();
+  }, []);
+
+  async function handleCreate(event: FormEvent) {
+    event.preventDefault();
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: newUsername, password: newPassword, role: newRole }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(payload?.error || "Falha ao criar usuario");
+        return;
+      }
+
+      setNewUsername("");
+      setNewPassword("");
+      setNewRole("user");
+      await loadUsers();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDelete(username: string) {
+    const confirmed = window.confirm(`Remover o usuario ${username}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setError(null);
+
+    const response = await fetch("/api/admin/users", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(payload?.error || "Falha ao remover usuario");
+      return;
+    }
+
+    await loadUsers();
+  }
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
+
+  if (checkingAuth) {
+    return (
+      <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
+        <p style={{ color: "var(--muted)" }}>Validando permissao...</p>
+      </main>
+    );
+  }
+
+  if (!canManage) {
+    return (
+      <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
+        <section style={{ maxWidth: 560, width: "100%", background: "var(--card)", border: "1px solid var(--card-border)", borderRadius: 16, padding: 20 }}>
+          <h1 style={{ marginTop: 0 }}>Acesso negado</h1>
+          <p style={{ color: "var(--muted)" }}>Apenas administradores podem gerenciar usuarios.</p>
+          <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+            <Link href="/" style={{ textDecoration: "none", color: "var(--text)", border: "1px solid var(--card-border)", borderRadius: 10, padding: "8px 12px" }}>Voltar</Link>
+            <button onClick={logout} style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "8px 12px", background: "var(--card)", color: "var(--text)", cursor: "pointer" }}>Sair</button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main style={{ minHeight: "100vh", padding: 24 }}>
+      <div style={{ maxWidth: 920, margin: "0 auto" }}>
+        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div>
+            <h1 style={{ margin: 0 }}>Administracao de acessos</h1>
+            <p style={{ marginTop: 8, color: "var(--muted)", fontSize: 14 }}>
+              Inclua ou exclua usuarios sem sair do sistema.
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <Link href="/" style={{ textDecoration: "none", color: "var(--text)", border: "1px solid var(--card-border)", borderRadius: 10, padding: "10px 12px", background: "var(--card)" }}>
+              Voltar ao monitor
+            </Link>
+            <button onClick={logout} style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "10px 12px", background: "var(--card)", color: "var(--text)", cursor: "pointer" }}>
+              Sair
+            </button>
+          </div>
+        </header>
+
+        <section style={{ marginTop: 16, background: "var(--card)", border: "1px solid var(--card-border)", borderRadius: 16, padding: 16 }}>
+          <h2 style={{ marginTop: 0 }}>Novo usuario</h2>
+          <form onSubmit={handleCreate} style={{ display: "grid", gap: 10 }}>
+            <input
+              placeholder="usuario@dominio.com"
+              value={newUsername}
+              onChange={(e) => setNewUsername(e.target.value)}
+              required
+              style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "10px 12px", background: "rgba(255,255,255,0.7)", color: "var(--text)" }}
+            />
+            <input
+              type="password"
+              placeholder="Senha"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+              style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "10px 12px", background: "rgba(255,255,255,0.7)", color: "var(--text)" }}
+            />
+            <select
+              value={newRole}
+              onChange={(e) => setNewRole(e.target.value === "admin" ? "admin" : "user")}
+              style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "10px 12px", background: "var(--card)", color: "var(--text)" }}
+            >
+              <option value="user">Perfil: usuario</option>
+              <option value="admin">Perfil: admin</option>
+            </select>
+            <button
+              type="submit"
+              disabled={submitting}
+              style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "10px 12px", background: "linear-gradient(135deg, var(--card), rgba(255,255,255,0.12))", color: "var(--text)", cursor: "pointer", fontWeight: 700 }}
+            >
+              {submitting ? "Salvando..." : "Criar usuario"}
+            </button>
+          </form>
+        </section>
+
+        <section style={{ marginTop: 16, background: "var(--card)", border: "1px solid var(--card-border)", borderRadius: 16, padding: 16 }}>
+          <h2 style={{ marginTop: 0 }}>Usuarios cadastrados</h2>
+          {error && <p style={{ color: "var(--error)", fontSize: 13 }}>{error}</p>}
+          {loadingUsers ? (
+            <p style={{ color: "var(--muted)" }}>Carregando...</p>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                <thead>
+                  <tr style={{ textAlign: "left", borderBottom: "1px solid var(--card-border)" }}>
+                    <th style={{ padding: "10px 8px" }}>Usuario</th>
+                    <th style={{ padding: "10px 8px" }}>Perfil</th>
+                    <th style={{ padding: "10px 8px" }}>Criado em</th>
+                    <th style={{ padding: "10px 8px" }}>Acao</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedUsers.map((user) => (
+                    <tr key={user.username} style={{ borderBottom: "1px solid var(--card-border)" }}>
+                      <td style={{ padding: "10px 8px" }}>{user.username}</td>
+                      <td style={{ padding: "10px 8px" }}>{user.role}</td>
+                      <td style={{ padding: "10px 8px" }}>{new Date(user.createdAt).toLocaleString("pt-BR")}</td>
+                      <td style={{ padding: "10px 8px" }}>
+                        <button
+                          onClick={() => handleDelete(user.username)}
+                          style={{ border: "1px solid var(--card-border)", borderRadius: 8, padding: "7px 10px", background: "var(--card)", color: "var(--text)", cursor: "pointer" }}
+                        >
+                          Excluir
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+    </main>
+  );
+}

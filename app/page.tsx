@@ -68,6 +68,17 @@ export default function HomePage() {
   const [arbSellEx, setArbSellEx] = useState<string>("");
   const [customFees, setCustomFees] = useState<Record<string, { buy: number; sell: number }>>(DEFAULT_FEES);
   const [showFees, setShowFees] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  async function logout() {
+    setLoggingOut(true);
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      window.location.href = '/login';
+    } finally {
+      setLoggingOut(false);
+    }
+  }
 
   async function load() {
     try {
@@ -231,6 +242,21 @@ export default function HomePage() {
             >
               Spot x Futuro
             </Link>
+            <Link
+              href="/admin"
+              style={{
+                border: "1px solid var(--card-border)",
+                borderRadius: 12,
+                padding: "10px 12px",
+                textDecoration: "none",
+                background: "var(--card)",
+                color: "var(--text)",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              Admin
+            </Link>
             <select
               className="theme-select"
               value={theme}
@@ -267,6 +293,20 @@ export default function HomePage() {
               }}
             >
               {loading ? "Atualizando..." : "Atualizar"}
+            </button>
+            <button
+              onClick={logout}
+              disabled={loggingOut}
+              style={{
+                border: "1px solid var(--card-border)",
+                borderRadius: 12,
+                padding: "10px 12px",
+                background: "var(--card)",
+                color: "var(--text)",
+                cursor: "pointer",
+              }}
+            >
+              {loggingOut ? "Saindo..." : "Sair"}
             </button>
           </div>
         </header>
