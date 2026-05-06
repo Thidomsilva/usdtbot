@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readSessionFromToken, SESSION_COOKIE } from './lib/session'
+import { getSessionSecret, readSessionFromToken, SESSION_COOKIE } from './lib/session'
 
 function isPublicPath(pathname: string): boolean {
   return pathname === '/login' || pathname === '/api/auth/login'
@@ -12,9 +12,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  const secret = process.env.SESSION_SECRET
+  const secret = getSessionSecret()
   if (!secret) {
-    return new NextResponse('Autenticacao nao configurada. Defina SESSION_SECRET.', {
+    return new NextResponse('Autenticacao nao configurada. Defina ADMIN_PASSWORD ou SESSION_SECRET.', {
       status: 503,
     })
   }

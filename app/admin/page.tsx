@@ -12,6 +12,7 @@ type User = {
 };
 
 export default function AdminPage() {
+  const whatsappHref = "https://wa.me/5543999027395?text=Ol%C3%A1%20da%20ferramenta%20USDBot%20e%20gostaria%20de%20liberar%20meu%20acesso%20full";
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [canManage, setCanManage] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
@@ -128,10 +129,23 @@ export default function AdminPage() {
   if (!canManage) {
     return (
       <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
-        <section style={{ maxWidth: 560, width: "100%", background: "var(--card)", border: "1px solid var(--card-border)", borderRadius: 16, padding: 20 }}>
-          <h1 style={{ marginTop: 0 }}>Acesso negado</h1>
-          <p style={{ color: "var(--muted)" }}>Apenas administradores podem gerenciar usuarios.</p>
-          <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+        <section style={{ maxWidth: 640, width: "100%", background: "var(--card)", border: "1px solid var(--card-border)", borderRadius: 20, padding: 28, textAlign: "center", boxShadow: "var(--shadow)" }}>
+          <h1 style={{ marginTop: 0, marginBottom: 12 }}>Acesso bloqueado</h1>
+          <p style={{ color: "var(--muted)", fontSize: 16, lineHeight: 1.6, margin: "0 auto", maxWidth: 420 }}>
+            Para acesso full da ferramenta falar com o Thiago:
+          </p>
+          <a
+            href={whatsappHref}
+            target="_blank"
+            rel="noreferrer"
+            style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", marginTop: 18, textDecoration: "none", color: "var(--text)", border: "1px solid var(--card-border)", borderRadius: 12, padding: "12px 16px", background: "linear-gradient(135deg, var(--card), rgba(255,255,255,0.12))", fontWeight: 700 }}
+          >
+            WhatsApp: 43 99902-7395
+          </a>
+          <p style={{ color: "var(--muted)", fontSize: 13, lineHeight: 1.5, marginTop: 14 }}>
+            A mensagem ja sera aberta como: Ola da ferramenta USDBot e gostaria de liberar meu acesso full
+          </p>
+          <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 18, flexWrap: "wrap" }}>
             <Link href="/" style={{ textDecoration: "none", color: "var(--text)", border: "1px solid var(--card-border)", borderRadius: 10, padding: "8px 12px" }}>Voltar</Link>
             <button onClick={logout} style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "8px 12px", background: "var(--card)", color: "var(--text)", cursor: "pointer" }}>Sair</button>
           </div>

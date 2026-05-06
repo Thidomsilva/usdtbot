@@ -10,6 +10,22 @@ type SessionPayload = {
 
 export const SESSION_COOKIE = 'usdtbot_session'
 
+export function getSessionSecret(): string | null {
+  const explicitSecret = process.env.SESSION_SECRET?.trim()
+  if (explicitSecret) {
+    return explicitSecret
+  }
+
+  const adminEmail = (process.env.ADMIN_EMAIL ?? 'thiago@sagacy.com.br').trim().toLowerCase()
+  const adminPassword = process.env.ADMIN_PASSWORD?.trim()
+
+  if (!adminPassword) {
+    return null
+  }
+
+  return `bootstrap:${adminEmail}:${adminPassword}`
+}
+
 function toBase64Url(base64: string): string {
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
 }
@@ -126,7 +142,7 @@ export async function readSessionFromToken(
 }
 
 export async function readSessionFromRequest(request: NextRequest) {
-  const secret = process.env.SESSION_SECRET
+  const secret = getSessionSecret()
   if (!secret) {
     return null
   }

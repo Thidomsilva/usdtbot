@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createSessionToken, SESSION_COOKIE } from '@/lib/session'
+import { createSessionToken, getSessionSecret, SESSION_COOKIE } from '@/lib/session'
 import { verifyUserCredentials } from '@/lib/user-store'
 
 export const runtime = 'nodejs'
@@ -18,9 +18,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Credenciais invalidas' }, { status: 401 })
   }
 
-  const secret = process.env.SESSION_SECRET
+  const secret = getSessionSecret()
   if (!secret) {
-    return NextResponse.json({ error: 'SESSION_SECRET nao configurado' }, { status: 503 })
+    return NextResponse.json({ error: 'Autenticacao nao configurada. Defina ADMIN_PASSWORD ou SESSION_SECRET.' }, { status: 503 })
   }
 
   const token = await createSessionToken(user.username, user.role, secret)
