@@ -9,6 +9,8 @@ export default function LoginForm() {
   const nextPath = searchParams.get("next") || "/";
   const telegramHref =
     "tg://resolve?phone=5543999027395&text=Ol%C3%A1%20da%20ferramenta%20USDBot%20e%20gostaria%20de%20liberar%20meu%20acesso%20full";
+  const telegramQrSrc =
+    "https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=tg%3A%2F%2Fresolve%3Fphone%3D5543999027395%26text%3DOl%25C3%25A1%2520da%2520ferramenta%2520USDBot%2520e%2520gostaria%2520de%2520liberar%2520meu%2520acesso%2520full";
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -136,6 +138,19 @@ export default function LoginForm() {
       >
         para solicitar seu acesso fale com o desenvolvedor clicando aqui
       </a>
+
+      <div style={{ marginTop: 14, display: "grid", placeItems: "center", gap: 8 }}>
+        <p style={{ margin: 0, fontSize: 12, color: "var(--muted)", textAlign: "center" }}>
+          Se estiver no notebook, escaneie o QR Code para abrir no Telegram.
+        </p>
+        <img
+          src={telegramQrSrc}
+          alt="QR Code para contato no Telegram"
+          width={140}
+          height={140}
+          style={{ borderRadius: 12, border: "1px solid var(--card-border)", background: "#fff", padding: 8 }}
+        />
+      </div>
     </section>
   );
 }

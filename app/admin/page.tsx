@@ -13,6 +13,7 @@ type User = {
 
 export default function AdminPage() {
   const telegramHref = "tg://resolve?phone=5543999027395&text=Ol%C3%A1%20da%20ferramenta%20USDBot%20e%20gostaria%20de%20liberar%20meu%20acesso%20full";
+  const telegramQrSrc = "https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=tg%3A%2F%2Fresolve%3Fphone%3D5543999027395%26text%3DOl%25C3%25A1%2520da%2520ferramenta%2520USDBot%2520e%2520gostaria%2520de%2520liberar%2520meu%2520acesso%2520full";
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [canManage, setCanManage] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
@@ -176,6 +177,18 @@ export default function AdminPage() {
           <p style={{ color: "var(--muted)", fontSize: 13, lineHeight: 1.5, marginTop: 14 }}>
             A mensagem ja sera aberta como: Ola da ferramenta USDBot e gostaria de liberar meu acesso full
           </p>
+          <div style={{ marginTop: 12, display: "grid", placeItems: "center", gap: 8 }}>
+            <p style={{ margin: 0, color: "var(--muted)", fontSize: 12, textAlign: "center" }}>
+              Se estiver no notebook, escaneie o QR Code para abrir no Telegram.
+            </p>
+            <img
+              src={telegramQrSrc}
+              alt="QR Code para contato no Telegram"
+              width={150}
+              height={150}
+              style={{ borderRadius: 12, border: "1px solid var(--card-border)", background: "#fff", padding: 8 }}
+            />
+          </div>
           <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 18, flexWrap: "wrap" }}>
             <Link href="/" style={{ textDecoration: "none", color: "var(--text)", border: "1px solid var(--card-border)", borderRadius: 10, padding: "8px 12px" }}>Voltar</Link>
             <button onClick={logout} style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "8px 12px", background: "var(--card)", color: "var(--text)", cursor: "pointer" }}>Sair</button>
