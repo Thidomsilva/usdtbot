@@ -7,8 +7,8 @@ export default function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next") || "/";
-  const whatsappHref =
-    "https://wa.me/5543999027395?text=Ol%C3%A1%20da%20ferramenta%20USDBot%20e%20gostaria%20de%20liberar%20meu%20acesso%20full";
+  const telegramHref =
+    "tg://resolve?phone=5543999027395&text=Ol%C3%A1%20da%20ferramenta%20USDBot%20e%20gostaria%20de%20liberar%20meu%20acesso%20full";
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -116,7 +116,7 @@ export default function LoginForm() {
       </form>
 
       <a
-        href={whatsappHref}
+        href={telegramHref}
         target="_blank"
         rel="noreferrer"
         style={{

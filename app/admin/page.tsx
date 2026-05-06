@@ -12,7 +12,7 @@ type User = {
 };
 
 export default function AdminPage() {
-  const whatsappHref = "https://wa.me/5543999027395?text=Ol%C3%A1%20da%20ferramenta%20USDBot%20e%20gostaria%20de%20liberar%20meu%20acesso%20full";
+  const telegramHref = "tg://resolve?phone=5543999027395&text=Ol%C3%A1%20da%20ferramenta%20USDBot%20e%20gostaria%20de%20liberar%20meu%20acesso%20full";
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [canManage, setCanManage] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
@@ -166,12 +166,12 @@ export default function AdminPage() {
             Para acesso full da ferramenta falar com o Thiago:
           </p>
           <a
-            href={whatsappHref}
+            href={telegramHref}
             target="_blank"
             rel="noreferrer"
             style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", marginTop: 18, textDecoration: "none", color: "var(--text)", border: "1px solid var(--card-border)", borderRadius: 12, padding: "12px 16px", background: "linear-gradient(135deg, var(--card), rgba(255,255,255,0.12))", fontWeight: 700 }}
           >
-            WhatsApp: 43 99902-7395
+            Telegram: 43 99902-7395
           </a>
           <p style={{ color: "var(--muted)", fontSize: 13, lineHeight: 1.5, marginTop: 14 }}>
             A mensagem ja sera aberta como: Ola da ferramenta USDBot e gostaria de liberar meu acesso full
