@@ -240,7 +240,13 @@ async function loadStoreFromFile(): Promise<UserStore> {
 }
 
 async function loadStoreFromKv(): Promise<UserStore> {
-  const store = await getRedisClient().get<UserStore>(KV_USERS_KEY)
+  let store: UserStore | null = null
+  try {
+    store = await getRedisClient().get<UserStore>(KV_USERS_KEY)
+  } catch (err) {
+    console.error('[KV-REST] Falha ao conectar, usando fallback de arquivo:', err)
+    return loadStoreFromFile()
+  }
 
   if (!store || !Array.isArray(store.users)) {
     // Se não tem dados no Redis, tenta sincronizar do arquivo local (para Vercel deploys)
@@ -266,8 +272,21 @@ async function loadStoreFromKv(): Promise<UserStore> {
 }
 
 async function loadStoreFromRedisUrl(): Promise<UserStore> {
-  const client = await getRedisUrlClient()
-  const raw = await client.get(KV_USERS_KEY)
+  let client: RedisClientType
+  try {
+    client = await getRedisUrlClient()
+  } catch (err) {
+    console.error('[REDIS-URL] Falha ao conectar, usando fallback de arquivo:', err)
+    return loadStoreFromFile()
+  }
+
+  let raw: string | null = null
+  try {
+    raw = await client.get(KV_USERS_KEY)
+  } catch (err) {
+    console.error('[REDIS-URL] Falha ao ler chave, usando fallback de arquivo:', err)
+    return loadStoreFromFile()
+  }
 
   if (!raw || typeof raw !== 'string') {
     // Se não tem dados no Redis, tenta sincronizar do arquivo local (para Vercel deploys)
