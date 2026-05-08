@@ -25,6 +25,9 @@ export async function GET(request: NextRequest) {
       VERCEL_ENV: process.env.VERCEL_ENV || 'local',
     },
     backend_config: {
+      has_SUPABASE_URL: !!(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL),
+      has_SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      supabase_storage_table: process.env.SUPABASE_STORAGE_TABLE || 'app_storage',
       has_KV_REST_API_URL: !!process.env.KV_REST_API_URL,
       has_KV_REST_API_TOKEN: !!process.env.KV_REST_API_TOKEN,
       has_KV_REST_API_REDIS_URL: !!process.env.KV_REST_API_REDIS_URL,
@@ -47,11 +50,16 @@ export async function GET(request: NextRequest) {
       using_bootstrap: !process.env.SESSION_SECRET ? 'true' : 'false',
     },
     storage_detection: {
+      will_use_supabase: !!(
+        (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL) &&
+        process.env.SUPABASE_SERVICE_ROLE_KEY
+      ),
       will_use_kv_rest: !!(
         (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) ||
         (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) ||
         (process.env.STORAGE_REST_URL && process.env.STORAGE_REST_TOKEN)
-      ),
+      ) &&
+        !((process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL) && process.env.SUPABASE_SERVICE_ROLE_KEY),
       will_use_redis_url: !!(
         !!(
           process.env.KV_REST_API_REDIS_URL ||
@@ -63,10 +71,12 @@ export async function GET(request: NextRequest) {
         !(
           (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) ||
           (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) ||
-          (process.env.STORAGE_REST_URL && process.env.STORAGE_REST_TOKEN)
+          (process.env.STORAGE_REST_URL && process.env.STORAGE_REST_TOKEN) ||
+          ((process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL) && process.env.SUPABASE_SERVICE_ROLE_KEY)
         )
       ),
       will_use_file: !(
+        ((process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL) && process.env.SUPABASE_SERVICE_ROLE_KEY) ||
         (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) ||
         (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) ||
         (process.env.STORAGE_REST_URL && process.env.STORAGE_REST_TOKEN) ||
@@ -87,7 +97,7 @@ export async function GET(request: NextRequest) {
 
   if (!debug.storage_detection.effective_storage_safe) {
     debug.storage_detection.warning =
-      'Deploy Vercel sem Redis/KV configurado. O sistema deve ser tratado como indisponivel para login/admin ate corrigir isso.'
+      'Deploy Vercel sem Supabase ou Redis/KV configurado. O sistema deve ser tratado como indisponivel para login/admin ate corrigir isso.'
   }
 
   // Tentar verificar storage
@@ -127,6 +137,33 @@ export async function GET(request: NextRequest) {
       await client.quit()
     } catch (error) {
       debug.redis_status = {
+        connected: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      }
+    }
+  }
+
+  if (debug.storage_detection.will_use_supabase) {
+    try {
+      const { createClient } = await import('@supabase/supabase-js')
+      const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+      const key = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+      const table = process.env.SUPABASE_STORAGE_TABLE || 'app_storage'
+      const client = createClient(url, key, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      })
+
+      const { error } = await client.from(table).select('key').limit(1)
+      if (error) {
+        throw new Error(error.message)
+      }
+
+      debug.supabase_status = {
+        connected: true,
+        table,
+      }
+    } catch (error) {
+      debug.supabase_status = {
         connected: false,
         error: error instanceof Error ? error.message : 'Unknown error',
       }

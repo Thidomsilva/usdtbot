@@ -2,7 +2,8 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'crypto'
 import { mkdir, readFile, rename, writeFile } from 'fs/promises'
 import path from 'path'
 import { Redis } from '@upstash/redis'
-import { createClient, type RedisClientType } from 'redis'
+import { createClient as createSupabaseClient, type SupabaseClient } from '@supabase/supabase-js'
+import { createClient as createRedisClient, type RedisClientType } from 'redis'
 
 export type UserRole = 'admin' | 'user'
 
@@ -45,12 +46,14 @@ const DATA_DIR = process.env.VERCEL
 const BUNDLED_USERS_FILE = path.join(process.cwd(), 'data', 'users.json')
 const USERS_FILE = path.join(DATA_DIR, 'users.json')
 const KV_USERS_KEY = 'usdtbot:users:v1'
+const SUPABASE_STORAGE_TABLE = (process.env.SUPABASE_STORAGE_TABLE ?? 'app_storage').trim()
 
-type StorageBackend = 'file' | 'kv-rest' | 'kv-redis-url'
+type StorageBackend = 'file' | 'kv-rest' | 'kv-redis-url' | 'supabase'
 
 let redisClient: Redis | null = null
 let redisUrlClient: RedisClientType | null = null
 let redisUrlConnecting: Promise<RedisClientType> | null = null
+let supabaseClient: SupabaseClient | null = null
 
 function shouldRequireDurableStorage(): boolean {
   return Boolean(process.env.VERCEL) && process.env.ALLOW_EPHEMERAL_USER_STORAGE !== 'true'
@@ -95,7 +98,19 @@ function getRedisConnectionUrl(): string | undefined {
   ])
 }
 
+function getSupabaseUrl(): string | undefined {
+  return getFirstEnv(['SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL'])
+}
+
+function getSupabaseServiceRoleKey(): string | undefined {
+  return getFirstEnv(['SUPABASE_SERVICE_ROLE_KEY'])
+}
+
 function getStorageBackend(): StorageBackend {
+  if (getSupabaseUrl() && getSupabaseServiceRoleKey()) {
+    return 'supabase'
+  }
+
   if (getRestUrl() && getRestToken()) {
     return 'kv-rest'
   }
@@ -117,7 +132,7 @@ function assertDurableStorage(backend: StorageBackend): void {
   }
 
   throw new Error(
-    'Storage persistente de usuarios nao configurado. Em deploy Vercel, conecte Redis/KV antes de usar login/admin.'
+    'Storage persistente de usuarios nao configurado. Em deploy Vercel, conecte Supabase ou Redis/KV antes de usar login/admin.'
   )
 }
 
@@ -151,7 +166,7 @@ function getRedisUrl(): string {
 
 async function getRedisUrlClient(): Promise<RedisClientType> {
   if (!redisUrlClient) {
-    redisUrlClient = createClient({ url: getRedisUrl() })
+    redisUrlClient = createRedisClient({ url: getRedisUrl() })
   }
 
   if (!redisUrlClient.isOpen) {
@@ -165,6 +180,28 @@ async function getRedisUrlClient(): Promise<RedisClientType> {
   }
 
   return redisUrlClient
+}
+
+function getSupabaseClient(): SupabaseClient {
+  if (supabaseClient) {
+    return supabaseClient
+  }
+
+  const url = getSupabaseUrl()
+  const serviceRoleKey = getSupabaseServiceRoleKey()
+
+  if (!url || !serviceRoleKey) {
+    throw new Error('Supabase nao configurado (SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY)')
+  }
+
+  supabaseClient = createSupabaseClient(url, serviceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  })
+
+  return supabaseClient
 }
 
 function hashPassword(password: string, salt: string): string {
@@ -279,7 +316,31 @@ async function saveStoreToRedisUrl(store: UserStore): Promise<void> {
   await client.set(KV_USERS_KEY, JSON.stringify(store))
 }
 
+async function saveStoreToSupabase(store: UserStore): Promise<void> {
+  const client = getSupabaseClient()
+
+  const { error } = await client
+    .from(SUPABASE_STORAGE_TABLE)
+    .upsert(
+      {
+        key: KV_USERS_KEY,
+        value: store,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'key' }
+    )
+
+  if (error) {
+    throw new Error(`Falha ao salvar no Supabase: ${error.message}`)
+  }
+}
+
 async function saveStore(store: UserStore, backend: StorageBackend): Promise<void> {
+  if (backend === 'supabase') {
+    await saveStoreToSupabase(store)
+    return
+  }
+
   if (backend === 'kv-rest') {
     await saveStoreToKv(store)
     return
@@ -414,6 +475,31 @@ async function loadStoreFromKv(): Promise<UserStore> {
   return store
 }
 
+async function loadStoreFromSupabase(): Promise<UserStore> {
+  const client = getSupabaseClient()
+
+  const { data, error } = await client
+    .from(SUPABASE_STORAGE_TABLE)
+    .select('value')
+    .eq('key', KV_USERS_KEY)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(`Falha ao ler no Supabase: ${error.message}`)
+  }
+
+  if (!data || !('value' in data)) {
+    return initializeStore('supabase')
+  }
+
+  const store = (data as { value: unknown }).value as UserStore
+  if (!store || !Array.isArray(store.users)) {
+    return initializeStore('supabase')
+  }
+
+  return store
+}
+
 async function loadStoreFromRedisUrl(): Promise<UserStore> {
   let client: RedisClientType
   try {
@@ -471,6 +557,11 @@ async function loadStore(): Promise<UserStore> {
   const backend = getStorageBackend()
   assertDurableStorage(backend)
   let store: UserStore
+
+  if (backend === 'supabase') {
+    store = await loadStoreFromSupabase()
+    return ensureBootstrapAdmin(store)
+  }
 
   if (backend === 'kv-rest') {
     store = await loadStoreFromKv()

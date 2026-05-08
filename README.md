@@ -40,14 +40,37 @@ SESSION_SECRET="opcional-mas-recomendado-em-producao"
 3. Abra `/admin` para incluir, travar, reativar e excluir usuarios sem sair do sistema.
 
 Observacoes:
-- Em producao na Vercel, conecte um Redis da Marketplace (Upstash) para persistencia real.
+- Em producao na Vercel, conecte Supabase ou Redis da Marketplace (Upstash) para persistencia real.
+- Com `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`, os usuarios passam a ser salvos no Supabase (backend prioritario).
 - Com `KV_REST_API_URL` + `KV_REST_API_TOKEN` ou `KV_REST_API_REDIS_URL`, os usuarios passam a ser salvos no Redis.
-- Sem KV configurado, o projeto usa fallback local em `data/users.json` (bom para desenvolvimento).
-- Em deploy na Vercel, o sistema agora falha de forma explicita se nao houver Redis/KV configurado. Isso evita falsa sensacao de persistencia com storage efemero.
+- Sem backend persistente configurado, o projeto usa fallback local em `data/users.json` (somente desenvolvimento).
+- Em deploy na Vercel, o sistema falha de forma explicita se nao houver Supabase/Redis/KV configurado. Isso evita falsa sensacao de persistencia com storage efemero.
 - Se `SESSION_SECRET` nao estiver configurada, a aplicacao usa `ADMIN_EMAIL` + `ADMIN_PASSWORD` para assinar a sessao.
 - Em producao, prefira definir `SESSION_SECRET` explicitamente para desacoplar a sessao da senha do admin.
 
 ## Persistencia no Vercel (recomendado)
+
+Opcao A (recomendada): Supabase
+
+1. Crie um projeto no Supabase.
+2. Execute este SQL no `SQL Editor`:
+
+```sql
+create table if not exists public.app_storage (
+	key text primary key,
+	value jsonb not null,
+	updated_at timestamptz not null default now()
+);
+```
+
+3. Configure no projeto da Vercel:
+	 - `SUPABASE_URL`
+	 - `SUPABASE_SERVICE_ROLE_KEY`
+	 - `SUPABASE_STORAGE_TABLE` (opcional, default: `app_storage`)
+4. Mantenha tambem `ADMIN_EMAIL`, `ADMIN_PASSWORD` e `SESSION_SECRET` nas env vars.
+5. Faça um novo deploy.
+
+Opcao B: Redis/KV
 
 1. No projeto da Vercel, acesse `Storage` e conecte um Redis (Upstash) pela Marketplace.
 2. Confirme que pelo menos uma destas opcoes de env foi adicionada no projeto:
@@ -62,8 +85,8 @@ Com isso, um usuario criado pelo admin continua funcionando ate ser travado ou e
 
 Se voce tem um backup JSON exportado antes da perda, este e o caminho correto:
 
-1. Configure Redis/KV no projeto da Vercel primeiro.
-2. Faça um novo deploy com `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `SESSION_SECRET` e as variaveis do Redis/KV.
+1. Configure Supabase ou Redis/KV no projeto da Vercel primeiro.
+2. Faça um novo deploy com `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `SESSION_SECRET` e as variaveis do backend persistente.
 3. Entre como admin em `/login`.
 4. Abra `/admin`.
 5. Use o botao `Restaurar backup` e selecione o JSON exportado.
@@ -71,7 +94,7 @@ Se voce tem um backup JSON exportado antes da perda, este e o caminho correto:
 Importante:
 - Nao use `AUTH_USERS` com valores de exemplo em producao.
 - O arquivo `data/users.json` esta ignorado pelo git e nao deve ser tratado como banco de dados de producao.
-- Se o deploy estiver sem Redis/KV, login/admin devem ser considerados indisponiveis ate a configuracao correta.
+- Se o deploy estiver sem Supabase/Redis/KV, login/admin devem ser considerados indisponiveis ate a configuracao correta.
 
 ## Endpoints
 
