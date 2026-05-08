@@ -24,8 +24,13 @@ export async function GET(request: NextRequest) {
     return auth.error
   }
 
-  const users = await listUsers()
-  return NextResponse.json({ users })
+  try {
+    const users = await listUsers()
+    return NextResponse.json({ users })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Falha ao carregar usuarios'
+    return NextResponse.json({ error: message }, { status: 503 })
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -48,7 +53,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, user }, { status: 201 })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Falha ao criar usuario'
-    return NextResponse.json({ error: message }, { status: 400 })
+    const status = message.includes('storage persistente') || message.includes('Falha ao salvar usuarios') ? 503 : 400
+    return NextResponse.json({ error: message }, { status })
   }
 }
 
@@ -70,7 +76,8 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ ok: true })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Falha ao remover usuario'
-    return NextResponse.json({ error: message }, { status: 400 })
+    const status = message.includes('storage persistente') || message.includes('Falha ao salvar usuarios') ? 503 : 400
+    return NextResponse.json({ error: message }, { status })
   }
 }
 
@@ -97,7 +104,8 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ ok: true, user })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Falha ao atualizar usuario'
-      return NextResponse.json({ error: message }, { status: 400 })
+      const status = message.includes('storage persistente') || message.includes('Falha ao salvar usuarios') ? 503 : 400
+      return NextResponse.json({ error: message }, { status })
     }
   }
 
@@ -110,6 +118,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ ok: true, user })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Falha ao atualizar usuario'
-    return NextResponse.json({ error: message }, { status: 400 })
+    const status = message.includes('storage persistente') || message.includes('Falha ao salvar usuarios') ? 503 : 400
+    return NextResponse.json({ error: message }, { status })
   }
 }

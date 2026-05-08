@@ -38,7 +38,14 @@ export default function AdminPage() {
 
     try {
       const response = await fetch("/api/admin/users", { cache: "no-store" });
-      const payload = await response.json().catch(() => ({}));
+      const raw = await response.text();
+      const payload = (() => {
+        try {
+          return raw ? JSON.parse(raw) : {};
+        } catch {
+          return { error: raw };
+        }
+      })();
 
       if (!response.ok) {
         setError(payload?.error || "Falha ao carregar usuarios");
