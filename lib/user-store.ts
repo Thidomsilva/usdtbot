@@ -20,6 +20,11 @@ type UserStore = {
   users: StoredUser[]
 }
 
+type SeedUser = {
+  username: string
+  password: string
+}
+
 export type UserBackup = {
   version: 1
   exportedAt: string
@@ -46,6 +51,10 @@ type StorageBackend = 'file' | 'kv-rest' | 'kv-redis-url'
 let redisClient: Redis | null = null
 let redisUrlClient: RedisClientType | null = null
 let redisUrlConnecting: Promise<RedisClientType> | null = null
+
+function shouldRequireDurableStorage(): boolean {
+  return Boolean(process.env.VERCEL) && process.env.ALLOW_EPHEMERAL_USER_STORAGE !== 'true'
+}
 
 function getFirstEnv(keys: string[]): string | undefined {
   for (const key of keys) {
@@ -96,6 +105,24 @@ function getStorageBackend(): StorageBackend {
   }
 
   return 'file'
+}
+
+function assertDurableStorage(backend: StorageBackend): void {
+  if (backend !== 'file') {
+    return
+  }
+
+  if (!shouldRequireDurableStorage()) {
+    return
+  }
+
+  throw new Error(
+    'Storage persistente de usuarios nao configurado. Em deploy Vercel, conecte Redis/KV antes de usar login/admin.'
+  )
+}
+
+function canUseLocalFileFallback(): boolean {
+  return !shouldRequireDurableStorage()
 }
 
 function getRedisClient(): Redis {
@@ -178,12 +205,37 @@ function isStoredUser(entry: unknown): entry is StoredUser {
   )
 }
 
-function parseSeedUsers(raw: string | undefined): Array<{ username: string; password: string }> {
+function isExampleSeedUsers(entries: SeedUser[]): boolean {
+  if (entries.length !== 2) {
+    return false
+  }
+
+  const normalized = entries
+    .map((entry) => `${entry.username}:${entry.password}`)
+    .sort()
+
+  return (
+    normalized[0] === 'cliente1:SenhaForte123' &&
+    normalized[1] === 'cliente2:OutraSenha456'
+  )
+}
+
+function hasOnlyBootstrapAndExampleUsers(users: StoredUser[]): boolean {
+  const usernames = users.map((user) => user.username).sort()
+
+  return (
+    usernames.length === 3 &&
+    usernames.includes('cliente1') &&
+    usernames.includes('cliente2')
+  )
+}
+
+function parseSeedUsers(raw: string | undefined): SeedUser[] {
   if (!raw) {
     return []
   }
 
-  return raw
+  const parsed = raw
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean)
@@ -201,7 +253,14 @@ function parseSeedUsers(raw: string | undefined): Array<{ username: string; pass
 
       return { username, password }
     })
-    .filter((entry): entry is { username: string; password: string } => Boolean(entry))
+    .filter((entry): entry is SeedUser => Boolean(entry))
+
+  if (isExampleSeedUsers(parsed)) {
+    console.warn('[AUTH_USERS] Ignorando seeds de exemplo cliente1/cliente2')
+    return []
+  }
+
+  return parsed
 }
 
 async function saveStoreToFile(store: UserStore): Promise<void> {
@@ -300,6 +359,10 @@ async function loadStoreFromFile(): Promise<UserStore> {
           const raw = await readFile(BUNDLED_USERS_FILE, 'utf8')
           const store = JSON.parse(raw) as UserStore
           if (Array.isArray(store.users) && store.users.length > 0) {
+            if (hasOnlyBootstrapAndExampleUsers(store.users)) {
+              console.warn('[BOOTSTRAP] Ignorando users.json bundled com usuarios de exemplo')
+              return initializeStore('file')
+            }
             console.log('[BOOTSTRAP] Carregando users.json do repositório para /tmp')
             await saveStoreToFile(store)
             return store
@@ -320,13 +383,17 @@ async function loadStoreFromKv(): Promise<UserStore> {
   try {
     store = await getRedisClient().get<UserStore>(KV_USERS_KEY)
   } catch (err) {
+    if (!canUseLocalFileFallback()) {
+      throw new Error('Falha ao conectar no storage persistente (KV REST)')
+    }
+
     console.error('[KV-REST] Falha ao conectar, usando fallback de arquivo:', err)
     return loadStoreFromFile()
   }
 
   if (!store || !Array.isArray(store.users)) {
     // Se não tem dados no Redis, tenta sincronizar do arquivo local (para Vercel deploys)
-    if (process.env.VERCEL) {
+    if (process.env.VERCEL && canUseLocalFileFallback()) {
       try {
         const fileData = await readFile(USERS_FILE, 'utf8')
         const fileStore = JSON.parse(fileData) as UserStore
@@ -352,6 +419,10 @@ async function loadStoreFromRedisUrl(): Promise<UserStore> {
   try {
     client = await getRedisUrlClient()
   } catch (err) {
+    if (!canUseLocalFileFallback()) {
+      throw new Error('Falha ao conectar no storage persistente (REDIS_URL)')
+    }
+
     console.error('[REDIS-URL] Falha ao conectar, usando fallback de arquivo:', err)
     return loadStoreFromFile()
   }
@@ -360,13 +431,17 @@ async function loadStoreFromRedisUrl(): Promise<UserStore> {
   try {
     raw = await client.get(KV_USERS_KEY)
   } catch (err) {
+    if (!canUseLocalFileFallback()) {
+      throw new Error('Falha ao ler usuarios no storage persistente (REDIS_URL)')
+    }
+
     console.error('[REDIS-URL] Falha ao ler chave, usando fallback de arquivo:', err)
     return loadStoreFromFile()
   }
 
   if (!raw || typeof raw !== 'string') {
     // Se não tem dados no Redis, tenta sincronizar do arquivo local (para Vercel deploys)
-    if (process.env.VERCEL) {
+    if (process.env.VERCEL && canUseLocalFileFallback()) {
       try {
         const fileData = await readFile(USERS_FILE, 'utf8')
         const fileStore = JSON.parse(fileData) as UserStore
@@ -394,6 +469,7 @@ async function loadStoreFromRedisUrl(): Promise<UserStore> {
 
 async function loadStore(): Promise<UserStore> {
   const backend = getStorageBackend()
+  assertDurableStorage(backend)
   let store: UserStore
 
   if (backend === 'kv-rest') {
@@ -468,6 +544,11 @@ async function persistStore(store: UserStore): Promise<void> {
   try {
     await saveStore(store, backend)
   } catch (error) {
+    if (!canUseLocalFileFallback()) {
+      console.error('[PERSIST] Falha no backend persistente:', error)
+      throw new Error('Falha ao salvar usuarios no storage persistente configurado')
+    }
+
     // Mantem o sistema funcional quando KV/Redis falha temporariamente.
     console.error('[PERSIST] Falha no backend principal, salvando em arquivo local:', error)
     await saveStoreToFile(store)
@@ -599,6 +680,66 @@ export async function setUserActive(
   user.active = active
   user.updatedAt = new Date().toISOString()
 
+  await persistStore(store)
+
+  return toPublicUser(user)
+}
+
+export async function updateUserCredentials(input: {
+  currentUsername: string
+  nextUsername?: string
+  password?: string
+}): Promise<PublicUser> {
+  const currentUsername = input.currentUsername.trim().toLowerCase()
+  const nextUsername = input.nextUsername?.trim().toLowerCase()
+  const password = input.password?.trim()
+
+  if (!currentUsername) {
+    throw new Error('Usuario invalido')
+  }
+
+  if (nextUsername === '') {
+    throw new Error('Novo usuario invalido')
+  }
+
+  if (!nextUsername && !password) {
+    throw new Error('Informe um novo usuario ou uma nova senha')
+  }
+
+  const store = await loadStore()
+  const user = store.users.find((entry) => entry.username === currentUsername)
+
+  if (!user) {
+    throw new Error('Usuario nao encontrado')
+  }
+
+  const normalizedNextUsername = nextUsername ?? currentUsername
+  if (
+    normalizedNextUsername !== currentUsername &&
+    store.users.some((entry) => entry.username === normalizedNextUsername)
+  ) {
+    throw new Error('Novo usuario ja existe')
+  }
+
+  let changed = false
+
+  if (normalizedNextUsername !== user.username) {
+    user.username = normalizedNextUsername
+    changed = true
+  }
+
+  if (password) {
+    const salt = randomBytes(16).toString('hex')
+    user.salt = salt
+    user.passwordHash = hashPassword(password, salt)
+    changed = true
+  }
+
+  if (!changed) {
+    return toPublicUser(user)
+  }
+
+  user.updatedAt = new Date().toISOString()
   await persistStore(store)
 
   return toPublicUser(user)

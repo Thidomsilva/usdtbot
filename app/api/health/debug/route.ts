@@ -39,6 +39,7 @@ export async function GET(request: NextRequest) {
       has_SESSION_SECRET: !!process.env.SESSION_SECRET,
       has_ADMIN_EMAIL: !!process.env.ADMIN_EMAIL,
       has_ADMIN_PASSWORD: !!process.env.ADMIN_PASSWORD,
+      allow_ephemeral_user_storage: process.env.ALLOW_EPHEMERAL_USER_STORAGE === 'true',
     },
     auth_config: {
       ADMIN_EMAIL: process.env.ADMIN_EMAIL || 'thiago@sagacy.com.br',
@@ -76,7 +77,17 @@ export async function GET(request: NextRequest) {
         process.env.STORAGE_URL
       ),
       file_path_if_used: process.env.VERCEL ? '/tmp/usdtbot/users.json' : 'data/users.json',
+      durable_storage_required: !!process.env.VERCEL && process.env.ALLOW_EPHEMERAL_USER_STORAGE !== 'true',
     },
+  }
+
+  debug.storage_detection.effective_storage_safe = !(
+    debug.storage_detection.durable_storage_required && debug.storage_detection.will_use_file
+  )
+
+  if (!debug.storage_detection.effective_storage_safe) {
+    debug.storage_detection.warning =
+      'Deploy Vercel sem Redis/KV configurado. O sistema deve ser tratado como indisponivel para login/admin ate corrigir isso.'
   }
 
   // Tentar verificar storage

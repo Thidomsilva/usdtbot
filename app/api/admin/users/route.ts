@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createUser, deleteUser, listUsers, setUserActive } from '@/lib/user-store'
+import { createUser, deleteUser, listUsers, setUserActive, updateUserCredentials } from '@/lib/user-store'
 import { readSessionFromRequest } from '@/lib/session'
 
 export const runtime = 'nodejs'
@@ -82,7 +82,24 @@ export async function PATCH(request: NextRequest) {
 
   const body = await request.json().catch(() => null)
   const username = String(body?.username ?? '').trim()
+  const currentUsername = String(body?.currentUsername ?? body?.username ?? '').trim()
+  const nextUsername = typeof body?.nextUsername === 'string' ? body.nextUsername : undefined
+  const password = typeof body?.password === 'string' ? body.password : undefined
   const active = body?.active
+
+  if (nextUsername !== undefined || password !== undefined) {
+    if (!currentUsername) {
+      return NextResponse.json({ error: 'Usuario atual e obrigatorio' }, { status: 400 })
+    }
+
+    try {
+      const user = await updateUserCredentials({ currentUsername, nextUsername, password })
+      return NextResponse.json({ ok: true, user })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao atualizar usuario'
+      return NextResponse.json({ error: message }, { status: 400 })
+    }
+  }
 
   if (!username || typeof active !== 'boolean') {
     return NextResponse.json({ error: 'Usuario e status sao obrigatorios' }, { status: 400 })

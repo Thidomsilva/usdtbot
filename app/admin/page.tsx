@@ -146,6 +146,50 @@ export default function AdminPage() {
     }
   }
 
+  async function handleEditAccess(user: User) {
+    const nextUsernameInput = window.prompt("Novo login do usuario", user.username);
+    if (nextUsernameInput === null) {
+      return;
+    }
+
+    const nextUsername = nextUsernameInput.trim();
+    const passwordInput = window.prompt("Nova senha (deixe em branco para manter a atual)", "");
+    if (passwordInput === null) {
+      return;
+    }
+
+    const password = passwordInput.trim();
+    if (!nextUsername) {
+      setError("O login do usuario nao pode ficar vazio");
+      return;
+    }
+
+    if (nextUsername === user.username && !password) {
+      return;
+    }
+
+    setUpdatingUsername(user.username);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentUsername: user.username, nextUsername, password }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(payload?.error || "Falha ao atualizar acesso do usuario");
+        return;
+      }
+
+      await loadUsers();
+    } finally {
+      setUpdatingUsername(null);
+    }
+  }
+
   async function handleExportBackup() {
     setError(null);
 
@@ -263,6 +307,9 @@ export default function AdminPage() {
             <p style={{ marginTop: 8, color: "var(--muted)", fontSize: 14 }}>
               Inclua, trave, reative ou exclua usuarios sem sair do sistema.
             </p>
+            <p style={{ marginTop: 8, color: "var(--muted)", fontSize: 13 }}>
+              Se algum acesso tiver sido recriado como cliente1 ou cliente2, use Editar acesso para restaurar o login correto e definir uma nova senha.
+            </p>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <Link href="/" style={{ textDecoration: "none", color: "var(--text)", border: "1px solid var(--card-border)", borderRadius: 10, padding: "10px 12px", background: "var(--card)" }}>
@@ -366,6 +413,13 @@ export default function AdminPage() {
                       <td style={{ padding: "10px 8px" }}>{new Date(user.createdAt).toLocaleString("pt-BR")}</td>
                       <td style={{ padding: "10px 8px" }}>
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <button
+                            onClick={() => handleEditAccess(user)}
+                            disabled={updatingUsername === user.username}
+                            style={{ border: "1px solid var(--card-border)", borderRadius: 8, padding: "7px 10px", background: "var(--card)", color: "var(--text)", cursor: "pointer" }}
+                          >
+                            Editar acesso
+                          </button>
                           <button
                             onClick={() => handleToggleActive(user)}
                             disabled={updatingUsername === user.username}
