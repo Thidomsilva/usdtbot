@@ -145,6 +145,17 @@ export default function AdminPage() {
     }
   }
 
+  async function handleExportBackup() {
+    const data = JSON.stringify({ users }, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `usdtbot-users-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/login";
@@ -255,8 +266,18 @@ export default function AdminPage() {
         </section>
 
         <section style={{ marginTop: 16, background: "var(--card)", border: "1px solid var(--card-border)", borderRadius: 16, padding: 16 }}>
-          <h2 style={{ marginTop: 0 }}>Usuarios cadastrados</h2>
-          {error && <p style={{ color: "var(--error)", fontSize: 13 }}>{error}</p>}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+            <h2 style={{ margin: 0 }}>Usuarios cadastrados</h2>
+            {users.length > 0 && (
+              <button
+                onClick={handleExportBackup}
+                style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "8px 14px", background: "var(--card)", color: "var(--text)", cursor: "pointer", fontSize: 13 }}
+              >
+                ⬇ Exportar backup (JSON)
+              </button>
+            )}
+          </div>
+          {error && <p style={{ color: "var(--error)", fontSize: 13, marginTop: 12 }}>{error}</p>}
           {loadingUsers ? (
             <p style={{ color: "var(--muted)" }}>Carregando...</p>
           ) : (
