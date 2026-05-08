@@ -319,6 +319,9 @@ export default function AdminPage() {
             </p>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
+            <Link href="/admin/arbitragem-geral" style={{ textDecoration: "none", color: "var(--text)", border: "1px solid var(--card-border)", borderRadius: 10, padding: "10px 12px", background: "var(--card)" }}>
+              Arbitragem Admin
+            </Link>
             <Link href="/" style={{ textDecoration: "none", color: "var(--text)", border: "1px solid var(--card-border)", borderRadius: 10, padding: "10px 12px", background: "var(--card)" }}>
               Voltar ao monitor
             </Link>
