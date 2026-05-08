@@ -85,8 +85,6 @@ function vol(v: number) {
 }
 
 export default function HomePage() {
-  const [checkingAuth, setCheckingAuth] = useState(true);
-  const [canAccess, setCanAccess] = useState(false);
   const [data, setData] = useState<PricesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [countdown, setCountdown] = useState(REFRESH_SECONDS);
@@ -122,9 +120,11 @@ export default function HomePage() {
   async function load() {
     try {
       const res = await fetch("/api/prices", { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) return;
       const json = (await res.json()) as PricesResponse;
       setData(json);
+    } catch {
+      // Mantem a tela atual em caso de falha temporaria da API.
     } finally {
       setLoading(false);
       setCountdown(REFRESH_SECONDS);
@@ -147,18 +147,6 @@ export default function HomePage() {
   }, [theme]);
 
   useEffect(() => {
-    (async () => {
-      const me = await fetch("/api/auth/me", { cache: "no-store" });
-      const payload = await me.json().catch(() => ({}));
-      const isAdmin = Boolean(me.ok && payload?.user?.role === "admin");
-      setCanAccess(isAdmin);
-      setCheckingAuth(false);
-    })();
-  }, []);
-
-  useEffect(() => {
-    if (!canAccess) return;
-
     load();
     const t1 = setInterval(load, REFRESH_SECONDS * 1000);
     const t2 = setInterval(() => setCountdown((c) => (c > 0 ? c - 1 : 0)), 1000);
@@ -166,7 +154,7 @@ export default function HomePage() {
       clearInterval(t1);
       clearInterval(t2);
     };
-  }, [canAccess]);
+  }, []);
 
   const cards = useMemo(() => {
     if (!data) return [];
@@ -413,50 +401,6 @@ export default function HomePage() {
     return { total, profitable, withNetworkMatch, best };
   }, [screenerRows]);
 
-  if (checkingAuth) {
-    return (
-      <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
-        <div style={{ color: "var(--muted)", fontSize: 14 }}>Validando permissao de admin...</div>
-      </main>
-    );
-  }
-
-  if (!canAccess) {
-    return (
-      <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
-        <div
-          style={{
-            maxWidth: 480,
-            width: "100%",
-            background: "var(--card)",
-            border: "1px solid var(--card-border)",
-            borderRadius: 14,
-            padding: 20,
-            boxShadow: "var(--shadow)",
-          }}
-        >
-          <h1 style={{ margin: 0, fontSize: 20 }}>Acesso restrito</h1>
-          <p style={{ marginTop: 10, color: "var(--muted)", fontSize: 14 }}>
-            Esta copia da arbitragem geral e exclusiva para administradores.
-          </p>
-          <Link
-            href="/"
-            style={{
-              display: "inline-block",
-              marginTop: 10,
-              border: "1px solid var(--card-border)",
-              borderRadius: 10,
-              padding: "8px 12px",
-              textDecoration: "none",
-              color: "var(--text)",
-            }}
-          >
-            Voltar ao monitor
-          </Link>
-        </div>
-      </main>
-    );
-  }
 
   return (
     <main className="page-shell" style={{ minHeight: "100vh", padding: "24px" }}>
