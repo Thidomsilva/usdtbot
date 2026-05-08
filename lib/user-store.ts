@@ -28,7 +28,9 @@ export type PublicUser = {
   updatedAt: string
 }
 
-const DATA_DIR = path.join(process.cwd(), 'data')
+const DATA_DIR = process.env.VERCEL
+  ? path.join('/tmp', 'usdtbot')
+  : path.join(process.cwd(), 'data')
 const USERS_FILE = path.join(DATA_DIR, 'users.json')
 const KV_USERS_KEY = 'usdtbot:users:v1'
 
