@@ -87,9 +87,6 @@ function vol(v: number) {
 export default function HomePage() {
   console.log("[ArbitragemAdmin] Page component rendering");
 
-  const [checkingAuth, setCheckingAuth] = useState(true);
-  const [canAccess, setCanAccess] = useState(false);
-  
   const [data, setData] = useState<PricesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [countdown, setCountdown] = useState(REFRESH_SECONDS);
@@ -112,6 +109,7 @@ export default function HomePage() {
     Object.fromEntries(ORDER.map((key) => [key, true])) as Record<string, boolean>
   );
 
+
   async function logout() {
     setLoggingOut(true);
     try {
@@ -121,7 +119,6 @@ export default function HomePage() {
       setLoggingOut(false);
     }
   }
-
   async function load() {
     try {
       const res = await fetch("/api/prices", { cache: "no-store" });
@@ -135,22 +132,6 @@ export default function HomePage() {
       setCountdown(REFRESH_SECONDS);
     }
   }
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const me = await fetch("/api/auth/me", { cache: "no-store" });
-        const payload = await me.json().catch(() => ({}));
-        const isAdmin = Boolean(me.ok && payload?.user?.role === "admin");
-        console.log("[ArbitragemAdmin] Auth check:", { isAdmin, status: me.status, role: payload?.user?.role });
-        setCanAccess(isAdmin);
-      } catch (error) {
-        console.error("[ArbitragemAdmin] Auth check error:", error);
-      } finally {
-        setCheckingAuth(false);
-      }
-    })();
-  }, []);
 
   useEffect(() => {
     const saved = (localStorage.getItem("theme-mode") as ThemeMode | null) ?? "auto";
@@ -441,21 +422,7 @@ export default function HomePage() {
 
 
   return (
-    <main className="page-shell" style={{ minHeight: "100vh", padding: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      {checkingAuth && (
-        <div style={{ textAlign: "center" }}>
-          <p>Validando permissão de admin...</p>
-        </div>
-      )}
-      
-      {!checkingAuth && !canAccess && (
-        <div style={{ textAlign: "center", color: "var(--error)" }}>
-          <p>Acesso restrito. Apenas admins podem acessar esta página.</p>
-        </div>
-      )}
-      
-      {!checkingAuth && canAccess && (
-      <div style={{ width: "100%" }}>
+    <main className="page-shell" style={{ minHeight: "100vh", padding: "24px" }}>
       <div className="page-container" style={{ maxWidth: 1080, margin: "0 auto" }}>
         <header className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div className="hero-copy">
@@ -1133,8 +1100,6 @@ export default function HomePage() {
           </div>
         </section>
       </div>
-      </div>
-      )}
 
       <style jsx>{`
         .page-shell {
@@ -1276,6 +1241,6 @@ export default function HomePage() {
           }
         }
       `}</style>
-    </main>
+      </main>
   );
 }
