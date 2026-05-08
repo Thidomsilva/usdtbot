@@ -85,8 +85,6 @@ function vol(v: number) {
 }
 
 export default function HomePage() {
-  console.log("[ArbitragemAdmin] Page component rendering");
-
   const [data, setData] = useState<PricesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [countdown, setCountdown] = useState(REFRESH_SECONDS);
@@ -98,11 +96,11 @@ export default function HomePage() {
   const [showFees, setShowFees] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [arbNetwork, setArbNetwork] = useState<string>("");
-  const [screenerMinSpreadPct, setScreenerMinSpreadPct] = useState<string>("0.20");
+  const [screenerMinSpreadPct, setScreenerMinSpreadPct] = useState<string>("0.00");
   const [screenerMinNetProfitBrl, setScreenerMinNetProfitBrl] = useState<string>("0");
-  const [screenerTransferBufferBrl, setScreenerTransferBufferBrl] = useState<string>("2");
-  const [screenerOnlyNetworkMatch, setScreenerOnlyNetworkMatch] = useState(true);
-  const [screenerOnlyPositive, setScreenerOnlyPositive] = useState(true);
+  const [screenerTransferBufferBrl, setScreenerTransferBufferBrl] = useState<string>("0");
+  const [screenerOnlyNetworkMatch, setScreenerOnlyNetworkMatch] = useState(false);
+  const [screenerOnlyPositive, setScreenerOnlyPositive] = useState(false);
   const [screenerNetworkFilter, setScreenerNetworkFilter] = useState<string>("ALL");
   const [screenerMaxRows, setScreenerMaxRows] = useState<string>("20");
   const [enabledExchanges, setEnabledExchanges] = useState<Record<string, boolean>>(() =>
@@ -305,6 +303,8 @@ export default function HomePage() {
       sellKey: string;
       buyLabel: string;
       sellLabel: string;
+      buyStatus: string;
+      sellStatus: string;
       buyPrice: number;
       sellPrice: number;
       grossSpreadPct: number;
@@ -351,7 +351,7 @@ export default function HomePage() {
 
         const transferFeeUsdt = transferNetwork
           ? NETWORK_TRANSFER_FEE_USDT[transferNetwork] ?? DEFAULT_TRANSFER_FEE_USDT
-          : DEFAULT_TRANSFER_FEE_USDT;
+          : 0;
 
         const usdtBought = (amount / buyPrice) * (1 - buyFee);
         const usdtAfterTransfer = Math.max(usdtBought - transferFeeUsdt, 0);
@@ -373,6 +373,8 @@ export default function HomePage() {
           sellKey: sell.key,
           buyLabel: buy.ex.label,
           sellLabel: sell.ex.label,
+          buyStatus: buy.ex.status,
+          sellStatus: sell.ex.status,
           buyPrice,
           sellPrice,
           grossSpreadPct,
@@ -852,10 +854,10 @@ export default function HomePage() {
           }}
         >
           <h2 style={{ margin: "0 0 8px", fontSize: 20, fontWeight: 700, letterSpacing: "-0.4px" }}>
-            Screener de Oportunidades (Inspirado em Scanner)
+            Painel Proprietario de Oportunidades
           </h2>
           <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.5 }}>
-            Ranking automatico de rotas compra/venda considerando spread, taxas, rede, custo de transferencia e liquidez proxy.
+            Rotas compra/venda com leitura direta do mercado para decisao rapida da operacao.
           </p>
 
           <div
@@ -1013,7 +1015,7 @@ export default function HomePage() {
               <div style={{ marginTop: 4, fontSize: 16, fontWeight: 700 }}>{screenerSummary.withNetworkMatch}</div>
             </div>
             <div>
-              <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Melhor score</div>
+              <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Melhor indice</div>
               <div style={{ marginTop: 4, fontSize: 16, fontWeight: 700 }}>
                 {screenerSummary.best ? `${screenerSummary.best.score.toFixed(2)}` : "-"}
               </div>
@@ -1047,11 +1049,21 @@ export default function HomePage() {
                     <tr key={row.key} style={{ borderBottom: "1px solid var(--card-border)" }}>
                       <td style={{ padding: "8px 6px" }}>{index + 1}</td>
                       <td style={{ padding: "8px 6px" }}>
-                        <div style={{ fontWeight: 700 }}>{row.buyLabel}</div>
+                        <div style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+                          {row.buyLabel}
+                          <span style={{ fontSize: 10, color: row.buyStatus === "ok" ? "var(--ok)" : "var(--error)", border: `1px solid ${row.buyStatus === "ok" ? "var(--ok)" : "var(--error)"}`, borderRadius: 999, padding: "2px 6px", textTransform: "uppercase" }}>
+                            {row.buyStatus === "ok" ? "online" : "erro"}
+                          </span>
+                        </div>
                         <div style={{ color: "var(--muted)", marginTop: 2 }}>{money(row.buyPrice)} · taxa {row.buyFeePct.toFixed(2)}%</div>
                       </td>
                       <td style={{ padding: "8px 6px" }}>
-                        <div style={{ fontWeight: 700 }}>{row.sellLabel}</div>
+                        <div style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+                          {row.sellLabel}
+                          <span style={{ fontSize: 10, color: row.sellStatus === "ok" ? "var(--ok)" : "var(--error)", border: `1px solid ${row.sellStatus === "ok" ? "var(--ok)" : "var(--error)"}`, borderRadius: 999, padding: "2px 6px", textTransform: "uppercase" }}>
+                            {row.sellStatus === "ok" ? "online" : "erro"}
+                          </span>
+                        </div>
                         <div style={{ color: "var(--muted)", marginTop: 2 }}>{money(row.sellPrice)} · taxa {row.sellFeePct.toFixed(2)}%</div>
                       </td>
                       <td style={{ padding: "8px 6px" }}>
