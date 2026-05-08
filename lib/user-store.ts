@@ -348,16 +348,73 @@ async function loadStoreFromRedisUrl(): Promise<UserStore> {
 
 async function loadStore(): Promise<UserStore> {
   const backend = getStorageBackend()
+  let store: UserStore
 
   if (backend === 'kv-rest') {
-    return loadStoreFromKv()
+    store = await loadStoreFromKv()
+    return ensureBootstrapAdmin(store)
   }
 
   if (backend === 'kv-redis-url') {
-    return loadStoreFromRedisUrl()
+    store = await loadStoreFromRedisUrl()
+    return ensureBootstrapAdmin(store)
   }
 
-  return loadStoreFromFile()
+  store = await loadStoreFromFile()
+  return ensureBootstrapAdmin(store)
+}
+
+async function ensureBootstrapAdmin(store: UserStore): Promise<UserStore> {
+  const adminEmail = (process.env.ADMIN_EMAIL ?? 'thiago@sagacy.com.br').trim().toLowerCase()
+  const adminPassword = (process.env.ADMIN_PASSWORD ?? '').trim()
+
+  if (!adminEmail || !adminPassword) {
+    return store
+  }
+
+  const now = new Date().toISOString()
+  let changed = false
+  const existing = store.users.find((entry) => entry.username === adminEmail)
+
+  if (!existing) {
+    const salt = randomBytes(16).toString('hex')
+    store.users.push({
+      username: adminEmail,
+      role: 'admin',
+      salt,
+      passwordHash: hashPassword(adminPassword, salt),
+      active: true,
+      createdAt: now,
+      updatedAt: now,
+    })
+    changed = true
+  } else {
+    if (existing.role !== 'admin') {
+      existing.role = 'admin'
+      changed = true
+    }
+
+    if (!existing.active) {
+      existing.active = true
+      changed = true
+    }
+
+    const expectedHash = hashPassword(adminPassword, existing.salt)
+    if (existing.passwordHash !== expectedHash) {
+      existing.passwordHash = expectedHash
+      changed = true
+    }
+
+    if (changed) {
+      existing.updatedAt = now
+    }
+  }
+
+  if (changed) {
+    await persistStore(store)
+  }
+
+  return store
 }
 
 async function persistStore(store: UserStore): Promise<void> {
