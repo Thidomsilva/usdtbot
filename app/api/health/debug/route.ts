@@ -30,6 +30,12 @@ export async function GET(request: NextRequest) {
       has_KV_REST_API_REDIS_URL: !!process.env.KV_REST_API_REDIS_URL,
       has_REDIS_URL: !!process.env.REDIS_URL,
       has_KV_URL: !!process.env.KV_URL,
+      has_UPSTASH_REDIS_REST_URL: !!process.env.UPSTASH_REDIS_REST_URL,
+      has_UPSTASH_REDIS_REST_TOKEN: !!process.env.UPSTASH_REDIS_REST_TOKEN,
+      has_UPSTASH_REDIS_URL: !!process.env.UPSTASH_REDIS_URL,
+      has_STORAGE_REST_URL: !!process.env.STORAGE_REST_URL,
+      has_STORAGE_REST_TOKEN: !!process.env.STORAGE_REST_TOKEN,
+      has_STORAGE_URL: !!process.env.STORAGE_URL,
       has_SESSION_SECRET: !!process.env.SESSION_SECRET,
       has_ADMIN_EMAIL: !!process.env.ADMIN_EMAIL,
       has_ADMIN_PASSWORD: !!process.env.ADMIN_PASSWORD,
@@ -40,16 +46,34 @@ export async function GET(request: NextRequest) {
       using_bootstrap: !process.env.SESSION_SECRET ? 'true' : 'false',
     },
     storage_detection: {
-      will_use_kv_rest: !!(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN),
+      will_use_kv_rest: !!(
+        (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) ||
+        (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) ||
+        (process.env.STORAGE_REST_URL && process.env.STORAGE_REST_TOKEN)
+      ),
       will_use_redis_url: !!(
-        !!(process.env.KV_REST_API_REDIS_URL || process.env.REDIS_URL || process.env.KV_URL) &&
-        !(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN)
+        !!(
+          process.env.KV_REST_API_REDIS_URL ||
+          process.env.REDIS_URL ||
+          process.env.KV_URL ||
+          process.env.UPSTASH_REDIS_URL ||
+          process.env.STORAGE_URL
+        ) &&
+        !(
+          (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) ||
+          (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) ||
+          (process.env.STORAGE_REST_URL && process.env.STORAGE_REST_TOKEN)
+        )
       ),
       will_use_file: !(
         (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) ||
+        (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) ||
+        (process.env.STORAGE_REST_URL && process.env.STORAGE_REST_TOKEN) ||
         process.env.KV_REST_API_REDIS_URL ||
         process.env.REDIS_URL ||
-        process.env.KV_URL
+        process.env.KV_URL ||
+        process.env.UPSTASH_REDIS_URL ||
+        process.env.STORAGE_URL
       ),
       file_path_if_used: process.env.VERCEL ? '/tmp/usdtbot/users.json' : 'data/users.json',
     },
@@ -76,7 +100,12 @@ export async function GET(request: NextRequest) {
   if (debug.storage_detection.will_use_redis_url) {
     try {
       const { createClient } = await import('redis')
-      const url = process.env.KV_REST_API_REDIS_URL || process.env.REDIS_URL || process.env.KV_URL
+      const url =
+        process.env.KV_REST_API_REDIS_URL ||
+        process.env.REDIS_URL ||
+        process.env.KV_URL ||
+        process.env.UPSTASH_REDIS_URL ||
+        process.env.STORAGE_URL
       const client = createClient({ url })
       const connectPromise = client.connect()
       const timeoutPromise = new Promise((_, reject) =>

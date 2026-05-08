@@ -47,12 +47,51 @@ let redisClient: Redis | null = null
 let redisUrlClient: RedisClientType | null = null
 let redisUrlConnecting: Promise<RedisClientType> | null = null
 
+function getFirstEnv(keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = process.env[key]?.trim()
+    if (value) {
+      return value
+    }
+  }
+
+  return undefined
+}
+
+function getRestUrl(): string | undefined {
+  return getFirstEnv([
+    'KV_REST_API_URL',
+    'UPSTASH_REDIS_REST_URL',
+    'STORAGE_REST_URL',
+    'REDIS_REST_URL',
+  ])
+}
+
+function getRestToken(): string | undefined {
+  return getFirstEnv([
+    'KV_REST_API_TOKEN',
+    'UPSTASH_REDIS_REST_TOKEN',
+    'STORAGE_REST_TOKEN',
+    'REDIS_REST_TOKEN',
+  ])
+}
+
+function getRedisConnectionUrl(): string | undefined {
+  return getFirstEnv([
+    'KV_REST_API_REDIS_URL',
+    'REDIS_URL',
+    'KV_URL',
+    'UPSTASH_REDIS_URL',
+    'STORAGE_URL',
+  ])
+}
+
 function getStorageBackend(): StorageBackend {
-  if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
+  if (getRestUrl() && getRestToken()) {
     return 'kv-rest'
   }
 
-  if (process.env.KV_REST_API_REDIS_URL || process.env.REDIS_URL || process.env.KV_URL) {
+  if (getRedisConnectionUrl()) {
     return 'kv-redis-url'
   }
 
@@ -61,16 +100,23 @@ function getStorageBackend(): StorageBackend {
 
 function getRedisClient(): Redis {
   if (!redisClient) {
-    redisClient = Redis.fromEnv()
+    const restUrl = getRestUrl()
+    const restToken = getRestToken()
+
+    if (restUrl && restToken) {
+      redisClient = new Redis({ url: restUrl, token: restToken })
+    } else {
+      redisClient = Redis.fromEnv()
+    }
   }
 
   return redisClient
 }
 
 function getRedisUrl(): string {
-  const url = process.env.KV_REST_API_REDIS_URL || process.env.REDIS_URL || process.env.KV_URL
+  const url = getRedisConnectionUrl()
   if (!url) {
-    throw new Error('URL do Redis nao configurada')
+    throw new Error('URL do Redis nao configurada (KV_REST_API_REDIS_URL/REDIS_URL/KV_URL/UPSTASH_REDIS_URL/STORAGE_URL)')
   }
 
   return url
