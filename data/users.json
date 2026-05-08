@@ -1,0 +1,31 @@
+{
+  "users": [
+    {
+      "username": "thiago@sagacy.com.br",
+      "role": "admin",
+      "salt": "a5df00a40bde441e2e2df3a97d12887d",
+      "passwordHash": "b90d6de278ff1d2192019e9427345632d22cfab26b4d4dee8706830da0b4870d03385c49a2c28366ba58a4e6066e3f9cbba6ea7c142e396829e83cedb0130e54",
+      "active": true,
+      "createdAt": "2026-05-08T11:17:11.037Z",
+      "updatedAt": "2026-05-08T19:00:00.000Z"
+    },
+    {
+      "username": "cliente1",
+      "role": "user",
+      "salt": "069e44a894456207790903d138bdf681",
+      "passwordHash": "6e3baa8e2bfa067aa90d12bcde25c659d5eed3947cc39721aee8fde16b6ca4781c790ce555c15acd58fd382bed954753782e244b07cf8271b2e886611d4b6e6d",
+      "active": true,
+      "createdAt": "2026-05-08T11:17:11.037Z",
+      "updatedAt": "2026-05-08T11:17:11.037Z"
+    },
+    {
+      "username": "cliente2",
+      "role": "user",
+      "salt": "283cdca1bcda7dbd325e2a66852b497c",
+      "passwordHash": "562cacdf39320aee348b9dbef5ea31158f3efa9f33814fdc7d9307fac307a045a3cec2a082eed2a02cf39a8a0af532550a2e1ac205e7f1918c7a17a994575034",
+      "active": true,
+      "createdAt": "2026-05-08T11:17:11.037Z",
+      "updatedAt": "2026-05-08T11:17:11.037Z"
+    }
+  ]
+}
