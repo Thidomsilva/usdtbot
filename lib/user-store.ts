@@ -31,6 +31,7 @@ export type PublicUser = {
 const DATA_DIR = process.env.VERCEL
   ? path.join('/tmp', 'usdtbot')
   : path.join(process.cwd(), 'data')
+const BUNDLED_USERS_FILE = path.join(process.cwd(), 'data', 'users.json')
 const USERS_FILE = path.join(DATA_DIR, 'users.json')
 const KV_USERS_KEY = 'usdtbot:users:v1'
 
@@ -217,6 +218,20 @@ async function loadStoreFromFile(): Promise<UserStore> {
   } catch (error) {
     const message = error instanceof Error ? error.message : ''
     if (message.includes('ENOENT')) {
+      // No Vercel o /tmp é efêmero. Tenta usar o data/users.json do repositório como seed.
+      if (process.env.VERCEL) {
+        try {
+          const raw = await readFile(BUNDLED_USERS_FILE, 'utf8')
+          const store = JSON.parse(raw) as UserStore
+          if (Array.isArray(store.users) && store.users.length > 0) {
+            console.log('[BOOTSTRAP] Carregando users.json do repositório para /tmp')
+            await saveStoreToFile(store)
+            return store
+          }
+        } catch {
+          // sem arquivo bundled, cai para initializeStore
+        }
+      }
       return initializeStore('file')
     }
 
