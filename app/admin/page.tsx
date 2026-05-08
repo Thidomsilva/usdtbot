@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 
 type User = {
   username: string;
@@ -25,6 +25,7 @@ export default function AdminPage() {
   const [newRole, setNewRole] = useState<"admin" | "user">("user");
   const [submitting, setSubmitting] = useState(false);
   const [updatingUsername, setUpdatingUsername] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(false);
 
   const sortedUsers = useMemo(
     () => [...users].sort((a, b) => a.username.localeCompare(b.username)),
@@ -146,7 +147,17 @@ export default function AdminPage() {
   }
 
   async function handleExportBackup() {
-    const data = JSON.stringify({ users }, null, 2);
+    setError(null);
+
+    const response = await fetch("/api/admin/users/backup", { cache: "no-store" });
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      setError(payload?.error || "Falha ao exportar backup");
+      return;
+    }
+
+    const data = JSON.stringify(payload, null, 2);
     const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -154,6 +165,40 @@ export default function AdminPage() {
     a.download = `usdtbot-users-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function handleImportBackup(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setRestoring(true);
+    setError(null);
+
+    try {
+      const raw = await file.text();
+      const backup = JSON.parse(raw);
+
+      const response = await fetch("/api/admin/users/backup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(backup),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(payload?.error || "Falha ao restaurar backup");
+        return;
+      }
+
+      await loadUsers();
+    } catch {
+      setError("Arquivo de backup invalido");
+    } finally {
+      event.target.value = "";
+      setRestoring(false);
+    }
   }
 
   async function logout() {
@@ -268,14 +313,20 @@ export default function AdminPage() {
         <section style={{ marginTop: 16, background: "var(--card)", border: "1px solid var(--card-border)", borderRadius: 16, padding: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
             <h2 style={{ margin: 0 }}>Usuarios cadastrados</h2>
-            {users.length > 0 && (
-              <button
-                onClick={handleExportBackup}
-                style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "8px 14px", background: "var(--card)", color: "var(--text)", cursor: "pointer", fontSize: 13 }}
-              >
-                ⬇ Exportar backup (JSON)
-              </button>
-            )}
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              {users.length > 0 && (
+                <button
+                  onClick={handleExportBackup}
+                  style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "8px 14px", background: "var(--card)", color: "var(--text)", cursor: "pointer", fontSize: 13 }}
+                >
+                  Exportar backup (JSON)
+                </button>
+              )}
+              <label style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "8px 14px", background: "var(--card)", color: "var(--text)", cursor: restoring ? "wait" : "pointer", fontSize: 13, opacity: restoring ? 0.7 : 1 }}>
+                {restoring ? "Restaurando..." : "Restaurar backup"}
+                <input type="file" accept="application/json" onChange={handleImportBackup} disabled={restoring} style={{ display: "none" }} />
+              </label>
+            </div>
           </div>
           {error && <p style={{ color: "var(--error)", fontSize: 13, marginTop: 12 }}>{error}</p>}
           {loadingUsers ? (

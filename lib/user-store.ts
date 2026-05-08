@@ -6,7 +6,7 @@ import { createClient, type RedisClientType } from 'redis'
 
 export type UserRole = 'admin' | 'user'
 
-type StoredUser = {
+export type StoredUser = {
   username: string
   role: UserRole
   salt: string
@@ -17,6 +17,12 @@ type StoredUser = {
 }
 
 type UserStore = {
+  users: StoredUser[]
+}
+
+export type UserBackup = {
+  version: 1
+  exportedAt: string
   users: StoredUser[]
 }
 
@@ -100,6 +106,30 @@ function toPublicUser(user: StoredUser): PublicUser {
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   }
+}
+
+function normalizeStoredUser(entry: StoredUser): StoredUser {
+  return {
+    ...entry,
+    username: entry.username.trim().toLowerCase(),
+  }
+}
+
+function isStoredUser(entry: unknown): entry is StoredUser {
+  if (!entry || typeof entry !== 'object') {
+    return false
+  }
+
+  const candidate = entry as Partial<StoredUser>
+  return Boolean(
+    typeof candidate.username === 'string' &&
+      (candidate.role === 'admin' || candidate.role === 'user') &&
+      typeof candidate.salt === 'string' &&
+      typeof candidate.passwordHash === 'string' &&
+      typeof candidate.active === 'boolean' &&
+      typeof candidate.createdAt === 'string' &&
+      typeof candidate.updatedAt === 'string'
+  )
 }
 
 function parseSeedUsers(raw: string | undefined): Array<{ username: string; password: string }> {
@@ -332,7 +362,55 @@ async function loadStore(): Promise<UserStore> {
 
 async function persistStore(store: UserStore): Promise<void> {
   const backend = getStorageBackend()
-  await saveStore(store, backend)
+  try {
+    await saveStore(store, backend)
+  } catch (error) {
+    // Mantem o sistema funcional quando KV/Redis falha temporariamente.
+    console.error('[PERSIST] Falha no backend principal, salvando em arquivo local:', error)
+    await saveStoreToFile(store)
+  }
+}
+
+export async function exportUsersBackup(): Promise<UserBackup> {
+  const store = await loadStore()
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    users: store.users,
+  }
+}
+
+export async function restoreUsersBackup(backup: unknown): Promise<number> {
+  if (!backup || typeof backup !== 'object') {
+    throw new Error('Backup invalido')
+  }
+
+  const payload = backup as Partial<UserBackup>
+  const users = Array.isArray(payload.users) ? payload.users : null
+
+  if (!users || users.length === 0) {
+    throw new Error('Backup sem usuarios')
+  }
+
+  if (!users.every((entry) => isStoredUser(entry))) {
+    throw new Error('Formato de backup invalido')
+  }
+
+  const normalizedUsers = users.map((entry) => normalizeStoredUser(entry))
+  const admins = normalizedUsers.filter((entry) => entry.role === 'admin' && entry.active)
+
+  if (admins.length === 0) {
+    throw new Error('Backup precisa conter ao menos um admin ativo')
+  }
+
+  const dedupMap = new Map<string, StoredUser>()
+  for (const user of normalizedUsers) {
+    dedupMap.set(user.username, user)
+  }
+
+  const store: UserStore = { users: Array.from(dedupMap.values()) }
+  await persistStore(store)
+  return store.users.length
 }
 
 export async function listUsers(): Promise<PublicUser[]> {
