@@ -13,17 +13,42 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Usuario e senha sao obrigatorios' }, { status: 400 })
   }
 
-  const user = await verifyUserCredentials(username, password)
+  let user
+  try {
+    user = await verifyUserCredentials(username, password)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido'
+    console.error('[LOGIN] Erro ao verificar credenciais:', message)
+    return NextResponse.json(
+      { error: 'Erro ao processar autenticacao: ' + message },
+      { status: 503 }
+    )
+  }
+
   if (!user) {
     return NextResponse.json({ error: 'Credenciais invalidas' }, { status: 401 })
   }
 
   const secret = getSessionSecret()
   if (!secret) {
-    return NextResponse.json({ error: 'Autenticacao nao configurada. Defina ADMIN_PASSWORD ou SESSION_SECRET.' }, { status: 503 })
+    return NextResponse.json(
+      { error: 'Autenticacao nao configurada. Defina ADMIN_PASSWORD ou SESSION_SECRET.' },
+      { status: 503 }
+    )
   }
 
-  const token = await createSessionToken(user.username, user.role, secret)
+  let token
+  try {
+    token = await createSessionToken(user.username, user.role, secret)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido'
+    console.error('[LOGIN] Erro ao criar token:', message)
+    return NextResponse.json(
+      { error: 'Erro ao criar sessao: ' + message },
+      { status: 503 }
+    )
+  }
+
   const response = NextResponse.json({ ok: true, user: { username: user.username, role: user.role } })
 
   response.cookies.set({

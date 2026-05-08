@@ -228,6 +228,22 @@ async function loadStoreFromKv(): Promise<UserStore> {
   const store = await getRedisClient().get<UserStore>(KV_USERS_KEY)
 
   if (!store || !Array.isArray(store.users)) {
+    // Se não tem dados no Redis, tenta sincronizar do arquivo local (para Vercel deploys)
+    if (process.env.VERCEL) {
+      try {
+        const fileData = await readFile(USERS_FILE, 'utf8')
+        const fileStore = JSON.parse(fileData) as UserStore
+        if (Array.isArray(fileStore.users) && fileStore.users.length > 0) {
+          // Sincroniza arquivo local para Redis
+          console.log('[SYNC] Importando users.json local para KV')
+          await getRedisClient().set(KV_USERS_KEY, fileStore)
+          return fileStore
+        }
+      } catch (err) {
+        // Arquivo não existe ou é inválido, continua com inicialização
+        console.log('[SYNC] Não há arquivo local para sincronizar')
+      }
+    }
     return initializeStore('kv-rest')
   }
 
@@ -239,6 +255,22 @@ async function loadStoreFromRedisUrl(): Promise<UserStore> {
   const raw = await client.get(KV_USERS_KEY)
 
   if (!raw || typeof raw !== 'string') {
+    // Se não tem dados no Redis, tenta sincronizar do arquivo local (para Vercel deploys)
+    if (process.env.VERCEL) {
+      try {
+        const fileData = await readFile(USERS_FILE, 'utf8')
+        const fileStore = JSON.parse(fileData) as UserStore
+        if (Array.isArray(fileStore.users) && fileStore.users.length > 0) {
+          // Sincroniza arquivo local para Redis
+          console.log('[SYNC] Importando users.json local para Redis')
+          await client.set(KV_USERS_KEY, JSON.stringify(fileStore))
+          return fileStore
+        }
+      } catch (err) {
+        // Arquivo não existe ou é inválido, continua com inicialização
+        console.log('[SYNC] Não há arquivo local para sincronizar')
+      }
+    }
     return initializeStore('kv-redis-url')
   }
 

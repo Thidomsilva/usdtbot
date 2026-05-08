@@ -36,6 +36,12 @@ function fromBase64Url(base64url: string): string {
 }
 
 function base64EncodeUtf8(value: string): string {
+  // Tenta usar Buffer do Node.js primeiro (mais confiável)
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(value, 'utf-8').toString('base64')
+  }
+
+  // Fallback para navegador
   if (typeof btoa === 'function') {
     const bytes = new TextEncoder().encode(value)
     let binary = ''
@@ -45,17 +51,23 @@ function base64EncodeUtf8(value: string): string {
     return btoa(binary)
   }
 
-  throw new Error('btoa nao disponivel')
+  throw new Error('btoa nao disponivel e Buffer nao encontrado')
 }
 
 function base64DecodeUtf8(value: string): string {
+  // Tenta usar Buffer do Node.js primeiro
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(value, 'base64').toString('utf-8')
+  }
+
+  // Fallback para navegador
   if (typeof atob === 'function') {
     const binary = atob(value)
     const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
     return new TextDecoder().decode(bytes)
   }
 
-  throw new Error('atob nao disponivel')
+  throw new Error('atob nao disponivel e Buffer nao encontrado')
 }
 
 function base64UrlEncode(value: string): string {
