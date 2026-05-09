@@ -125,7 +125,6 @@ export default function ArbitragemScannerPage() {
 	const [transferBufferBrl, setTransferBufferBrl] = useState("0");
 	const [onlyNetworkMatch, setOnlyNetworkMatch] = useState(false);
 	const [onlyPositive, setOnlyPositive] = useState(false);
-	const [networkFilter, setNetworkFilter] = useState("ALL");
 	const [maxRows, setMaxRows] = useState("20");
 	const [enabledExchanges, setEnabledExchanges] = useState<Record<string, boolean>>(() =>
 		Object.fromEntries(ORDER.map((key) => [key, true])) as Record<string, boolean>
@@ -190,11 +189,6 @@ export default function ArbitragemScannerPage() {
 		return labels;
 	}, [selectedToken]);
 
-	const networkOptions = useMemo(
-		() => Array.from(new Set(Object.values(EXCHANGE_NETWORKS).flat())).sort((a, b) => a.localeCompare(b)),
-		[]
-	);
-
 	const rows = useMemo(() => {
 		const amount = parseFloat(amountBrl);
 		if (!Number.isFinite(amount) || amount <= 0) return [] as ScreenerRow[];
@@ -228,12 +222,8 @@ export default function ArbitragemScannerPage() {
 				const hasNetworkMatch = commonNetworks.length > 0;
 
 				if (onlyNetworkMatch && !hasNetworkMatch) continue;
-				if (networkFilter !== "ALL" && !commonNetworks.includes(networkFilter)) continue;
 
-				const transferNetwork =
-					networkFilter !== "ALL" && commonNetworks.includes(networkFilter)
-						? networkFilter
-						: commonNetworks[0] ?? null;
+				const transferNetwork = commonNetworks[0] ?? null;
 
 				const transferFeeAsset = transferNetwork
 					? NETWORK_TRANSFER_FEE_ASSET[transferNetwork] ?? DEFAULT_TRANSFER_FEE_ASSET
@@ -290,7 +280,6 @@ export default function ArbitragemScannerPage() {
 		maxRows,
 		onlyNetworkMatch,
 		onlyPositive,
-		networkFilter,
 		okCards,
 		enabledExchanges,
 		customFees,
@@ -418,14 +407,11 @@ export default function ArbitragemScannerPage() {
 						<label style={{ fontSize: 12, color: "var(--muted)" }}>
 							Rede alvo
 							<select
-								value={networkFilter}
-								onChange={(e) => setNetworkFilter(e.target.value)}
+								value="ALL"
+								disabled
 								style={{ marginTop: 4, border: "1px solid var(--card-border)", borderRadius: 8, padding: "8px 10px", background: "var(--card)", color: "var(--text)", width: "100%" }}
 							>
-								<option value="ALL">Todas</option>
-								{networkOptions.map((network) => (
-									<option key={network} value={network}>{network}</option>
-								))}
+								<option value="ALL">Todas (fixo)</option>
 							</select>
 						</label>
 						<label style={{ fontSize: 12, color: "var(--muted)" }}>
