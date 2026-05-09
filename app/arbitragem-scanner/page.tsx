@@ -340,6 +340,37 @@ export default function ArbitragemScannerPage() {
 		return { total, profitable, withNetworkMatch, best };
 	}, [rows]);
 
+	const signalDeck = useMemo(() => rows.slice(0, 3), [rows]);
+
+	const viabilityRadar = useMemo(() => {
+		const maxAbsProfit = Math.max(
+			1,
+			...viabilityCards
+				.map(({ best }) => Math.abs(best?.netProfitBrl ?? 0))
+				.filter((value) => Number.isFinite(value))
+		);
+
+		return viabilityCards.slice(0, 10).map(({ token, best, viable }) => {
+			const net = best?.netProfitBrl ?? 0;
+			const strength = Math.max(6, Math.min(100, (Math.abs(net) / maxAbsProfit) * 100));
+			return {
+				token,
+				best,
+				viable,
+				net,
+				strength,
+			};
+		});
+	}, [viabilityCards]);
+
+	const pulse = useMemo(() => {
+		if (summary.total === 0) return { label: "Mercado frio", color: "var(--muted)" };
+		const ratio = summary.profitable / summary.total;
+		if (ratio >= 0.55) return { label: "Mercado quente", color: "var(--ok)" };
+		if (ratio >= 0.25) return { label: "Mercado misto", color: "#f59e0b" };
+		return { label: "Mercado defensivo", color: "var(--error)" };
+	}, [summary]);
+
 	return (
 		<main className="page-shell" style={{ minHeight: "100vh", padding: "24px" }}>
 			<div className="page-container" style={{ maxWidth: 1180, margin: "0 auto" }}>
@@ -379,6 +410,88 @@ export default function ArbitragemScannerPage() {
 						? `${selectedTokenCards.length} de ${(selectedToken.exchanges ?? []).filter((exchange) => ORDER.includes(exchange.exchange)).length} corretoras com livro para ${selectedToken.symbol}`
 						: `${tokenOptions.length} moedas monitoradas (modo todas)`} · proxima atualizacao em {countdown}s
 				</div>
+
+				<section
+					style={{
+						marginTop: 14,
+						background: "linear-gradient(120deg, rgba(11,18,32,0.95), rgba(8,50,43,0.82))",
+						border: "1px solid rgba(90,160,140,0.25)",
+						borderRadius: 18,
+						padding: 14,
+						display: "grid",
+						gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+						gap: 12,
+					}}
+				>
+					<div style={{ minWidth: 0 }}>
+						<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+							<div style={{ fontSize: 11, color: "#9dd3c5", textTransform: "uppercase", letterSpacing: "0.08em" }}>Command Center</div>
+							<div style={{ fontSize: 12, color: pulse.color, fontWeight: 700 }}>{pulse.label}</div>
+						</div>
+						<div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
+							{signalDeck.length === 0 ? (
+								<div style={{ color: "#9db0bd", fontSize: 13 }}>Sem sinais de alta prioridade com os filtros atuais.</div>
+							) : (
+								signalDeck.map((row, index) => (
+									<button
+										key={row.key}
+										onClick={() => setSelectedTokenId(row.tokenId)}
+										style={{
+											textAlign: "left",
+											border: "1px solid rgba(118,172,214,0.35)",
+											borderRadius: 12,
+											padding: 10,
+											background: "linear-gradient(135deg, rgba(17,43,64,0.72), rgba(12,30,44,0.66))",
+											color: "#d8e6ef",
+											cursor: "pointer",
+										}}
+									>
+										<div style={{ fontSize: 10, color: "#8eb6c9", textTransform: "uppercase", letterSpacing: "0.06em" }}>Sinal #{index + 1}</div>
+										<div style={{ marginTop: 4, fontWeight: 700 }}>{row.tokenSymbol} · {row.buyLabel} → {row.sellLabel}</div>
+										<div style={{ marginTop: 6, fontSize: 13, color: row.netProfitBrl >= 0 ? "#4be595" : "#ff8a8a", fontWeight: 700 }}>
+											{row.netProfitBrl >= 0 ? "+" : ""}R$ {row.netProfitBrl.toFixed(2)}
+										</div>
+										<div style={{ marginTop: 2, fontSize: 12, color: "#9db0bd" }}>Score {row.score.toFixed(2)} · Spread {row.grossSpreadPct.toFixed(3)}%</div>
+									</button>
+								))
+							)}
+						</div>
+					</div>
+
+					<div style={{ border: "1px solid rgba(90,160,140,0.22)", borderRadius: 12, padding: 10, background: "rgba(6,19,30,0.38)" }}>
+						<div style={{ fontSize: 11, color: "#9dd3c5", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+							Radar de Viabilidade
+						</div>
+						<div style={{ display: "grid", gap: 6 }}>
+							{viabilityRadar.length === 0 ? (
+								<div style={{ color: "#9db0bd", fontSize: 13 }}>Sem dados para radar.</div>
+							) : (
+								viabilityRadar.map((item) => (
+									<div key={item.token.id} style={{ display: "grid", gridTemplateColumns: "54px 1fr 70px", alignItems: "center", gap: 8 }}>
+										<button
+											onClick={() => setSelectedTokenId(item.token.id)}
+											style={{ border: "none", background: "transparent", color: "#d8e6ef", cursor: "pointer", textAlign: "left", padding: 0, fontSize: 12, fontWeight: 700 }}
+										>
+											{item.token.symbol}
+										</button>
+										<div style={{ height: 6, borderRadius: 999, background: "rgba(255,255,255,0.1)", overflow: "hidden" }}>
+											<div
+												style={{
+													height: "100%",
+													width: `${item.strength}%`,
+													background: item.viable ? "linear-gradient(90deg, #1fd18a, #50f0ad)" : "linear-gradient(90deg, #8b95a5, #b0b7c2)",
+												}}
+											/>
+										</div>
+										<div style={{ textAlign: "right", fontSize: 12, color: item.net >= 0 ? "#4be595" : "#ff8a8a", fontWeight: 700 }}>
+											{item.net >= 0 ? "+" : ""}R$ {item.net.toFixed(0)}
+										</div>
+									</div>
+								))
+							)}
+						</div>
+					</div>
+				</section>
 
 				<section
 					style={{
