@@ -2,9 +2,32 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import type { PricesResponse } from "@/lib/types";
 
-const REFRESH_SECONDS = 5;
+type TokenExchangeQuote = {
+	exchange: string;
+	label: string;
+	status: "ok" | "not_listed";
+	price_brl?: number;
+	bid_price_brl?: number;
+	ask_price_brl?: number;
+	volume_24h_brl?: number;
+};
+
+type FanTokenRow = {
+	id: string;
+	symbol: string;
+	team: string;
+	status: "ok" | "error";
+	exchanges?: TokenExchangeQuote[];
+};
+
+type FanTokensResponse = {
+	timestamp: string;
+	tokens: FanTokenRow[];
+	error?: string;
+};
+
+const REFRESH_SECONDS = 20;
 const ORDER = [
 	"binance",
 	"bybit",
@@ -31,7 +54,7 @@ const EXCHANGE_NETWORKS: Record<string, string[]> = {
 	mercadobitcoin: ["TRC20", "ERC20"],
 };
 
-const NETWORK_TRANSFER_FEE_USDT: Record<string, number> = {
+const NETWORK_TRANSFER_FEE_ASSET: Record<string, number> = {
 	TRC20: 1,
 	BEP20: 0.3,
 	BSC: 0.3,
@@ -43,7 +66,7 @@ const NETWORK_TRANSFER_FEE_USDT: Record<string, number> = {
 	KCC: 0.1,
 };
 
-const DEFAULT_TRANSFER_FEE_USDT = 1;
+const DEFAULT_TRANSFER_FEE_ASSET = 1;
 
 const DEFAULT_FEES: Record<string, { buy: number; sell: number }> = {
 	binance: { buy: 0.2, sell: 0.2 },
@@ -78,11 +101,11 @@ type ScreenerRow = {
 	grossSpreadPct: number;
 	netProfitBrl: number;
 	netProfitPct: number;
-	usdtAfterTransfer: number;
+	assetAfterTransfer: number;
 	liquidityBrl: number;
 	buyFeePct: number;
 	sellFeePct: number;
-	transferFeeUsdt: number;
+	transferFeeAsset: number;
 	transferNetwork: string | null;
 	hasNetworkMatch: boolean;
 	commonNetworks: string[];
@@ -90,9 +113,10 @@ type ScreenerRow = {
 };
 
 export default function ArbitragemScannerPage() {
-	const [data, setData] = useState<PricesResponse | null>(null);
+	const [data, setData] = useState<FanTokensResponse | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [countdown, setCountdown] = useState(REFRESH_SECONDS);
+	const [selectedTokenId, setSelectedTokenId] = useState("");
 	const [amountBrl, setAmountBrl] = useState("1000");
 	const [customFees, setCustomFees] = useState<Record<string, { buy: number; sell: number }>>(DEFAULT_FEES);
 	const [showFees, setShowFees] = useState(false);
@@ -109,9 +133,9 @@ export default function ArbitragemScannerPage() {
 
 	async function load() {
 		try {
-			const res = await fetch("/api/prices", { cache: "no-store" });
+			const res = await fetch("/api/fan-tokens", { cache: "no-store" });
 			if (!res.ok) return;
-			const json = (await res.json()) as PricesResponse;
+			const json = (await res.json()) as FanTokensResponse;
 			setData(json);
 		} catch {
 			// Mantem os dados atuais em falha temporaria de API.
@@ -131,12 +155,40 @@ export default function ArbitragemScannerPage() {
 		};
 	}, []);
 
-	const okCards = useMemo(() => {
-		if (!data) return [];
-		return Object.entries(data.exchanges)
-			.filter(([key, ex]) => ORDER.includes(key) && ex.status === "ok" && ex.price_brl != null)
-			.map(([key, ex]) => ({ key, ex }));
+	const tokenOptions = useMemo(() => {
+		if (!data?.tokens) return [] as FanTokenRow[];
+		return data.tokens
+			.filter((token) => token.status === "ok" && token.symbol !== "USDT")
+			.filter((token) => (token.exchanges ?? []).some((quote) => quote.status === "ok" && (quote.ask_price_brl ?? 0) > 0 && (quote.bid_price_brl ?? 0) > 0))
+			.sort((a, b) => a.symbol.localeCompare(b.symbol));
 	}, [data]);
+
+	useEffect(() => {
+		if (tokenOptions.length === 0) return;
+		if (!selectedTokenId || !tokenOptions.some((token) => token.id === selectedTokenId)) {
+			setSelectedTokenId(tokenOptions[0].id);
+		}
+	}, [tokenOptions, selectedTokenId]);
+
+	const selectedToken = useMemo(
+		() => tokenOptions.find((token) => token.id === selectedTokenId) ?? null,
+		[tokenOptions, selectedTokenId]
+	);
+
+	const okCards = useMemo(() => {
+		if (!selectedToken) return [];
+		return (selectedToken.exchanges ?? [])
+			.filter((ex) => ORDER.includes(ex.exchange) && ex.status === "ok" && (ex.ask_price_brl ?? 0) > 0 && (ex.bid_price_brl ?? 0) > 0)
+			.map((ex) => ({ key: ex.exchange, ex }));
+	}, [selectedToken]);
+
+	const exchangeLabelByKey = useMemo(() => {
+		const labels = new Map<string, string>();
+		for (const exchange of selectedToken?.exchanges ?? []) {
+			labels.set(exchange.exchange, exchange.label);
+		}
+		return labels;
+	}, [selectedToken]);
 
 	const networkOptions = useMemo(
 		() => Array.from(new Set(Object.values(EXCHANGE_NETWORKS).flat())).sort((a, b) => a.localeCompare(b)),
@@ -159,8 +211,8 @@ export default function ArbitragemScannerPage() {
 			for (const sell of selected) {
 				if (buy.key === sell.key) continue;
 
-				const buyPrice = buy.ex.price_brl ?? 0;
-				const sellPrice = sell.ex.price_brl ?? 0;
+				const buyPrice = buy.ex.ask_price_brl ?? 0;
+				const sellPrice = sell.ex.bid_price_brl ?? 0;
 				if (buyPrice <= 0 || sellPrice <= 0) continue;
 
 				const buyFeePct = customFees[buy.key]?.buy ?? 0.1;
@@ -183,13 +235,13 @@ export default function ArbitragemScannerPage() {
 						? networkFilter
 						: commonNetworks[0] ?? null;
 
-				const transferFeeUsdt = transferNetwork
-					? NETWORK_TRANSFER_FEE_USDT[transferNetwork] ?? DEFAULT_TRANSFER_FEE_USDT
+				const transferFeeAsset = transferNetwork
+					? NETWORK_TRANSFER_FEE_ASSET[transferNetwork] ?? DEFAULT_TRANSFER_FEE_ASSET
 					: 0;
 
-				const usdtBought = (amount / buyPrice) * (1 - buyFee);
-				const usdtAfterTransfer = Math.max(usdtBought - transferFeeUsdt, 0);
-				const brlBack = usdtAfterTransfer * sellPrice * (1 - sellFee);
+				const assetBought = (amount / buyPrice) * (1 - buyFee);
+				const assetAfterTransfer = Math.max(assetBought - transferFeeAsset, 0);
+				const brlBack = assetAfterTransfer * sellPrice * (1 - sellFee);
 				const netProfitBrl = brlBack - amount - transferBuffer;
 				const netProfitPct = (netProfitBrl / amount) * 100;
 
@@ -197,7 +249,7 @@ export default function ArbitragemScannerPage() {
 				if (netProfitBrl < minNetProfit) continue;
 				if (onlyPositive && netProfitBrl <= 0) continue;
 
-				const liquidityBrl = Math.min(buy.ex.volume_24h ?? 0, sell.ex.volume_24h ?? 0);
+				const liquidityBrl = Math.min(buy.ex.volume_24h_brl ?? 0, sell.ex.volume_24h_brl ?? 0);
 				const liquidityFactor = Math.min(liquidityBrl / 1_000_000, 10);
 				const score = netProfitPct * 10 + liquidityFactor + (hasNetworkMatch ? 5 : -20);
 
@@ -210,11 +262,11 @@ export default function ArbitragemScannerPage() {
 					grossSpreadPct,
 					netProfitBrl,
 					netProfitPct,
-					usdtAfterTransfer,
+					assetAfterTransfer,
 					liquidityBrl,
 					buyFeePct,
 					sellFeePct,
-					transferFeeUsdt,
+					transferFeeAsset,
 					transferNetwork,
 					hasNetworkMatch,
 					commonNetworks,
@@ -264,7 +316,7 @@ export default function ArbitragemScannerPage() {
 						</div>
 						<h1 style={{ margin: 0, fontSize: 34, letterSpacing: "-0.8px", fontWeight: 800 }}>Scanner de Arbitragem</h1>
 						<p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 15 }}>
-							Tela dedicada para ranking de rotas compra/venda entre corretoras, sem mesclar com a tela USDT.
+							Tela dedicada para ranking de rotas compra/venda entre corretoras para os tokens da Arbitragem Geral.
 						</p>
 					</div>
 					<button
@@ -287,7 +339,9 @@ export default function ArbitragemScannerPage() {
 				</header>
 
 				<div style={{ marginTop: 14, color: "var(--muted)", fontSize: 13 }}>
-					{data ? `${data.ok_count} de ${data.total_count} corretoras ativas` : "Carregando..."} · proxima atualizacao em {countdown}s
+					{selectedToken
+						? `${okCards.length} de ${(selectedToken.exchanges ?? []).filter((exchange) => ORDER.includes(exchange.exchange)).length} corretoras com livro para ${selectedToken.symbol}`
+						: "Carregando tokens..."} · proxima atualizacao em {countdown}s
 				</div>
 
 				<section
@@ -302,6 +356,22 @@ export default function ArbitragemScannerPage() {
 					}}
 				>
 					<div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+						<label style={{ fontSize: 12, color: "var(--muted)" }}>
+							Token
+							<select
+								value={selectedTokenId}
+								onChange={(e) => setSelectedTokenId(e.target.value)}
+								style={{ marginTop: 4, border: "1px solid var(--card-border)", borderRadius: 8, padding: "8px 10px", background: "var(--card)", color: "var(--text)", width: "100%" }}
+							>
+								{tokenOptions.length === 0 ? (
+									<option value="">Sem tokens disponiveis</option>
+								) : (
+									tokenOptions.map((token) => (
+										<option key={token.id} value={token.id}>{token.symbol} · {token.team}</option>
+									))
+								)}
+							</select>
+						</label>
 						<label style={{ fontSize: 12, color: "var(--muted)" }}>
 							Valor da operacao (R$)
 							<input
@@ -401,12 +471,12 @@ export default function ArbitragemScannerPage() {
 					{showFees && (
 						<div style={{ marginTop: 2, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
 							{ORDER.map((key) => {
-								const ex = data?.exchanges[key];
-								if (!ex) return null;
+								const exLabel = exchangeLabelByKey.get(key);
+								if (!exLabel) return null;
 								const fees = customFees[key] ?? { buy: 0.1, sell: 0.1 };
 								return (
 									<div key={key} style={{ padding: "10px 12px", border: "1px solid var(--card-border)", borderRadius: 10, background: "var(--card)" }}>
-										<div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>{ex.label}</div>
+										<div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>{exLabel}</div>
 										<div style={{ display: "flex", gap: 8 }}>
 											<label style={{ flex: 1, fontSize: 11, color: "var(--muted)" }}>
 												Compra (%)
@@ -458,7 +528,7 @@ export default function ArbitragemScannerPage() {
 						</button>
 						{ORDER.map((key) => {
 							const enabled = enabledExchanges[key] ?? true;
-							const exLabel = data?.exchanges[key]?.label ?? key;
+							const exLabel = exchangeLabelByKey.get(key) ?? key;
 							return (
 								<button
 									key={key}
@@ -554,7 +624,7 @@ export default function ArbitragemScannerPage() {
 										</td>
 										<td style={{ padding: "8px 6px" }}>
 											<div style={{ fontWeight: 700, color: row.hasNetworkMatch ? "var(--ok)" : "var(--error)" }}>{row.transferNetwork ?? "Sem match"}</div>
-											<div style={{ color: "var(--muted)", marginTop: 2 }}>Fee: {row.transferFeeUsdt.toFixed(3)} USDT</div>
+											<div style={{ color: "var(--muted)", marginTop: 2 }}>Fee: {row.transferFeeAsset.toFixed(4)} {selectedToken?.symbol ?? "ATIVO"}</div>
 										</td>
 										<td style={{ padding: "8px 6px" }}>
 											<div style={{ color: row.grossSpreadPct >= 0 ? "var(--ok)" : "var(--error)", fontWeight: 700 }}>
@@ -570,7 +640,7 @@ export default function ArbitragemScannerPage() {
 											</div>
 											<div style={{ color: row.netProfitPct >= 0 ? "var(--ok)" : "var(--error)", marginTop: 2 }}>
 												{row.netProfitPct >= 0 ? "+" : ""}
-												{row.netProfitPct.toFixed(3)}% · {row.usdtAfterTransfer.toFixed(4)} USDT
+												{row.netProfitPct.toFixed(3)}% · {row.assetAfterTransfer.toFixed(4)} {selectedToken?.symbol ?? "ATIVO"}
 											</div>
 										</td>
 										<td style={{ padding: "8px 6px" }}>{vol(row.liquidityBrl)}</td>
