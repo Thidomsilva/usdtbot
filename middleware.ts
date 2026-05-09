@@ -5,8 +5,8 @@ const PUBLIC_FILE_PATTERN = /\.[^/]+$/
 
 function isPublicPath(pathname: string): boolean {
   return pathname === '/login'
-    || pathname === '/arbitragem-scanner'
-    || pathname === '/admin/arbitragem-geral'
+    || pathname.startsWith('/arbitragem-scanner')
+    || pathname.startsWith('/admin/arbitragem-geral')
     || pathname === '/api/auth/login'
     || pathname === '/api/prices'
     || pathname === '/api/health/debug'

@@ -147,23 +147,6 @@ export default function HomePage() {
   }, [theme]);
 
   useEffect(() => {
-    // Debug: verificar session periodicamente
-    const checkSession = async () => {
-      try {
-        const res = await fetch("/api/debug/session", { cache: "no-store" });
-        const data = await res.json();
-        console.log("[Session Debug]", data);
-      } catch (err) {
-        console.error("[Session Debug] Erro:", err);
-      }
-    };
-
-    checkSession();
-    const sessionCheckInterval = setInterval(checkSession, 30000); // a cada 30s
-    return () => clearInterval(sessionCheckInterval);
-  }, []);
-
-  useEffect(() => {
     load();
     const t1 = setInterval(load, REFRESH_SECONDS * 1000);
     const t2 = setInterval(() => setCountdown((c) => (c > 0 ? c - 1 : 0)), 1000);
