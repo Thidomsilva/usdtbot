@@ -66,6 +66,18 @@ const NETWORK_TRANSFER_FEE_ASSET: Record<string, number> = {
 	KCC: 0.1,
 };
 
+const NETWORK_TRANSFER_ETA_MINUTES: Record<string, { min: number; max: number }> = {
+	TRC20: { min: 2, max: 8 },
+	BEP20: { min: 1, max: 5 },
+	BSC: { min: 1, max: 5 },
+	ERC20: { min: 8, max: 25 },
+	Arbitrum: { min: 1, max: 4 },
+	Polygon: { min: 1, max: 6 },
+	Solana: { min: 1, max: 3 },
+	Base: { min: 1, max: 5 },
+	KCC: { min: 2, max: 8 },
+};
+
 const DEFAULT_TRANSFER_FEE_ASSET = 1;
 const ALL_TOKENS_ID = "__ALL__";
 
@@ -98,6 +110,8 @@ type ScreenerRow = {
 	tokenId: string;
 	tokenSymbol: string;
 	tokenTeam: string;
+	buyExchangeKey: string;
+	sellExchangeKey: string;
 	buyLabel: string;
 	sellLabel: string;
 	buyPrice: number;
@@ -133,6 +147,11 @@ export default function ArbitragemScannerPage() {
 	const [enabledExchanges, setEnabledExchanges] = useState<Record<string, boolean>>(() =>
 		Object.fromEntries(ORDER.map((key) => [key, true])) as Record<string, boolean>
 	);
+	const [selectedSignalKey, setSelectedSignalKey] = useState<string | null>(null);
+	const [simAmountBrl, setSimAmountBrl] = useState("1000");
+	const [simTransferExtraBrl, setSimTransferExtraBrl] = useState("0");
+	const [simBuySlippagePct, setSimBuySlippagePct] = useState("0.10");
+	const [simSellSlippagePct, setSimSellSlippagePct] = useState("0.10");
 
 	async function load() {
 		try {
@@ -219,7 +238,7 @@ export default function ArbitragemScannerPage() {
 
 			for (const buy of selected) {
 				for (const sell of selected) {
-				if (buy.key === sell.key) continue;
+					if (buy.key === sell.key) continue;
 
 				const buyPrice = buy.ex.ask_price_brl ?? 0;
 				const sellPrice = sell.ex.bid_price_brl ?? 0;
@@ -259,11 +278,13 @@ export default function ArbitragemScannerPage() {
 				const liquidityFactor = Math.min(liquidityBrl / 1_000_000, 10);
 				const score = netProfitPct * 10 + liquidityFactor + (hasNetworkMatch ? 5 : -20);
 
-				list.push({
+					list.push({
 					key: `${token.id}__${buy.key}__${sell.key}__${transferNetwork ?? "none"}`,
 					tokenId: token.id,
 					tokenSymbol: token.symbol,
 					tokenTeam: token.team,
+					buyExchangeKey: buy.key,
+					sellExchangeKey: sell.key,
 					buyLabel: buy.ex.label,
 					sellLabel: sell.ex.label,
 					buyPrice,
@@ -280,7 +301,7 @@ export default function ArbitragemScannerPage() {
 					hasNetworkMatch,
 					commonNetworks,
 					score,
-				});
+					});
 				}
 			}
 		}
@@ -371,6 +392,73 @@ export default function ArbitragemScannerPage() {
 		return { label: "Mercado defensivo", color: "var(--error)" };
 	}, [summary]);
 
+	useEffect(() => {
+		if (!selectedSignalKey || !signalDeck.some((row) => row.key === selectedSignalKey)) {
+			setSelectedSignalKey(signalDeck[0]?.key ?? null);
+		}
+	}, [signalDeck, selectedSignalKey]);
+
+	useEffect(() => {
+		setSimAmountBrl(amountBrl);
+		setSimTransferExtraBrl(transferBufferBrl);
+	}, [amountBrl, transferBufferBrl]);
+
+	const selectedSignal = useMemo(
+		() => signalDeck.find((row) => row.key === selectedSignalKey) ?? signalDeck[0] ?? null,
+		[signalDeck, selectedSignalKey]
+	);
+
+	const simulation = useMemo(() => {
+		if (!selectedSignal) return null;
+
+		const simAmount = parseFloat(simAmountBrl);
+		if (!Number.isFinite(simAmount) || simAmount <= 0) return null;
+
+		const extra = parseFloat(simTransferExtraBrl) || 0;
+		const buySlip = (parseFloat(simBuySlippagePct) || 0) / 100;
+		const sellSlip = (parseFloat(simSellSlippagePct) || 0) / 100;
+
+		const buyFee = selectedSignal.buyFeePct / 100;
+		const sellFee = selectedSignal.sellFeePct / 100;
+		const adjustedBuy = selectedSignal.buyPrice * (1 + Math.max(buySlip, 0));
+		const adjustedSell = selectedSignal.sellPrice * (1 - Math.max(sellSlip, 0));
+
+		const assetBought = (simAmount / adjustedBuy) * (1 - buyFee);
+		const assetAfterTransfer = Math.max(assetBought - selectedSignal.transferFeeAsset, 0);
+		const brlBack = assetAfterTransfer * adjustedSell * (1 - sellFee);
+		const net = brlBack - simAmount - extra;
+		const netPct = (net / simAmount) * 100;
+
+		const minSellForBreakEven =
+			assetAfterTransfer > 0 && (1 - sellFee) > 0 ? (simAmount + extra) / (assetAfterTransfer * (1 - sellFee)) : 0;
+
+		const riskScore =
+			(simAmount > Math.max(selectedSignal.liquidityBrl * 0.02, 1) ? 35 : 0) +
+			((selectedSignal.transferNetwork ? 0 : 25)) +
+			(Math.max(0, buySlip + sellSlip - 0.003) * 6000) +
+			(selectedSignal.netProfitBrl <= 0 ? 20 : 0);
+
+		const riskLabel = riskScore >= 65 ? "Alto" : riskScore >= 35 ? "Moderado" : "Controlado";
+		const viabilityLabel = net > 0 ? (netPct >= 1 ? "Executavel" : "Marginal") : "Inviavel";
+
+		return {
+			simAmount,
+			extra,
+			buySlip,
+			sellSlip,
+			adjustedBuy,
+			adjustedSell,
+			assetBought,
+			assetAfterTransfer,
+			brlBack,
+			net,
+			netPct,
+			minSellForBreakEven,
+			riskLabel,
+			viabilityLabel,
+		};
+	}, [selectedSignal, simAmountBrl, simTransferExtraBrl, simBuySlippagePct, simSellSlippagePct]);
+
 	return (
 		<main className="page-shell" style={{ minHeight: "100vh", padding: "24px" }}>
 			<div className="page-container" style={{ maxWidth: 1180, margin: "0 auto" }}>
@@ -435,13 +523,18 @@ export default function ArbitragemScannerPage() {
 								signalDeck.map((row, index) => (
 									<button
 										key={row.key}
-										onClick={() => setSelectedTokenId(row.tokenId)}
+										onClick={() => {
+											setSelectedTokenId(row.tokenId);
+											setSelectedSignalKey(row.key);
+										}}
 										style={{
 											textAlign: "left",
-											border: "1px solid rgba(118,172,214,0.35)",
+											border: selectedSignalKey === row.key ? "1px solid rgba(80,240,173,0.95)" : "1px solid rgba(118,172,214,0.35)",
 											borderRadius: 12,
 											padding: 10,
-											background: "linear-gradient(135deg, rgba(17,43,64,0.72), rgba(12,30,44,0.66))",
+											background: selectedSignalKey === row.key
+												? "linear-gradient(135deg, rgba(13,59,57,0.9), rgba(10,35,46,0.78))"
+												: "linear-gradient(135deg, rgba(17,43,64,0.72), rgba(12,30,44,0.66))",
 											color: "#d8e6ef",
 											cursor: "pointer",
 										}}
@@ -491,6 +584,112 @@ export default function ArbitragemScannerPage() {
 							)}
 						</div>
 					</div>
+				</section>
+
+				<section
+					style={{
+						marginTop: 12,
+						background: "linear-gradient(145deg, rgba(12,20,31,0.96), rgba(22,28,46,0.94))",
+						border: "1px solid rgba(124,153,189,0.26)",
+						borderRadius: 16,
+						padding: 14,
+					}}
+				>
+					<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+						<div>
+							<div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9ab3d6" }}>Trade Lab</div>
+							<div style={{ fontSize: 14, fontWeight: 700, color: "#e6eef7", marginTop: 3 }}>
+								{selectedSignal ? `${selectedSignal.tokenSymbol} · ${selectedSignal.buyLabel} → ${selectedSignal.sellLabel}` : "Selecione um sinal no Command Center"}
+							</div>
+						</div>
+						{simulation && (
+							<div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+								<span style={{ fontSize: 11, borderRadius: 999, padding: "3px 10px", background: simulation.viabilityLabel === "Executavel" ? "rgba(31,209,138,0.16)" : simulation.viabilityLabel === "Marginal" ? "rgba(245,158,11,0.2)" : "rgba(255,107,107,0.18)", color: simulation.viabilityLabel === "Executavel" ? "#4be595" : simulation.viabilityLabel === "Marginal" ? "#fbbf24" : "#ff8a8a" }}>
+									Viabilidade: {simulation.viabilityLabel}
+								</span>
+								<span style={{ fontSize: 11, borderRadius: 999, padding: "3px 10px", background: simulation.riskLabel === "Controlado" ? "rgba(31,209,138,0.16)" : simulation.riskLabel === "Moderado" ? "rgba(245,158,11,0.2)" : "rgba(255,107,107,0.18)", color: simulation.riskLabel === "Controlado" ? "#4be595" : simulation.riskLabel === "Moderado" ? "#fbbf24" : "#ff8a8a" }}>
+									Risco: {simulation.riskLabel}
+								</span>
+							</div>
+						)}
+					</div>
+
+					{selectedSignal ? (
+						<div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
+							<div style={{ border: "1px solid rgba(124,153,189,0.22)", borderRadius: 12, padding: 10, background: "rgba(13,25,42,0.5)" }}>
+								<div style={{ fontSize: 11, color: "#9ab3d6", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Simulacao rapida</div>
+								<div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8 }}>
+									<label style={{ fontSize: 12, color: "#9db0bd" }}>
+										Capital (R$)
+										<input type="number" min="1" step="100" value={simAmountBrl} onChange={(e) => setSimAmountBrl(e.target.value)} style={{ marginTop: 4, border: "1px solid rgba(124,153,189,0.35)", borderRadius: 8, padding: "6px 8px", width: "100%", background: "rgba(0,0,0,0.2)", color: "#e6eef7" }} />
+									</label>
+									<label style={{ fontSize: 12, color: "#9db0bd" }}>
+										Extra transf. (R$)
+										<input type="number" min="0" step="0.5" value={simTransferExtraBrl} onChange={(e) => setSimTransferExtraBrl(e.target.value)} style={{ marginTop: 4, border: "1px solid rgba(124,153,189,0.35)", borderRadius: 8, padding: "6px 8px", width: "100%", background: "rgba(0,0,0,0.2)", color: "#e6eef7" }} />
+									</label>
+									<label style={{ fontSize: 12, color: "#9db0bd" }}>
+										Slippage compra (%)
+										<input type="number" min="0" step="0.01" value={simBuySlippagePct} onChange={(e) => setSimBuySlippagePct(e.target.value)} style={{ marginTop: 4, border: "1px solid rgba(124,153,189,0.35)", borderRadius: 8, padding: "6px 8px", width: "100%", background: "rgba(0,0,0,0.2)", color: "#e6eef7" }} />
+									</label>
+									<label style={{ fontSize: 12, color: "#9db0bd" }}>
+										Slippage venda (%)
+										<input type="number" min="0" step="0.01" value={simSellSlippagePct} onChange={(e) => setSimSellSlippagePct(e.target.value)} style={{ marginTop: 4, border: "1px solid rgba(124,153,189,0.35)", borderRadius: 8, padding: "6px 8px", width: "100%", background: "rgba(0,0,0,0.2)", color: "#e6eef7" }} />
+									</label>
+								</div>
+
+								{simulation && (
+									<div style={{ marginTop: 10, display: "grid", gap: 6 }}>
+										<div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, fontSize: 12 }}><span style={{ color: "#9db0bd" }}>Entrada ajustada</span><strong style={{ color: "#e6eef7" }}>{money(simulation.adjustedBuy)}</strong></div>
+										<div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, fontSize: 12 }}><span style={{ color: "#9db0bd" }}>Saida ajustada</span><strong style={{ color: "#e6eef7" }}>{money(simulation.adjustedSell)}</strong></div>
+										<div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, fontSize: 12 }}><span style={{ color: "#9db0bd" }}>Ativo apos transferencia</span><strong style={{ color: "#e6eef7" }}>{simulation.assetAfterTransfer.toFixed(4)} {selectedSignal.tokenSymbol}</strong></div>
+										<div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, fontSize: 12 }}><span style={{ color: "#9db0bd" }}>Venda minima p/ breakeven</span><strong style={{ color: "#e6eef7" }}>{money(simulation.minSellForBreakEven)}</strong></div>
+										<div style={{ marginTop: 4, fontSize: 15, fontWeight: 800, color: simulation.net >= 0 ? "#4be595" : "#ff8a8a" }}>
+											{simulation.net >= 0 ? "+" : ""}R$ {simulation.net.toFixed(2)} ({simulation.netPct.toFixed(3)}%)
+										</div>
+									</div>
+								)}
+							</div>
+
+							<div style={{ border: "1px solid rgba(124,153,189,0.22)", borderRadius: 12, padding: 10, background: "rgba(13,25,42,0.5)" }}>
+								<div style={{ fontSize: 11, color: "#9ab3d6", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Playbook da operacao</div>
+								<div style={{ display: "grid", gap: 8 }}>
+									<div style={{ padding: "8px 10px", borderRadius: 10, background: "rgba(31,209,138,0.1)", border: "1px solid rgba(31,209,138,0.22)" }}>
+										<div style={{ fontSize: 11, color: "#86efac", textTransform: "uppercase" }}>1. Entrada</div>
+										<div style={{ marginTop: 2, fontSize: 13, color: "#e6eef7", fontWeight: 700 }}>Comprar em {selectedSignal.buyLabel} a {money(selectedSignal.buyPrice)}</div>
+										<div style={{ marginTop: 2, fontSize: 12, color: "#9db0bd" }}>Taxa de compra: {selectedSignal.buyFeePct.toFixed(2)}%</div>
+									</div>
+									<div style={{ padding: "8px 10px", borderRadius: 10, background: "rgba(56,189,248,0.1)", border: "1px solid rgba(56,189,248,0.22)" }}>
+										<div style={{ fontSize: 11, color: "#7dd3fc", textTransform: "uppercase" }}>2. Transferencia</div>
+										<div style={{ marginTop: 2, fontSize: 13, color: "#e6eef7", fontWeight: 700 }}>{selectedSignal.transferNetwork ?? "Sem rede em comum"}</div>
+										<div style={{ marginTop: 2, fontSize: 12, color: "#9db0bd" }}>
+											Fee: {selectedSignal.transferFeeAsset.toFixed(4)} {selectedSignal.tokenSymbol}
+											{selectedSignal.transferNetwork && NETWORK_TRANSFER_ETA_MINUTES[selectedSignal.transferNetwork]
+												? ` · ETA ${NETWORK_TRANSFER_ETA_MINUTES[selectedSignal.transferNetwork].min}-${NETWORK_TRANSFER_ETA_MINUTES[selectedSignal.transferNetwork].max} min`
+												: ""}
+										</div>
+									</div>
+									<div style={{ padding: "8px 10px", borderRadius: 10, background: "rgba(244,114,182,0.1)", border: "1px solid rgba(244,114,182,0.24)" }}>
+										<div style={{ fontSize: 11, color: "#f9a8d4", textTransform: "uppercase" }}>3. Saida</div>
+										<div style={{ marginTop: 2, fontSize: 13, color: "#e6eef7", fontWeight: 700 }}>Vender em {selectedSignal.sellLabel} a {money(selectedSignal.sellPrice)}</div>
+										<div style={{ marginTop: 2, fontSize: 12, color: "#9db0bd" }}>Taxa de venda: {selectedSignal.sellFeePct.toFixed(2)}%</div>
+									</div>
+								</div>
+
+								<div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+									<div style={{ border: "1px solid rgba(124,153,189,0.22)", borderRadius: 10, padding: 8 }}>
+										<div style={{ fontSize: 11, color: "#9ab3d6", marginBottom: 4 }}>Redes em comum</div>
+										<div style={{ fontSize: 12, color: "#e6eef7" }}>{selectedSignal.commonNetworks.join(" / ") || "Nenhuma"}</div>
+									</div>
+									<div style={{ border: "1px solid rgba(124,153,189,0.22)", borderRadius: 10, padding: 8 }}>
+										<div style={{ fontSize: 11, color: "#9ab3d6", marginBottom: 4 }}>Viabilidade estrutural</div>
+										<div style={{ fontSize: 12, color: selectedSignal.hasNetworkMatch ? "#4be595" : "#ff8a8a" }}>{selectedSignal.hasNetworkMatch ? "Com match de rede" : "Sem match de rede"}</div>
+									</div>
+								</div>
+							</div>
+						</div>
+					) : (
+						<div style={{ color: "#9db0bd", fontSize: 13 }}>Sem sinal selecionado. Clique em um card no Command Center.</div>
+					)}
 				</section>
 
 				<section
