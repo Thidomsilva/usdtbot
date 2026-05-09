@@ -67,6 +67,7 @@ const NETWORK_TRANSFER_FEE_ASSET: Record<string, number> = {
 };
 
 const DEFAULT_TRANSFER_FEE_ASSET = 1;
+const ALL_TOKENS_ID = "__ALL__";
 
 const DEFAULT_FEES: Record<string, { buy: number; sell: number }> = {
 	binance: { buy: 0.2, sell: 0.2 },
@@ -94,6 +95,9 @@ function vol(v: number) {
 
 type ScreenerRow = {
 	key: string;
+	tokenId: string;
+	tokenSymbol: string;
+	tokenTeam: string;
 	buyLabel: string;
 	sellLabel: string;
 	buyPrice: number;
@@ -116,7 +120,7 @@ export default function ArbitragemScannerPage() {
 	const [data, setData] = useState<FanTokensResponse | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [countdown, setCountdown] = useState(REFRESH_SECONDS);
-	const [selectedTokenId, setSelectedTokenId] = useState("");
+	const [selectedTokenId, setSelectedTokenId] = useState(ALL_TOKENS_ID);
 	const [amountBrl, setAmountBrl] = useState("1000");
 	const [customFees, setCustomFees] = useState<Record<string, { buy: number; sell: number }>>(DEFAULT_FEES);
 	const [showFees, setShowFees] = useState(false);
@@ -163,18 +167,23 @@ export default function ArbitragemScannerPage() {
 	}, [data]);
 
 	useEffect(() => {
-		if (tokenOptions.length === 0) return;
-		if (!selectedTokenId || !tokenOptions.some((token) => token.id === selectedTokenId)) {
-			setSelectedTokenId(tokenOptions[0].id);
+		if (selectedTokenId === ALL_TOKENS_ID) return;
+		if (!tokenOptions.some((token) => token.id === selectedTokenId)) {
+			setSelectedTokenId(ALL_TOKENS_ID);
 		}
 	}, [tokenOptions, selectedTokenId]);
 
 	const selectedToken = useMemo(
-		() => tokenOptions.find((token) => token.id === selectedTokenId) ?? null,
+		() => (selectedTokenId === ALL_TOKENS_ID ? null : tokenOptions.find((token) => token.id === selectedTokenId) ?? null),
 		[tokenOptions, selectedTokenId]
 	);
 
-	const okCards = useMemo(() => {
+	const activeTokens = useMemo(() => {
+		if (selectedToken) return [selectedToken];
+		return tokenOptions;
+	}, [selectedToken, tokenOptions]);
+
+	const selectedTokenCards = useMemo(() => {
 		if (!selectedToken) return [];
 		return (selectedToken.exchanges ?? [])
 			.filter((ex) => ORDER.includes(ex.exchange) && ex.status === "ok" && (ex.ask_price_brl ?? 0) > 0 && (ex.bid_price_brl ?? 0) > 0)
@@ -183,26 +192,33 @@ export default function ArbitragemScannerPage() {
 
 	const exchangeLabelByKey = useMemo(() => {
 		const labels = new Map<string, string>();
-		for (const exchange of selectedToken?.exchanges ?? []) {
-			labels.set(exchange.exchange, exchange.label);
+		for (const token of tokenOptions) {
+			for (const exchange of token.exchanges ?? []) {
+				if (!labels.has(exchange.exchange)) {
+					labels.set(exchange.exchange, exchange.label);
+				}
+			}
 		}
 		return labels;
-	}, [selectedToken]);
+	}, [tokenOptions]);
 
-	const rows = useMemo(() => {
+	const allRows = useMemo(() => {
 		const amount = parseFloat(amountBrl);
 		if (!Number.isFinite(amount) || amount <= 0) return [] as ScreenerRow[];
 
 		const minSpread = parseFloat(minSpreadPct) || 0;
 		const minNetProfit = parseFloat(minNetProfitBrl) || 0;
 		const transferBuffer = parseFloat(transferBufferBrl) || 0;
-		const max = Math.max(1, Math.min(100, parseInt(maxRows || "20", 10) || 20));
-
-		const selected = okCards.filter(({ key }) => enabledExchanges[key] ?? true);
 		const list: ScreenerRow[] = [];
 
-		for (const buy of selected) {
-			for (const sell of selected) {
+		for (const token of activeTokens) {
+			const selected = (token.exchanges ?? [])
+				.filter((ex) => ORDER.includes(ex.exchange) && ex.status === "ok" && (ex.ask_price_brl ?? 0) > 0 && (ex.bid_price_brl ?? 0) > 0)
+				.map((ex) => ({ key: ex.exchange, ex }))
+				.filter(({ key }) => enabledExchanges[key] ?? true);
+
+			for (const buy of selected) {
+				for (const sell of selected) {
 				if (buy.key === sell.key) continue;
 
 				const buyPrice = buy.ex.ask_price_brl ?? 0;
@@ -244,7 +260,10 @@ export default function ArbitragemScannerPage() {
 				const score = netProfitPct * 10 + liquidityFactor + (hasNetworkMatch ? 5 : -20);
 
 				list.push({
-					key: `${buy.key}__${sell.key}__${transferNetwork ?? "none"}`,
+					key: `${token.id}__${buy.key}__${sell.key}__${transferNetwork ?? "none"}`,
+					tokenId: token.id,
+					tokenSymbol: token.symbol,
+					tokenTeam: token.team,
 					buyLabel: buy.ex.label,
 					sellLabel: sell.ex.label,
 					buyPrice,
@@ -262,6 +281,7 @@ export default function ArbitragemScannerPage() {
 					commonNetworks,
 					score,
 				});
+				}
 			}
 		}
 
@@ -270,20 +290,47 @@ export default function ArbitragemScannerPage() {
 				if (b.score !== a.score) return b.score - a.score;
 				if (b.netProfitBrl !== a.netProfitBrl) return b.netProfitBrl - a.netProfitBrl;
 				return b.liquidityBrl - a.liquidityBrl;
-			})
-			.slice(0, max);
+			});
 	}, [
 		amountBrl,
 		minSpreadPct,
 		minNetProfitBrl,
 		transferBufferBrl,
-		maxRows,
 		onlyNetworkMatch,
 		onlyPositive,
-		okCards,
+		activeTokens,
 		enabledExchanges,
 		customFees,
 	]);
+
+	const rows = useMemo(() => {
+		const max = Math.max(1, Math.min(100, parseInt(maxRows || "20", 10) || 20));
+		return allRows.slice(0, max);
+	}, [allRows, maxRows]);
+
+	const viabilityCards = useMemo(() => {
+		const bestByToken = new Map<string, ScreenerRow>();
+		for (const row of allRows) {
+			const current = bestByToken.get(row.tokenId);
+			if (!current || row.score > current.score) {
+				bestByToken.set(row.tokenId, row);
+			}
+		}
+
+		return tokenOptions
+			.map((token) => {
+				const best = bestByToken.get(token.id) ?? null;
+				return {
+					token,
+					best,
+					viable: (best?.netProfitBrl ?? Number.NEGATIVE_INFINITY) > 0,
+				};
+			})
+			.sort((a, b) => {
+				if (a.viable !== b.viable) return a.viable ? -1 : 1;
+				return (b.best?.score ?? Number.NEGATIVE_INFINITY) - (a.best?.score ?? Number.NEGATIVE_INFINITY);
+			});
+	}, [tokenOptions, allRows]);
 
 	const summary = useMemo(() => {
 		const total = rows.length;
@@ -329,8 +376,8 @@ export default function ArbitragemScannerPage() {
 
 				<div style={{ marginTop: 14, color: "var(--muted)", fontSize: 13 }}>
 					{selectedToken
-						? `${okCards.length} de ${(selectedToken.exchanges ?? []).filter((exchange) => ORDER.includes(exchange.exchange)).length} corretoras com livro para ${selectedToken.symbol}`
-						: "Carregando tokens..."} · proxima atualizacao em {countdown}s
+						? `${selectedTokenCards.length} de ${(selectedToken.exchanges ?? []).filter((exchange) => ORDER.includes(exchange.exchange)).length} corretoras com livro para ${selectedToken.symbol}`
+						: `${tokenOptions.length} moedas monitoradas (modo todas)`} · proxima atualizacao em {countdown}s
 				</div>
 
 				<section
@@ -352,6 +399,7 @@ export default function ArbitragemScannerPage() {
 								onChange={(e) => setSelectedTokenId(e.target.value)}
 								style={{ marginTop: 4, border: "1px solid var(--card-border)", borderRadius: 8, padding: "8px 10px", background: "var(--card)", color: "var(--text)", width: "100%" }}
 							>
+								<option value={ALL_TOKENS_ID}>Todas (nenhuma especifica)</option>
 								{tokenOptions.length === 0 ? (
 									<option value="">Sem tokens disponiveis</option>
 								) : (
@@ -542,6 +590,67 @@ export default function ArbitragemScannerPage() {
 						background: "var(--card)",
 						border: "1px solid var(--card-border)",
 						borderRadius: 16,
+						padding: 12,
+					}}
+				>
+					<div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+						Moedas com viabilidade
+					</div>
+					<div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
+						{viabilityCards.map(({ token, best, viable }) => {
+							const isSelected = selectedTokenId === token.id;
+							return (
+								<button
+									key={token.id}
+									onClick={() => setSelectedTokenId(token.id)}
+									style={{
+										textAlign: "left",
+										border: isSelected ? "1px solid var(--ok)" : "1px solid var(--card-border)",
+										borderRadius: 12,
+										padding: 10,
+										background: isSelected ? "rgba(24,201,122,0.08)" : "var(--bg)",
+										color: "var(--text)",
+										cursor: "pointer",
+									}}
+								>
+									<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+										<div style={{ fontWeight: 700 }}>{token.symbol}</div>
+										<div style={{
+											fontSize: 11,
+											padding: "2px 8px",
+											borderRadius: 999,
+											background: viable ? "rgba(24,201,122,0.12)" : "rgba(255,255,255,0.06)",
+											color: viable ? "var(--ok)" : "var(--muted)",
+										}}>
+											{viable ? "Viavel" : "Sem viabilidade"}
+										</div>
+									</div>
+									<div style={{ marginTop: 4, fontSize: 12, color: "var(--muted)" }}>{token.team}</div>
+									<div style={{ marginTop: 8, fontSize: 12 }}>
+										{best ? (
+											<>
+												<div style={{ color: best.netProfitBrl >= 0 ? "var(--ok)" : "var(--error)", fontWeight: 700 }}>
+													{best.netProfitBrl >= 0 ? "+" : ""}R$ {best.netProfitBrl.toFixed(2)}
+												</div>
+												<div style={{ marginTop: 2, color: "var(--muted)" }}>{best.buyLabel} → {best.sellLabel}</div>
+												<div style={{ marginTop: 2, color: "var(--muted)" }}>Spread {best.grossSpreadPct.toFixed(3)}%</div>
+											</>
+										) : (
+											<div style={{ color: "var(--muted)" }}>Nenhuma rota com os filtros atuais</div>
+										)}
+									</div>
+								</button>
+							);
+						})}
+					</div>
+				</section>
+
+				<section
+					style={{
+						marginTop: 12,
+						background: "var(--card)",
+						border: "1px solid var(--card-border)",
+						borderRadius: 16,
 						padding: 14,
 						display: "grid",
 						gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
@@ -580,6 +689,7 @@ export default function ArbitragemScannerPage() {
 						<thead>
 							<tr style={{ textAlign: "left", borderBottom: "1px solid var(--card-border)" }}>
 								<th style={{ padding: "8px 6px" }}>#</th>
+								<th style={{ padding: "8px 6px" }}>Ativo</th>
 								<th style={{ padding: "8px 6px" }}>Compra</th>
 								<th style={{ padding: "8px 6px" }}>Venda</th>
 								<th style={{ padding: "8px 6px" }}>Rede</th>
@@ -592,7 +702,7 @@ export default function ArbitragemScannerPage() {
 						<tbody>
 							{rows.length === 0 ? (
 								<tr>
-									<td colSpan={8} style={{ padding: "12px 6px", color: "var(--muted)" }}>
+									<td colSpan={9} style={{ padding: "12px 6px", color: "var(--muted)" }}>
 										Nenhuma rota bateu nos filtros atuais.
 									</td>
 								</tr>
@@ -600,6 +710,10 @@ export default function ArbitragemScannerPage() {
 								rows.map((row, index) => (
 									<tr key={row.key} style={{ borderBottom: "1px solid var(--card-border)" }}>
 										<td style={{ padding: "8px 6px" }}>{index + 1}</td>
+										<td style={{ padding: "8px 6px" }}>
+											<div style={{ fontWeight: 700 }}>{row.tokenSymbol}</div>
+											<div style={{ color: "var(--muted)", marginTop: 2 }}>{row.tokenTeam}</div>
+										</td>
 										<td style={{ padding: "8px 6px" }}>
 											<div style={{ fontWeight: 700 }}>{row.buyLabel}</div>
 											<div style={{ color: "var(--muted)", marginTop: 2 }}>{money(row.buyPrice)} · taxa {row.buyFeePct.toFixed(2)}%</div>
@@ -610,7 +724,7 @@ export default function ArbitragemScannerPage() {
 										</td>
 										<td style={{ padding: "8px 6px" }}>
 											<div style={{ fontWeight: 700, color: row.hasNetworkMatch ? "var(--ok)" : "var(--error)" }}>{row.transferNetwork ?? "Sem match"}</div>
-											<div style={{ color: "var(--muted)", marginTop: 2 }}>Fee: {row.transferFeeAsset.toFixed(4)} {selectedToken?.symbol ?? "ATIVO"}</div>
+											<div style={{ color: "var(--muted)", marginTop: 2 }}>Fee: {row.transferFeeAsset.toFixed(4)} {row.tokenSymbol}</div>
 										</td>
 										<td style={{ padding: "8px 6px" }}>
 											<div style={{ color: row.grossSpreadPct >= 0 ? "var(--ok)" : "var(--error)", fontWeight: 700 }}>
@@ -626,7 +740,7 @@ export default function ArbitragemScannerPage() {
 											</div>
 											<div style={{ color: row.netProfitPct >= 0 ? "var(--ok)" : "var(--error)", marginTop: 2 }}>
 												{row.netProfitPct >= 0 ? "+" : ""}
-												{row.netProfitPct.toFixed(3)}% · {row.assetAfterTransfer.toFixed(4)} {selectedToken?.symbol ?? "ATIVO"}
+												{row.netProfitPct.toFixed(3)}% · {row.assetAfterTransfer.toFixed(4)} {row.tokenSymbol}
 											</div>
 										</td>
 										<td style={{ padding: "8px 6px" }}>{vol(row.liquidityBrl)}</td>
