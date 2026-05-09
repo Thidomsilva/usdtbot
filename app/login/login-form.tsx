@@ -9,7 +9,7 @@ export default function LoginForm() {
   const nextPath = searchParams.get("next") || "/";
   const telegramHref =
     "tg://resolve?phone=5543999027395&text=Ol%C3%A1%20da%20ferramenta%20USDBot%20e%20gostaria%20de%20liberar%20meu%20acesso%20full";
-  const telegramQrSrc = "/telegram-qr-oficial.jpeg";
+  const telegramQrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=640x640&margin=10&data=${encodeURIComponent(telegramHref)}`;
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -145,9 +145,16 @@ export default function LoginForm() {
         <img
           src={telegramQrSrc}
           alt="QR Code para contato no Telegram"
-          width={140}
-          height={140}
-          style={{ borderRadius: 12, border: "1px solid var(--card-border)", background: "#fff", padding: 8 }}
+          width={240}
+          height={240}
+          style={{
+            width: "min(240px, 72vw)",
+            height: "auto",
+            borderRadius: 12,
+            border: "1px solid var(--card-border)",
+            background: "#fff",
+            padding: 8,
+          }}
         />
       </div>
     </section>

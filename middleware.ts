@@ -4,7 +4,13 @@ import { getSessionSecret, readSessionFromToken, SESSION_COOKIE } from './lib/se
 const PUBLIC_FILE_PATTERN = /\.[^/]+$/
 
 function isPublicPath(pathname: string): boolean {
-  return pathname === '/login' || pathname === '/api/auth/login' || pathname === '/api/health/debug' || PUBLIC_FILE_PATTERN.test(pathname)
+  return pathname === '/login'
+    || pathname === '/arbitragem-scanner'
+    || pathname === '/admin/arbitragem-geral'
+    || pathname === '/api/auth/login'
+    || pathname === '/api/prices'
+    || pathname === '/api/health/debug'
+    || PUBLIC_FILE_PATTERN.test(pathname)
 }
 
 export async function middleware(request: NextRequest) {

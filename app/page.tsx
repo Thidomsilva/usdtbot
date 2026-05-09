@@ -243,6 +243,21 @@ export default function HomePage() {
               Spot x Futuro
             </Link>
             <Link
+              href="/arbitragem-scanner"
+              style={{
+                border: "1px solid var(--card-border)",
+                borderRadius: 12,
+                padding: "10px 12px",
+                textDecoration: "none",
+                background: "var(--card)",
+                color: "var(--text)",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              Scanner
+            </Link>
+            <Link
               href="/admin"
               style={{
                 border: "1px solid var(--card-border)",
