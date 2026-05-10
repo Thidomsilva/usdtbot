@@ -47,117 +47,246 @@ export default function LoginForm() {
     <section
       style={{
         width: "100%",
-        maxWidth: 420,
+        maxWidth: 480,
         background: "var(--card)",
-        border: "1px solid var(--card-border)",
-        borderRadius: 18,
-        padding: 22,
+        border: "1.5px solid var(--card-border)",
+        borderRadius: 24,
+        padding: 40,
         boxShadow: "var(--shadow)",
-        backdropFilter: "blur(12px)",
+        backdropFilter: "blur(20px)",
+        WebkitBackdropFilter: "blur(20px)",
+        position: "relative",
+        zIndex: 10,
+        animation: "slideUp 0.6s ease-out"
       }}
     >
-      <h1 style={{ margin: 0, fontSize: 28 }}>Acesso restrito</h1>
-      <p style={{ marginTop: 8, color: "var(--muted)", fontSize: 14 }}>
-        Entre com seu usuario e senha para acessar o painel.
-      </p>
+      <style>{`
+        @keyframes slideUp {
+          from {
+            opacity: 0;
+            transform: translateY(30px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        
+        @keyframes shimmer {
+          0% {
+            background-position: -1000px 0;
+          }
+          100% {
+            background-position: 1000px 0;
+          }
+        }
 
-      <form onSubmit={onSubmit} style={{ marginTop: 18, display: "grid", gap: 12 }}>
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontSize: 13, color: "var(--muted)" }}>Usuario</span>
+        input:focus {
+          outline: none;
+          box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1), 0 0 0 1.5px var(--accent);
+        }
+
+        button:hover:not(:disabled) {
+          background: linear-gradient(135deg, var(--accent), #0284c7);
+          color: white;
+          transform: translateY(-2px);
+          box-shadow: 0 8px 24px rgba(14, 165, 233, 0.3);
+        }
+
+        button:active:not(:disabled) {
+          transform: translateY(0);
+        }
+
+        button:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+        }
+
+        a:hover {
+          background: linear-gradient(135deg, rgba(14, 165, 233, 0.1), rgba(14, 165, 233, 0.05));
+        }
+      `}</style>
+
+      <div style={{ marginBottom: 32 }}>
+        <h1 style={{ 
+          margin: 0, 
+          fontSize: 32,
+          fontWeight: 700,
+          background: "linear-gradient(135deg, var(--text) 0%, var(--accent) 100%)",
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent",
+          backgroundClip: "text"
+        }}>
+          Acesso Restrito
+        </h1>
+        <p style={{ 
+          marginTop: 10, 
+          color: "var(--muted)", 
+          fontSize: 15,
+          lineHeight: 1.5
+        }}>
+          Entre com seu usuário e senha para acessar o painel de controle
+        </p>
+      </div>
+
+      <form onSubmit={onSubmit} style={{ marginTop: 28, display: "grid", gap: 16 }}>
+        <label style={{ display: "grid", gap: 8 }}>
+          <span style={{ 
+            fontSize: 13, 
+            color: "var(--muted)",
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.5px"
+          }}>
+            Usuário
+          </span>
           <input
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             autoComplete="username"
             required
+            placeholder="Digite seu usuário"
             style={{
-              border: "1px solid var(--card-border)",
-              background: "rgba(255,255,255,0.7)",
-              borderRadius: 12,
-              padding: "10px 12px",
-              fontSize: 14,
+              border: "1.5px solid var(--card-border)",
+              background: "var(--bg)",
+              borderRadius: 14,
+              padding: "13px 16px",
+              fontSize: 15,
               color: "var(--text)",
+              fontFamily: "inherit",
+              transition: "all 0.3s ease",
+              WebkitAppearance: "none",
+              appearance: "none"
             }}
           />
         </label>
 
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontSize: 13, color: "var(--muted)" }}>Senha</span>
+        <label style={{ display: "grid", gap: 8 }}>
+          <span style={{ 
+            fontSize: 13, 
+            color: "var(--muted)",
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.5px"
+          }}>
+            Senha
+          </span>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password"
             required
+            placeholder="Digite sua senha"
             style={{
-              border: "1px solid var(--card-border)",
-              background: "rgba(255,255,255,0.7)",
-              borderRadius: 12,
-              padding: "10px 12px",
-              fontSize: 14,
+              border: "1.5px solid var(--card-border)",
+              background: "var(--bg)",
+              borderRadius: 14,
+              padding: "13px 16px",
+              fontSize: 15,
               color: "var(--text)",
+              fontFamily: "inherit",
+              transition: "all 0.3s ease",
+              WebkitAppearance: "none",
+              appearance: "none"
             }}
           />
         </label>
 
-        {error && <p style={{ margin: 0, color: "var(--error)", fontSize: 13 }}>{error}</p>}
+        {error && (
+          <div style={{ 
+            margin: 0, 
+            padding: "12px 14px",
+            background: "rgba(185, 28, 28, 0.1)",
+            border: "1px solid rgba(185, 28, 28, 0.3)",
+            borderRadius: 10,
+            color: "var(--error)", 
+            fontSize: 13,
+            fontWeight: 500,
+            animation: "slideUp 0.3s ease-out"
+          }}>
+            {error}
+          </div>
+        )}
 
         <button
           type="submit"
           disabled={loading}
           style={{
-            border: "1px solid var(--card-border)",
-            borderRadius: 12,
-            padding: "10px 12px",
-            background: "linear-gradient(135deg, var(--card), rgba(255,255,255,0.12))",
-            color: "var(--text)",
-            cursor: "pointer",
+            border: "none",
+            borderRadius: 14,
+            padding: "14px 16px",
+            background: loading 
+              ? "linear-gradient(135deg, rgba(14, 165, 233, 0.4), rgba(14, 165, 233, 0.2))"
+              : "linear-gradient(135deg, var(--accent), #0284c7)",
+            color: "white",
+            cursor: loading ? "not-allowed" : "pointer",
             fontWeight: 700,
+            fontSize: 15,
+            transition: "all 0.3s ease",
+            marginTop: 8,
+            letterSpacing: "0.5px"
           }}
         >
           {loading ? "Entrando..." : "Entrar"}
         </button>
       </form>
 
-      <a
-        href={telegramHref}
-        target="_blank"
-        rel="noreferrer"
-        style={{
-          marginTop: 14,
-          display: "inline-flex",
-          width: "100%",
-          justifyContent: "center",
-          border: "1px solid var(--card-border)",
-          borderRadius: 12,
-          padding: "10px 12px",
-          textDecoration: "none",
-          color: "var(--text)",
-          fontSize: 13,
-          fontWeight: 600,
-          background: "var(--card)",
-        }}
-      >
-        para solicitar seu acesso fale com o desenvolvedor clicando aqui
-      </a>
-
-      <div style={{ marginTop: 14, display: "grid", placeItems: "center", gap: 8 }}>
-        <p style={{ margin: 0, fontSize: 12, color: "var(--muted)", textAlign: "center" }}>
-          Se estiver no notebook, escaneie o QR Code para abrir no Telegram.
-        </p>
-        <img
-          src={telegramQrSrc}
-          alt="QR Code para contato no Telegram"
-          width={240}
-          height={240}
+      <div style={{ marginTop: 24, display: "grid", gap: 12 }}>
+        <a
+          href={telegramHref}
+          target="_blank"
+          rel="noreferrer"
           style={{
-            width: "min(240px, 72vw)",
-            height: "auto",
-            borderRadius: 12,
-            border: "1px solid var(--card-border)",
-            background: "#fff",
-            padding: 8,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            border: "1.5px solid var(--card-border)",
+            borderRadius: 14,
+            padding: "13px 16px",
+            textDecoration: "none",
+            color: "var(--text)",
+            fontSize: 14,
+            fontWeight: 600,
+            background: "transparent",
+            cursor: "pointer",
+            transition: "all 0.3s ease"
           }}
-        />
+        >
+          <span>💬</span>
+          <span>Solicitar Acesso no Telegram</span>
+        </a>
+
+        <div style={{ 
+          padding: "16px 14px", 
+          background: "rgba(14, 165, 233, 0.05)",
+          border: "1px solid rgba(14, 165, 233, 0.1)",
+          borderRadius: 12, 
+          display: "grid", 
+          placeItems: "center", 
+          gap: 10
+        }}>
+          <p style={{ 
+            margin: 0, 
+            fontSize: 12, 
+            color: "var(--muted)", 
+            textAlign: "center",
+            fontWeight: 500
+          }}>
+            📱 Escaneie o QR Code com seu Telegram
+          </p>
+          <img
+            src={telegramQrSrc}
+            alt="QR Code para contato no Telegram"
+            width={200}
+            height={200}
+            style={{
+              borderRadius: 10,
+              border: "2px solid var(--card-border)"
+            }}
+          />
+        </div>
       </div>
     </section>
   );
