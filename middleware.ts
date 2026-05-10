@@ -9,6 +9,10 @@ function isPublicPath(pathname: string): boolean {
     || pathname.startsWith('/admin/arbitragem-geral')
     || pathname === '/api/auth/login'
     || pathname === '/api/prices'
+    || pathname === '/api/fan-tokens'
+    || pathname === '/api/p2p-arbitrage'
+    || pathname === '/api/spot-futures-arbitrage'
+    || pathname === '/api/telegram'
     || pathname === '/api/health/debug'
     || PUBLIC_FILE_PATTERN.test(pathname)
 }

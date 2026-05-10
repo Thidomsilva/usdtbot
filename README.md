@@ -103,6 +103,34 @@ Importante:
 - `GET /api/fan-tokens`
 - `GET /api/p2p-arbitrage`
 
+## Telegram
+
+O bot responde a dois comandos:
+
+- `/start` abre um menu com os dois botões
+- `/usdt` envia o melhor sinal do monitor USDT/BRL
+- `/scanner` envia o melhor sinal do scanner de fan tokens
+
+### Variaveis de ambiente
+
+Configure no deploy ou no `.env.local`:
+
+```bash
+TELEGRAM_BOT_TOKEN="seu_token_do_bot"
+TELEGRAM_WEBHOOK_SECRET="um_segredo_longo"
+TELEGRAM_CHAT_ID="5214189267"
+```
+
+Se quiser restringir para mais de um chat, use `TELEGRAM_ALLOWED_CHAT_IDS` com uma lista separada por virgulas.
+
+### Webhook
+
+1. Publique o app em HTTPS.
+2. Configure o webhook do bot para `https://seu-dominio/api/telegram`.
+3. Envie o header `x-telegram-bot-api-secret-token` com o valor de `TELEGRAM_WEBHOOK_SECRET`.
+
+Depois disso, mande `/usdt` ou `/scanner` para o bot e ele responde no mesmo chat.
+
 ## Paginas
 
 - `/` monitor USDT/BRL
