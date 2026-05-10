@@ -4,6 +4,8 @@ import {
 	buildTelegramHelpMessage,
 	buildTelegramMenuMarkup,
 	buildTelegramMenuMessage,
+	buildTelegramSettingsMarkup,
+	buildTelegramSettingsMessage,
 	buildTelegramSignalMarkup,
 	buildUsdtSignalMessage,
 	extractTelegramUpdate,
@@ -12,6 +14,11 @@ import {
 	isAllowedTelegramChat,
 	sendTelegramMessage,
 } from "@/lib/telegram";
+import {
+	getTelegramUserSettings,
+	setTelegramUserSettings,
+	toggleTelegramDefiBrla,
+} from "@/lib/telegram-user-settings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,11 +32,27 @@ function hasValidWebhookSecret(request: NextRequest): boolean {
 	return request.headers.get("x-telegram-bot-api-secret-token") === expectedSecret;
 }
 
-async function handleAction(action: "menu" | "help" | "usdt" | "scanner", baseUrl: string, chatId: number | string) {
+async function sendSettings(chatId: number | string) {
+	const settings = await getTelegramUserSettings(chatId);
+	await sendTelegramMessage(chatId, buildTelegramSettingsMessage(settings), {
+		reply_markup: buildTelegramSettingsMarkup(settings),
+	});
+}
+
+async function handleAction(
+	action: "menu" | "settings" | "help" | "usdt" | "scanner",
+	baseUrl: string,
+	chatId: number | string
+) {
 	if (action === "menu") {
 		await sendTelegramMessage(chatId, buildTelegramMenuMessage(), {
 			reply_markup: buildTelegramMenuMarkup(),
 		});
+		return;
+	}
+
+	if (action === "settings") {
+		await sendSettings(chatId);
 		return;
 	}
 
@@ -39,11 +62,25 @@ async function handleAction(action: "menu" | "help" | "usdt" | "scanner", baseUr
 	}
 
 	if (action === "usdt") {
-		await sendTelegramMessage(chatId, await buildUsdtSignalMessage(baseUrl), {
-			reply_markup: buildTelegramSignalMarkup("usdt"),
+		const settings = await setTelegramUserSettings(chatId, {
+			autoSignalsMode: "usdt",
 		});
+		await sendTelegramMessage(
+			chatId,
+			await buildUsdtSignalMessage(baseUrl, {
+				includeDefiBrla: settings.includeDefiBrla,
+				autoSignalsMode: settings.autoSignalsMode,
+			}),
+			{
+			reply_markup: buildTelegramSignalMarkup("usdt"),
+			}
+		);
 		return;
 	}
+
+	await setTelegramUserSettings(chatId, {
+		autoSignalsMode: "scanner",
+	});
 
 	await sendTelegramMessage(chatId, await buildScannerSignalMessage(baseUrl), {
 		reply_markup: buildTelegramSignalMarkup("scanner"),
@@ -64,13 +101,27 @@ export async function POST(request: NextRequest) {
 	const callbackQuery = update?.callback_query as
 		| { id?: string; data?: string; message?: { chat?: { id?: number | string } } }
 		| undefined;
-	const callbackAction = callbackQuery?.data?.startsWith("mode:")
-		? (callbackQuery.data.slice("mode:".length) as "menu" | "usdt" | "scanner")
+	const callbackData = callbackQuery?.data ?? "";
+	const callbackAction = callbackData.startsWith("mode:")
+		? (callbackData.slice("mode:".length) as "menu" | "usdt" | "scanner")
 		: null;
+	const callbackSettingsAction = callbackData === "settings:open"
+		? "open"
+		: callbackData === "settings:toggle_defi"
+			? "toggle_defi"
+			: callbackData === "settings:auto_usdt"
+				? "auto_usdt"
+				: callbackData === "settings:auto_scanner"
+					? "auto_scanner"
+					: callbackData === "settings:auto_both"
+						? "auto_both"
+						: callbackData === "settings:auto_off"
+							? "auto_off"
+			: null;
 	const effectiveAction = action ?? callbackAction;
 	const effectiveChatId = chatId ?? callbackQuery?.message?.chat?.id ?? null;
 
-	if (!effectiveChatId || !effectiveAction) {
+	if (!effectiveChatId || (!effectiveAction && !callbackSettingsAction)) {
 		return NextResponse.json({ ok: true });
 	}
 
@@ -91,6 +142,48 @@ export async function POST(request: NextRequest) {
 					show_alert: false,
 				}),
 			});
+		}
+
+		if (effectiveChatId && callbackSettingsAction === "open") {
+			await sendSettings(effectiveChatId);
+			return NextResponse.json({ ok: true });
+		}
+
+		if (effectiveChatId && callbackSettingsAction === "toggle_defi") {
+			const updated = await toggleTelegramDefiBrla(effectiveChatId);
+			await sendTelegramMessage(
+				effectiveChatId,
+				buildTelegramSettingsMessage(updated),
+				{ reply_markup: buildTelegramSettingsMarkup(updated) }
+			);
+			return NextResponse.json({ ok: true });
+		}
+
+		if (effectiveChatId && callbackSettingsAction?.startsWith("auto_")) {
+			const mode =
+				callbackSettingsAction === "auto_usdt"
+					? "usdt"
+					: callbackSettingsAction === "auto_scanner"
+						? "scanner"
+						: callbackSettingsAction === "auto_both"
+							? "both"
+							: "off";
+
+			const updated = await setTelegramUserSettings(effectiveChatId, {
+				autoSignalsMode: mode,
+			});
+
+			await sendTelegramMessage(
+				effectiveChatId,
+				buildTelegramSettingsMessage(updated),
+				{ reply_markup: buildTelegramSettingsMarkup(updated) }
+			);
+
+			return NextResponse.json({ ok: true });
+		}
+
+		if (!effectiveAction) {
+			return NextResponse.json({ ok: true });
 		}
 
 		await handleAction(effectiveAction, request.nextUrl.origin, effectiveChatId);

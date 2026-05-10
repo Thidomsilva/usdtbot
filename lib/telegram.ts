@@ -1,9 +1,17 @@
 import type { PricesResponse } from "@/lib/types";
+import { createHash } from "crypto";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
 const DEFAULT_TIME_ZONE = "America/Sao_Paulo";
+const DEFI_BRLA_ENDPOINT =
+	"https://coins.llama.fi/prices/current/polygon:0xe6a537a407488807f0bbeb0038b79004f19dddfb";
+const DEFI_BRLA_KEY = "polygon:0xe6a537a407488807f0bbeb0038b79004f19dddfb";
+const DEFI_BRLA_TOTAL_DISCOUNT = 0.005;
+const DEFI_BRLA_CACHE_TTL_MS = 15_000;
+const DEFI_BRLA_TIMEOUT_MS = 3_000;
+const SIM_CAPITAL_BRL = 1000;
 
-type TelegramAction = "menu" | "usdt" | "scanner" | "help";
+type TelegramAction = "menu" | "settings" | "usdt" | "scanner" | "help";
 
 type TelegramCallbackAction = "menu" | TelegramAction;
 
@@ -19,12 +27,113 @@ type TelegramMessageOptions = {
 	reply_markup?: Record<string, unknown>;
 };
 
+type UsdtMessageOptions = {
+	includeDefiBrla: boolean;
+	autoSignalsMode: "off" | "usdt" | "scanner" | "both";
+};
+
+type DefiBrlaPrice = {
+	brlaUsd: number;
+	sellGrossBrlPerUsdt: number;
+	sellNetBrlPerUsdt: number;
+};
+
+type SellCandidate = {
+	label: string;
+	priceBrl: number;
+	isDefi: boolean;
+};
+
+let defiBrlaCache: { expiresAt: number; value: DefiBrlaPrice } | null = null;
+
 function trimEnv(value: string | undefined): string {
 	return value?.trim() ?? "";
 }
 
 function formatBrl(value: number): string {
 	return `R$ ${value.toFixed(4)}`;
+}
+
+function formatBrlCompact(value: number): string {
+	return new Intl.NumberFormat("pt-BR", {
+		style: "currency",
+		currency: "BRL",
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2,
+	}).format(value);
+}
+
+function formatPct(value: number, digits = 3): string {
+	return `${value.toFixed(digits)}%`;
+}
+
+function qualityBadge(quality: "inviavel" | "apertada" | "executavel"): string {
+	if (quality === "executavel") return "✅ Executavel";
+	if (quality === "apertada") return "🟡 Apertada";
+	return "🔴 Inviavel";
+}
+
+function buildDateAndTime(value: string): { date: string; time: string } {
+	const date = new Date(value);
+	return {
+		date: date.toLocaleDateString("pt-BR", { timeZone: DEFAULT_TIME_ZONE }),
+		time: date.toLocaleTimeString("pt-BR", {
+			timeZone: DEFAULT_TIME_ZONE,
+			hour: "2-digit",
+			minute: "2-digit",
+		}),
+	};
+}
+
+async function fetchDefiBrlaPrice(): Promise<DefiBrlaPrice | null> {
+	const now = Date.now();
+	if (defiBrlaCache && defiBrlaCache.expiresAt > now) {
+		return defiBrlaCache.value;
+	}
+
+	try {
+		const response = await fetch(DEFI_BRLA_ENDPOINT, {
+			method: "GET",
+			cache: "no-store",
+			signal: AbortSignal.timeout(DEFI_BRLA_TIMEOUT_MS),
+			headers: {
+				accept: "application/json",
+				"user-agent": "usdtbot-telegram/1.0",
+			},
+		});
+
+		if (!response.ok) {
+			throw new Error(`HTTP ${response.status}`);
+		}
+
+		const payload = (await response.json()) as {
+			coins?: Record<string, { price?: number }>;
+		};
+
+		const brlaUsd = Number(payload.coins?.[DEFI_BRLA_KEY]?.price ?? 0);
+		if (!Number.isFinite(brlaUsd) || brlaUsd <= 0) {
+			throw new Error("Preco BRLA/USD invalido");
+		}
+
+		const sellGrossBrlPerUsdt = 1 / brlaUsd;
+		const sellNetBrlPerUsdt = sellGrossBrlPerUsdt * (1 - DEFI_BRLA_TOTAL_DISCOUNT);
+
+		const value: DefiBrlaPrice = {
+			brlaUsd,
+			sellGrossBrlPerUsdt,
+			sellNetBrlPerUsdt,
+		};
+
+		defiBrlaCache = {
+			expiresAt: now + DEFI_BRLA_CACHE_TTL_MS,
+			value,
+		};
+
+		return value;
+	} catch (error) {
+		console.warn("[TELEGRAM] DefiLlama BRLA indisponivel:", error);
+		return null;
+	}
 }
 
 function escapeHtml(value: string): string {
@@ -105,6 +214,10 @@ export function parseTelegramAction(text: string | undefined): TelegramAction | 
 		return "help";
 	}
 
+	if (["/settings", "/config", "config"].includes(command)) {
+		return "settings";
+	}
+
 	if (["/usdt", "/signal_usdt", "/usdt_signal", "usdt"].includes(command)) {
 		return "usdt";
 	}
@@ -123,6 +236,7 @@ export function buildTelegramHelpMessage(): string {
 		"Comandos disponiveis:",
 		"/usdt - envia o melhor sinal do monitor USDT/BRL",
 		"/scanner - envia o melhor sinal do scanner completo de moedas",
+		"/settings - configura o monitor por usuario",
 		"/start - abre o menu bonito com os dois modos",
 		"",
 		"Se quiser, eu posso responder automaticamente aos dois comandos no mesmo chat.",
@@ -153,10 +267,87 @@ export function buildTelegramMenuMarkup(): Record<string, unknown> {
 				{ text: "📡 Scanner Bot", callback_data: "mode:scanner" },
 			],
 			[
+				{ text: "⚙️ Configurar", callback_data: "settings:open" },
+			],
+			[
 				{ text: "🏠 Menu", callback_data: "mode:menu" },
 			],
 		],
 	};
+}
+
+export function buildTelegramSettingsMessage(options: UsdtMessageOptions): string {
+	const autoModeLabel =
+		options.autoSignalsMode === "usdt"
+			? "💱 UsdtBot"
+			: options.autoSignalsMode === "scanner"
+				? "📡 Scanner Bot"
+				: options.autoSignalsMode === "both"
+					? "🧠 Ambos"
+					: "⏸️ Desligado";
+
+	return [
+		"<b>⚙️ Configuracoes do monitor</b>",
+		"",
+		`Envio automatico de sinais: ${autoModeLabel}`,
+		"",
+		`Incluir DeFi (BRLA) no monitoramento: ${options.includeDefiBrla ? "✅ ativado" : "❌ desativado"}`,
+		"",
+		"Escolha o modo automatico abaixo. O bot envia sinais novos sem precisar apertar atualizar.",
+		"",
+		"Quando ativado, o ranking de venda do UsdtBot inclui 🔗 DeFi BRLA com desconto total estimado de 0.50% (swap + slippage).",
+	].join("\n");
+}
+
+export function buildTelegramSettingsMarkup(options: UsdtMessageOptions): Record<string, unknown> {
+	return {
+		inline_keyboard: [
+			[
+				{
+					text: options.autoSignalsMode === "usdt" ? "Auto: 💱 UsdtBot ✅" : "Auto: 💱 UsdtBot",
+					callback_data: "settings:auto_usdt",
+				},
+			],
+			[
+				{
+					text:
+						options.autoSignalsMode === "scanner"
+							? "Auto: 📡 Scanner Bot ✅"
+							: "Auto: 📡 Scanner Bot",
+					callback_data: "settings:auto_scanner",
+				},
+			],
+			[
+				{
+					text: options.autoSignalsMode === "both" ? "Auto: 🧠 Ambos ✅" : "Auto: 🧠 Ambos",
+					callback_data: "settings:auto_both",
+				},
+			],
+			[
+				{
+					text: options.autoSignalsMode === "off" ? "Auto: ⏸️ Desligado ✅" : "Auto: ⏸️ Desligado",
+					callback_data: "settings:auto_off",
+				},
+			],
+			[
+				{
+					text: options.includeDefiBrla
+						? "DeFi (BRLA): ✅ ativado"
+						: "DeFi (BRLA): ❌ desativado",
+					callback_data: "settings:toggle_defi",
+				},
+			],
+			[
+				{ text: "🏠 Voltar ao menu", callback_data: "mode:menu" },
+			],
+		],
+	};
+}
+
+export function buildSignalDigest(message: string): string {
+	const lines = message.split("\n");
+	const normalized = lines.slice(1).join("\n").trim();
+	return createHash("sha256").update(normalized).digest("hex");
 }
 
 export function buildTelegramSignalMarkup(action: "usdt" | "scanner"): Record<string, unknown> {
@@ -170,46 +361,101 @@ export function buildTelegramSignalMarkup(action: "usdt" | "scanner"): Record<st
 				{ text: "📡 Scanner Bot", callback_data: "mode:scanner" },
 			],
 			[
+				{ text: "⚙️ Configurar", callback_data: "settings:open" },
+			],
+			[
 				{ text: "🏠 Menu", callback_data: "mode:menu" },
 			],
 		],
 	};
 }
 
-export async function buildUsdtSignalMessage(baseUrl: string): Promise<string> {
+export async function buildUsdtSignalMessage(
+	baseUrl: string,
+	options: UsdtMessageOptions
+): Promise<string> {
 	const prices = await fetchJson<PricesResponse>(new URL("/api/prices", baseUrl));
 	const summary = prices.summary;
 	const entries = Object.values(prices.exchanges).filter(
 		(exchange) => exchange.status === "ok" && typeof exchange.price_brl === "number" && exchange.price_brl > 0
 	);
+	const { date, time } = buildDateAndTime(prices.timestamp);
 
 	if (entries.length < 2 || !summary) {
 		return [
-			"<b>💱 UsdtBot</b>",
+			`<b>💵 USDT/BRL · ${date} · ${time}</b>`,
 			"",
-			"Nao ha duas corretoras validas para montar um sinal agora.",
-			`Atualizado: ${formatTimestamp(prices.timestamp)}`,
+			"⚠️ Nao ha duas corretoras validas para montar um sinal agora.",
+			"",
+			"Toque em <b>Atualizar USDT</b> para tentar novamente.",
 		].join("\n");
 	}
 
 	const sorted = entries.slice().sort((a, b) => (a.price_brl ?? 0) - (b.price_brl ?? 0));
 	const buy = sorted[0];
-	const sell = sorted[sorted.length - 1];
 	const buyPrice = buy.price_brl ?? 0;
-	const sellPrice = sell.price_brl ?? 0;
-	const spreadPct = buyPrice > 0 ? ((sellPrice - buyPrice) / buyPrice) * 100 : 0;
+
+	const sellCandidates: SellCandidate[] = entries
+		.map((exchange) => ({
+			label: exchange.label,
+			priceBrl: exchange.price_brl ?? 0,
+			isDefi: false,
+		}))
+		.filter((candidate) => candidate.priceBrl > 0);
+
+	let defiIncluded = false;
+	if (options.includeDefiBrla) {
+		const defi = await fetchDefiBrlaPrice();
+		if (defi && defi.sellNetBrlPerUsdt > 0) {
+			sellCandidates.push({
+				label: "🔗 DeFi BRLA",
+				priceBrl: Number(defi.sellNetBrlPerUsdt.toFixed(4)),
+				isDefi: true,
+			});
+			defiIncluded = true;
+		}
+	}
+
+	const rankedSells = sellCandidates
+		.slice()
+		.sort((a, b) => b.priceBrl - a.priceBrl)
+		.slice(0, 6);
+
+	const bestSell = rankedSells[0] ?? null;
+	if (!bestSell || buyPrice <= 0) {
+		return [
+			`<b>💵 USDT/BRL · ${date} · ${time}</b>`,
+			"",
+			"⚠️ Nao foi possivel montar ranking de venda agora.",
+		].join("\n");
+	}
+
+	const usdtQty = SIM_CAPITAL_BRL / buyPrice;
+	const bestReturnBrl = usdtQty * bestSell.priceBrl;
+	const bestProfitBrl = bestReturnBrl - SIM_CAPITAL_BRL;
+
+	const rankingLines = rankedSells.map((candidate) => {
+		const spreadPct = ((candidate.priceBrl - buyPrice) / buyPrice) * 100;
+		const trend = spreadPct >= 0 ? "🟢" : "🔴";
+		const winner = candidate.label === bestSell.label ? " 🏆" : "";
+		const label = candidate.isDefi ? "🔗 DeFi BRLA" : candidate.label;
+		return `   ${trend} ${label}: ${formatBrl(candidate.priceBrl)}  ${formatPct(spreadPct, 2)}${winner}`;
+	});
 
 	return [
-		"<b>💱 UsdtBot</b>",
+		`<b>💵 USDT/BRL · ${date} · ${time}</b>`,
 		"",
-		"Melhor rota agora para leitura rapida do par USDT/BRL.",
+		"⬇️ <b>COMPRA mais barata</b>",
+		`   ${escapeHtml(buy.label)}: ${formatBrl(buyPrice)}`,
 		"",
-		`<b>Compra</b>: ${escapeHtml(buy.label)} a <b>${formatBrl(buyPrice)}</b>`,
-		`<b>Venda</b>: ${escapeHtml(sell.label)} a <b>${formatBrl(sellPrice)}</b>`,
-		`<b>Spread bruto</b>: ${spreadPct.toFixed(3)}%`,
-		`<b>Média monitorada</b>: ${formatBrl(summary.avg)}`,
-		`<b>Faixa</b>: ${formatBrl(summary.min)} - ${formatBrl(summary.max)}`,
-		`<b>Atualizado</b>: ${formatTimestamp(prices.timestamp)}`,
+		"⬆️ <b>VENDA — ranking</b>",
+		...rankingLines,
+		"",
+		`💰 <b>Melhor rota</b>: ${escapeHtml(buy.label)} -> ${escapeHtml(bestSell.label)}`,
+		`   Capital ${formatBrlCompact(SIM_CAPITAL_BRL)} -> lucro estimado ${formatBrlCompact(bestProfitBrl)}`,
+		"",
+		`📊 <b>Media</b>: ${formatBrl(summary.avg)} | <b>Faixa</b>: ${formatBrl(summary.min)} — ${formatBrl(summary.max)}`,
+		...(defiIncluded ? ["⚠️ DeFi BRLA inclui taxa estimada de 0.50%."] : []),
 	].join("\n");
 }
 
@@ -238,27 +484,23 @@ export async function buildScannerSignalMessage(baseUrl: string): Promise<string
 	const best = candidates[0] ?? null;
 	if (!best || !best.best_arb) {
 		return [
-			"<b>📡 Scanner Bot</b>",
+			`<b>🔎 SCANNER · ${formatTimestamp(payload.timestamp)}</b>`,
 			"",
-			"Nao encontrei oportunidade valida no scanner completo agora.",
-			`Atualizado: ${formatTimestamp(payload.timestamp)}`,
+			"⚠️ Nao encontrei oportunidade valida no scanner completo agora.",
+			"",
+			"Toque em <b>Atualizar Scanner</b> para tentar novamente.",
 		].join("\n");
 	}
 
 	const topThree = candidates.slice(0, 3);
+	const { date, time } = buildDateAndTime(payload.timestamp);
 
 	return [
-		"<b>📡 Scanner Bot</b>",
+		`<b>🔎 SCANNER · ${date} · ${time}</b>`,
 		"",
-		"Melhor oportunidade detectada no scanner completo do mercado.",
-		"",
-		`<b>Melhor oportunidade</b>: ${escapeHtml(best.symbol)} - ${escapeHtml(best.team)}`,
-		`<b>Comprar</b>: ${escapeHtml(best.best_arb.buy_exchange_label)}`,
-		`<b>Vender</b>: ${escapeHtml(best.best_arb.sell_exchange_label)}`,
-		`<b>Spread bruto</b>: ${best.best_arb.spread_pct.toFixed(3)}%`,
-		`<b>Spread liquido</b>: ${best.best_arb.net_spread_pct.toFixed(3)}%`,
-		`<b>Qualidade</b>: ${best.best_arb.quality}`,
-		`<b>Lucro estimado</b>: ${formatBrl(best.best_arb.profit_est_brl_per_100)}/100 BRL`,
+		`🥇 <b>${escapeHtml(best.symbol)}</b> · ${escapeHtml(best.best_arb.buy_exchange_label)} -> ${escapeHtml(best.best_arb.sell_exchange_label)}`,
+		`📈 ${formatPct(best.best_arb.spread_pct, 2)} bruto · ${formatPct(best.best_arb.net_spread_pct, 2)} liquido · ${qualityBadge(best.best_arb.quality)}`,
+		`💰 ${formatBrlCompact(best.best_arb.profit_est_brl_per_100)} por cada R$ 100`,
 		"",
 		"<b>Top 3 sinais</b>",
 		...topThree.map((token, index) => {
@@ -267,9 +509,9 @@ export async function buildScannerSignalMessage(baseUrl: string): Promise<string
 				return `${index + 1}. ${escapeHtml(token.symbol)} - sem sinal`;
 			}
 
-			return `${index + 1}. ${escapeHtml(token.symbol)} - ${escapeHtml(token.team)} | ${escapeHtml(arb.buy_exchange_label)} -> ${escapeHtml(arb.sell_exchange_label)} | ${arb.spread_pct.toFixed(3)}% bruto | ${arb.net_spread_pct.toFixed(3)}% liquido`;
+			const medal = index === 0 ? "🥇" : index === 1 ? "🥈" : "🥉";
+			return `${medal} <b>${escapeHtml(token.symbol)}</b> · ${escapeHtml(arb.buy_exchange_label)} -> ${escapeHtml(arb.sell_exchange_label)}\n📈 ${formatPct(arb.spread_pct, 2)} bruto · ${formatPct(arb.net_spread_pct, 2)} liquido`;
 		}),
-		`<b>Atualizado</b>: ${formatTimestamp(payload.timestamp)}`,
 	].join("\n");
 }
 

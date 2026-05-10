@@ -109,7 +109,20 @@ O bot responde a dois comandos:
 
 - `/start` abre um menu com os dois botões
 - `/usdt` envia o melhor sinal do monitor USDT/BRL
-- `/scanner` envia o melhor sinal do scanner de fan tokens
+- `/scanner` envia o melhor sinal do scanner completo de moedas
+- `/settings` abre as configuracoes do usuario no Telegram
+
+Configuracao por usuario (Telegram):
+
+- `Incluir DeFi (BRLA) no monitoramento`: desativado por padrao
+- Quando ativado, o ranking de venda do `UsdtBot` inclui `🔗 DeFi BRLA` com desconto estimado de 0.50%
+- `Envio automatico de sinais`: `UsdtBot`, `Scanner Bot`, `Ambos` ou `Desligado`
+
+Envio automatico:
+
+- O projeto possui um despachante em `GET /api/telegram/dispatch`
+- Na Vercel, o `vercel.json` agenda cron a cada 1 minuto para enviar sinais novos automaticamente
+- Para proteger o endpoint, defina `CRON_SECRET` na Vercel (o cron envia `Authorization: Bearer <CRON_SECRET>`)
 
 ### Variaveis de ambiente
 

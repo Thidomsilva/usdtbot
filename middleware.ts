@@ -12,7 +12,7 @@ function isPublicPath(pathname: string): boolean {
     || pathname === '/api/fan-tokens'
     || pathname === '/api/p2p-arbitrage'
     || pathname === '/api/spot-futures-arbitrage'
-    || pathname === '/api/telegram'
+    || pathname.startsWith('/api/telegram')
     || pathname === '/api/health/debug'
     || PUBLIC_FILE_PATTERN.test(pathname)
 }
