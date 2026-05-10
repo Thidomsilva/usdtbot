@@ -32,6 +32,15 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MENU_RETURN_DELAY_MS = 3000;
+
+// Fluxo conversacional de cadastro/login
+type ConversationState =
+	| { step: "cadastro_username" }
+	| { step: "cadastro_password"; username: string }
+	| { step: "login_username" }
+	| { step: "login_password"; username: string };
+
+const conversationStates = new Map<string, ConversationState>();
 const MIN_SPREAD_ALLOWED = 0.1;
 const MAX_SPREAD_ALLOWED = 10;
 
@@ -260,6 +269,123 @@ export async function POST(request: NextRequest) {
 
 	try {
 		const linkedUser = await getUserByTelegramChatId(effectiveChatId);
+		const chatKey = String(effectiveChatId);
+		const convState = conversationStates.get(chatKey);
+
+		// Fluxo conversacional: estado ativo
+		if (convState && messageText && !messageText.startsWith("/")) {
+			if (convState.step === "cadastro_username") {
+				const username = messageText.trim().toLowerCase();
+				conversationStates.set(chatKey, { step: "cadastro_password", username });
+				await sendTelegramMessage(
+					effectiveChatId,
+					"🔒 Agora digite sua <b>senha</b>:\n\n💡 Use letras, números e símbolos para uma senha forte."
+				);
+				return NextResponse.json({ ok: true });
+			}
+
+			if (convState.step === "cadastro_password") {
+				const password = messageText.trim();
+				conversationStates.delete(chatKey);
+				try {
+					const user = await registerTelegramUser({
+						username: convState.username,
+						password,
+						chatId: effectiveChatId,
+					});
+					await sendTelegramMessage(
+						effectiveChatId,
+						[
+							"<b>🎉 Cadastro Realizado com Sucesso!</b>",
+							"",
+							`👤 Usuário: <b>${user.username}</b>`,
+							"✅ Chat autenticado e vinculado",
+							"",
+							"━━━━━━━━━━━━━━━━━━━━━━",
+							"Você já pode:",
+							"🚀 Acessar o menu completo",
+							"📊 Receber sinais de arbitragem",
+							"⚙️ Configurar suas preferências",
+							"🤖 Ativar monitoramento automático",
+							"",
+							"Use /start para abrir o menu!",
+						].join("\n")
+					);
+					await handleAction("menu", request.nextUrl.origin, effectiveChatId);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : "Falha ao cadastrar usuario";
+					await sendTelegramMessage(
+						effectiveChatId,
+						[
+							"<b>❌ Erro ao Cadastrar</b>",
+							"",
+							`⚠️ ${message}`,
+							"",
+							"Tente novamente com /cadastro",
+						].join("\n")
+					);
+				}
+				return NextResponse.json({ ok: true });
+			}
+
+			if (convState.step === "login_username") {
+				const username = messageText.trim().toLowerCase();
+				conversationStates.set(chatKey, { step: "login_password", username });
+				await sendTelegramMessage(effectiveChatId, "🔒 Agora digite sua <b>senha</b>:");
+				return NextResponse.json({ ok: true });
+			}
+
+			if (convState.step === "login_password") {
+				const password = messageText.trim();
+				conversationStates.delete(chatKey);
+				const user = await linkTelegramChatToUser({
+					username: convState.username,
+					password,
+					chatId: effectiveChatId,
+				});
+				if (!user) {
+					await sendTelegramMessage(
+						effectiveChatId,
+						[
+							"<b>❌ Login Inválido</b>",
+							"",
+							"Usuário ou senha incorretos.",
+							"Tente novamente com /login",
+						].join("\n")
+					);
+				} else {
+					await sendTelegramMessage(
+						effectiveChatId,
+						[
+							"<b>🔓 Login Realizado com Sucesso!</b>",
+							"",
+							`👤 Bem-vindo de volta, <b>${user.username}</b>!`,
+							"✅ Chat autenticado com sucesso",
+							"",
+							"Use /start para abrir o menu!",
+						].join("\n")
+					);
+					await handleAction("menu", request.nextUrl.origin, effectiveChatId);
+				}
+				return NextResponse.json({ ok: true });
+			}
+		}
+
+		// Iniciar fluxo conversacional via /cadastro ou /login sem argumentos
+		if (messageText.toLowerCase() === "/cadastro") {
+			conversationStates.set(chatKey, { step: "cadastro_username" });
+			await sendTelegramMessage(
+				effectiveChatId,
+				"👋 Vamos criar sua conta!\n\nDigite o <b>nome de usuário</b> que deseja usar:"
+			);
+			return NextResponse.json({ ok: true });
+		}
+
+		if (messageText.toLowerCase() === "/login") {
+			conversationStates.set(chatKey, { step: "login_username" });
+			await sendTelegramMessage(effectiveChatId, "🔑 Digite seu <b>nome de usuário</b>:");
+			return NextResponse.json({ ok: true });
+		}
 
 		if (credentialsCommand) {
 			if (!credentialsCommand.username || !credentialsCommand.password) {
