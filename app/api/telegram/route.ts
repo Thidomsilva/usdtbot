@@ -205,7 +205,13 @@ async function handleAction(
 	}
 
 	if (action === "usdt") {
-		const settings = await setTelegramUserSettings(chatId, { autoSignalsMode: "usdt" });
+		const settings = await setTelegramUserSettings(chatId, {
+			autoSignalsMode: "usdt",
+			alertsEnabled: true,
+			alertTracks: tracksByAutoMode("usdt"),
+			pausedUntil: null,
+			pendingSpreadTrack: null,
+		});
 		await sendTelegramMessage(
 			chatId,
 			await buildUsdtSignalMessage(baseUrl, { autoSignalsMode: settings.autoSignalsMode }),
@@ -221,7 +227,13 @@ async function handleAction(
 			await sendBloqueioMessage(chatId, "trilha_c");
 			return;
 		}
-		await setTelegramUserSettings(chatId, { autoSignalsMode: "usdt_defi" });
+		await setTelegramUserSettings(chatId, {
+			autoSignalsMode: "usdt_defi",
+			alertsEnabled: true,
+			alertTracks: tracksByAutoMode("usdt_defi"),
+			pausedUntil: null,
+			pendingSpreadTrack: null,
+		});
 		await sendTelegramMessage(chatId, await buildUsdtDefiSignalMessage(baseUrl), {
 			reply_markup: buildTelegramSignalMarkup("usdt_defi"),
 		});
@@ -235,7 +247,13 @@ async function handleAction(
 		await sendBloqueioMessage(chatId, "trilha_b");
 		return;
 	}
-	await setTelegramUserSettings(chatId, { autoSignalsMode: "scanner" });
+	await setTelegramUserSettings(chatId, {
+		autoSignalsMode: "scanner",
+		alertsEnabled: true,
+		alertTracks: tracksByAutoMode("scanner"),
+		pausedUntil: null,
+		pendingSpreadTrack: null,
+	});
 	await sendTelegramMessage(chatId, await buildScannerSignalMessage(baseUrl), {
 		reply_markup: buildTelegramSignalMarkup("scanner"),
 	});
