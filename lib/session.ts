@@ -94,18 +94,9 @@ async function sign(message: string, secret: string): Promise<string> {
   )
 
   const bytes = new Uint8Array(signature)
-  // Usa Buffer quando disponivel para evitar dependencia de btoa no runtime Node.js.
-  if (typeof Buffer !== 'undefined') {
-    return toBase64Url(Buffer.from(bytes).toString('base64'))
-  }
-
   let binary = ''
   for (const byte of bytes) {
     binary += String.fromCharCode(byte)
-  }
-
-  if (typeof btoa !== 'function') {
-    throw new Error('btoa nao disponivel e Buffer nao encontrado')
   }
 
   return toBase64Url(btoa(binary))

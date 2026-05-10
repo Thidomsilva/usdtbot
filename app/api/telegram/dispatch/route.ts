@@ -157,7 +157,7 @@ export async function GET(request: NextRequest) {
 	let sent = 0;
 	let skipped = 0;
 	let failed = 0;
-	let skippedNotAllowedChat = 0;
+	let allowlistMismatches = 0;
 	let skippedUnlinkedUser = 0;
 	let skippedMonitoringDisabled = 0;
 	let skippedNoTrackEnabled = 0;
@@ -165,17 +165,17 @@ export async function GET(request: NextRequest) {
 	for (const user of users) {
 		const { chatId, settings } = user;
 
-		if (!isAllowedTelegramChat(chatId)) {
-			skipped++;
-			skippedNotAllowedChat++;
-			continue;
-		}
-
 		const linkedUser = await getUserByTelegramChatId(chatId);
 		if (!linkedUser) {
 			skipped++;
 			skippedUnlinkedUser++;
 			continue;
+		}
+
+		// Do not block automatic dispatch for authenticated and linked users.
+		// Allowlist remains enforced in webhook handling, but dispatch should not silently drop legit users.
+		if (!isAllowedTelegramChat(chatId)) {
+			allowlistMismatches++;
 		}
 
 		let effectiveSettings = settings;
@@ -221,7 +221,7 @@ export async function GET(request: NextRequest) {
 		skipped,
 		failed,
 		diagnostics: {
-			skipped_not_allowed_chat: skippedNotAllowedChat,
+			allowlist_mismatches: allowlistMismatches,
 			skipped_unlinked_user: skippedUnlinkedUser,
 			skipped_monitoring_disabled: skippedMonitoringDisabled,
 			skipped_no_track_enabled: skippedNoTrackEnabled,
