@@ -3,6 +3,7 @@ import {
 	buildScannerSignalMessage,
 	buildSignalDigest,
 	buildTelegramSignalMarkup,
+	buildUsdtDefiSignalMessage,
 	buildUsdtSignalMessage,
 	isAllowedTelegramChat,
 	sendTelegramMessage,
@@ -29,7 +30,6 @@ function isAuthorized(request: NextRequest): boolean {
 async function dispatchUsdt(chatId: string, origin: string): Promise<"sent" | "skipped"> {
 	const settings = await getTelegramUserSettings(chatId);
 	const message = await buildUsdtSignalMessage(origin, {
-		includeDefiBrla: settings.includeDefiBrla,
 		autoSignalsMode: settings.autoSignalsMode,
 	});
 	const digest = buildSignalDigest(message);
@@ -43,6 +43,23 @@ async function dispatchUsdt(chatId: string, origin: string): Promise<"sent" | "s
 	});
 
 	await setTelegramUserSettings(chatId, { lastUsdtDigest: digest });
+	return "sent";
+}
+
+async function dispatchUsdtDefi(chatId: string, origin: string): Promise<"sent" | "skipped"> {
+	const settings = await getTelegramUserSettings(chatId);
+	const message = await buildUsdtDefiSignalMessage(origin);
+	const digest = buildSignalDigest(message);
+
+	if (settings.lastUsdtDefiDigest === digest) {
+		return "skipped";
+	}
+
+	await sendTelegramMessage(chatId, message, {
+		reply_markup: buildTelegramSignalMarkup("usdt_defi"),
+	});
+
+	await setTelegramUserSettings(chatId, { lastUsdtDefiDigest: digest });
 	return "sent";
 }
 
@@ -90,14 +107,20 @@ export async function GET(request: NextRequest) {
 		}
 
 		try {
-			if (mode === "usdt" || mode === "both") {
+			if (mode === "usdt" || mode === "all") {
 				const result = await dispatchUsdt(chatId, origin);
 				if (result === "sent") sent += 1;
 				if (result === "skipped") skipped += 1;
 			}
 
-			if (mode === "scanner" || mode === "both") {
+			if (mode === "scanner" || mode === "all") {
 				const result = await dispatchScanner(chatId, origin);
+				if (result === "sent") sent += 1;
+				if (result === "skipped") skipped += 1;
+			}
+
+			if (mode === "usdt_defi" || mode === "all") {
+				const result = await dispatchUsdtDefi(chatId, origin);
 				if (result === "sent") sent += 1;
 				if (result === "skipped") skipped += 1;
 			}

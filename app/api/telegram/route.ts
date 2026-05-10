@@ -7,6 +7,7 @@ import {
 	buildTelegramSettingsMarkup,
 	buildTelegramSettingsMessage,
 	buildTelegramSignalMarkup,
+	buildUsdtDefiSignalMessage,
 	buildUsdtSignalMessage,
 	extractTelegramUpdate,
 	getTelegramBotToken,
@@ -14,11 +15,7 @@ import {
 	isAllowedTelegramChat,
 	sendTelegramMessage,
 } from "@/lib/telegram";
-import {
-	getTelegramUserSettings,
-	setTelegramUserSettings,
-	toggleTelegramDefiBrla,
-} from "@/lib/telegram-user-settings";
+import { getTelegramUserSettings, setTelegramUserSettings } from "@/lib/telegram-user-settings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +37,7 @@ async function sendSettings(chatId: number | string) {
 }
 
 async function handleAction(
-	action: "menu" | "settings" | "help" | "usdt" | "scanner",
+	action: "menu" | "settings" | "help" | "usdt" | "usdt_defi" | "scanner",
 	baseUrl: string,
 	chatId: number | string
 ) {
@@ -68,13 +65,23 @@ async function handleAction(
 		await sendTelegramMessage(
 			chatId,
 			await buildUsdtSignalMessage(baseUrl, {
-				includeDefiBrla: settings.includeDefiBrla,
 				autoSignalsMode: settings.autoSignalsMode,
 			}),
 			{
-			reply_markup: buildTelegramSignalMarkup("usdt"),
+				reply_markup: buildTelegramSignalMarkup("usdt"),
 			}
 		);
+		return;
+	}
+
+	if (action === "usdt_defi") {
+		await setTelegramUserSettings(chatId, {
+			autoSignalsMode: "usdt_defi",
+		});
+
+		await sendTelegramMessage(chatId, await buildUsdtDefiSignalMessage(baseUrl), {
+			reply_markup: buildTelegramSignalMarkup("usdt_defi"),
+		});
 		return;
 	}
 
@@ -103,18 +110,18 @@ export async function POST(request: NextRequest) {
 		| undefined;
 	const callbackData = callbackQuery?.data ?? "";
 	const callbackAction = callbackData.startsWith("mode:")
-		? (callbackData.slice("mode:".length) as "menu" | "usdt" | "scanner")
+		? (callbackData.slice("mode:".length) as "menu" | "usdt" | "usdt_defi" | "scanner")
 		: null;
 	const callbackSettingsAction = callbackData === "settings:open"
 		? "open"
-		: callbackData === "settings:toggle_defi"
-			? "toggle_defi"
-			: callbackData === "settings:auto_usdt"
+		: callbackData === "settings:auto_usdt"
 				? "auto_usdt"
 				: callbackData === "settings:auto_scanner"
 					? "auto_scanner"
-					: callbackData === "settings:auto_both"
-						? "auto_both"
+					: callbackData === "settings:auto_usdt_defi"
+						? "auto_usdt_defi"
+						: callbackData === "settings:auto_all"
+							? "auto_all"
 						: callbackData === "settings:auto_off"
 							? "auto_off"
 			: null;
@@ -149,24 +156,16 @@ export async function POST(request: NextRequest) {
 			return NextResponse.json({ ok: true });
 		}
 
-		if (effectiveChatId && callbackSettingsAction === "toggle_defi") {
-			const updated = await toggleTelegramDefiBrla(effectiveChatId);
-			await sendTelegramMessage(
-				effectiveChatId,
-				buildTelegramSettingsMessage(updated),
-				{ reply_markup: buildTelegramSettingsMarkup(updated) }
-			);
-			return NextResponse.json({ ok: true });
-		}
-
 		if (effectiveChatId && callbackSettingsAction?.startsWith("auto_")) {
 			const mode =
 				callbackSettingsAction === "auto_usdt"
 					? "usdt"
 					: callbackSettingsAction === "auto_scanner"
 						? "scanner"
-						: callbackSettingsAction === "auto_both"
-							? "both"
+						: callbackSettingsAction === "auto_usdt_defi"
+							? "usdt_defi"
+							: callbackSettingsAction === "auto_all"
+								? "all"
 							: "off";
 
 			const updated = await setTelegramUserSettings(effectiveChatId, {
@@ -197,6 +196,6 @@ export async function POST(request: NextRequest) {
 export async function GET() {
 	return NextResponse.json({
 		ok: true,
-		help: "Envie /start, /usdt ou /scanner no chat do bot.",
+		help: "Envie /start, /usdt, /usdt_defi ou /scanner no chat do bot.",
 	});
 }

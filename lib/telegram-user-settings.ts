@@ -3,9 +3,10 @@ import path from "path";
 
 export type TelegramUserSettings = {
 	includeDefiBrla: boolean;
-	autoSignalsMode: "off" | "usdt" | "scanner" | "both";
+	autoSignalsMode: "off" | "usdt" | "scanner" | "usdt_defi" | "all";
 	lastUsdtDigest: string | null;
 	lastScannerDigest: string | null;
+	lastUsdtDefiDigest: string | null;
 };
 
 type TelegramSettingsStore = {
@@ -17,6 +18,7 @@ const DEFAULT_SETTINGS: TelegramUserSettings = {
 	autoSignalsMode: "off",
 	lastUsdtDigest: null,
 	lastScannerDigest: null,
+	lastUsdtDefiDigest: null,
 };
 
 const DATA_DIR = process.env.VERCEL
@@ -40,12 +42,17 @@ function normalizeSettings(value: unknown): TelegramUserSettings {
 		autoSignalsMode:
 			candidate.autoSignalsMode === "usdt" ||
 			candidate.autoSignalsMode === "scanner" ||
-			candidate.autoSignalsMode === "both"
+			candidate.autoSignalsMode === "usdt_defi" ||
+			candidate.autoSignalsMode === "all"
 				? candidate.autoSignalsMode
+				: String((candidate as { autoSignalsMode?: string }).autoSignalsMode) === "both"
+					? "all"
 				: "off",
 		lastUsdtDigest: typeof candidate.lastUsdtDigest === "string" ? candidate.lastUsdtDigest : null,
 		lastScannerDigest:
 			typeof candidate.lastScannerDigest === "string" ? candidate.lastScannerDigest : null,
+		lastUsdtDefiDigest:
+			typeof candidate.lastUsdtDefiDigest === "string" ? candidate.lastUsdtDefiDigest : null,
 	};
 }
 
@@ -103,7 +110,8 @@ export async function setTelegramUserSettings(
 		autoSignalsMode:
 			next.autoSignalsMode === "usdt" ||
 			next.autoSignalsMode === "scanner" ||
-			next.autoSignalsMode === "both" ||
+			next.autoSignalsMode === "usdt_defi" ||
+			next.autoSignalsMode === "all" ||
 			next.autoSignalsMode === "off"
 				? next.autoSignalsMode
 				: current.autoSignalsMode,
@@ -115,6 +123,10 @@ export async function setTelegramUserSettings(
 			typeof next.lastScannerDigest === "string" || next.lastScannerDigest === null
 				? (next.lastScannerDigest ?? null)
 				: current.lastScannerDigest,
+		lastUsdtDefiDigest:
+			typeof next.lastUsdtDefiDigest === "string" || next.lastUsdtDefiDigest === null
+				? (next.lastUsdtDefiDigest ?? null)
+				: current.lastUsdtDefiDigest,
 	};
 
 	store.users[key] = updated;

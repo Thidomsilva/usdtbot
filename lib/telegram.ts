@@ -11,7 +11,7 @@ const DEFI_BRLA_CACHE_TTL_MS = 15_000;
 const DEFI_BRLA_TIMEOUT_MS = 3_000;
 const SIM_CAPITAL_BRL = 1000;
 
-type TelegramAction = "menu" | "settings" | "usdt" | "scanner" | "help";
+type TelegramAction = "menu" | "settings" | "usdt" | "usdt_defi" | "scanner" | "help";
 
 type TelegramCallbackAction = "menu" | TelegramAction;
 
@@ -28,8 +28,7 @@ type TelegramMessageOptions = {
 };
 
 type UsdtMessageOptions = {
-	includeDefiBrla: boolean;
-	autoSignalsMode: "off" | "usdt" | "scanner" | "both";
+	autoSignalsMode: "off" | "usdt" | "scanner" | "usdt_defi" | "all";
 };
 
 type DefiBrlaPrice = {
@@ -222,6 +221,10 @@ export function parseTelegramAction(text: string | undefined): TelegramAction | 
 		return "usdt";
 	}
 
+	if (["/usdt_defi", "/defi", "/signal_defi", "defi"].includes(command)) {
+		return "usdt_defi";
+	}
+
 	if (["/scanner", "/signal_scanner", "/scanner_signal", "scanner"].includes(command)) {
 		return "scanner";
 	}
@@ -234,10 +237,11 @@ export function buildTelegramHelpMessage(): string {
 		"<b>USDTBot</b>",
 		"",
 		"Comandos disponiveis:",
-		"/usdt - envia o melhor sinal do monitor USDT/BRL",
+		"/usdt - usdt entre CEXs (compra e venda entre corretoras)",
+		"/usdt_defi - compra em CEX e venda no DeFiLlama (BRLA)",
 		"/scanner - envia o melhor sinal do scanner completo de moedas",
 		"/settings - configura o monitor por usuario",
-		"/start - abre o menu bonito com os dois modos",
+		"/start - abre o menu com os tres modos",
 		"",
 		"Se quiser, eu posso responder automaticamente aos dois comandos no mesmo chat.",
 	].join("\n");
@@ -249,11 +253,14 @@ export function buildTelegramMenuMessage(): string {
 		"",
 		"Escolha a trilha que quer acompanhar agora:",
 		"",
-		"<b>UsdtBot</b>",
-		"Monitor USDT/BRL entre corretoras e destaque de melhor compra/venda.",
+		"<b>A) USDT entre CEXs</b>",
+		"Compra e venda entre corretoras centralizadas.",
 		"",
-		"<b>Scanner Bot</b>",
-		"Scanner completo do mercado cripto, com melhor oportunidade, spread liquido e top 3 sinais.",
+		"<b>B) Scanner</b>",
+		"Scanner completo do mercado cripto com ranking de oportunidades.",
+		"",
+		"<b>C) USDT -> DeFiLlama (BRLA)</b>",
+		"Compra em CEX e simula venda no DeFi (pool BRLA/USDT).",
 		"",
 		"Toque em um botao para receber o sinal na hora.",
 	].join("\n");
@@ -263,8 +270,13 @@ export function buildTelegramMenuMarkup(): Record<string, unknown> {
 	return {
 		inline_keyboard: [
 			[
-				{ text: "💱 UsdtBot", callback_data: "mode:usdt" },
-				{ text: "📡 Scanner Bot", callback_data: "mode:scanner" },
+				{ text: "💱 A) CEX↔CEX", callback_data: "mode:usdt" },
+			],
+			[
+				{ text: "📡 B) Scanner", callback_data: "mode:scanner" },
+			],
+			[
+				{ text: "🔗 C) CEX→DeFi", callback_data: "mode:usdt_defi" },
 			],
 			[
 				{ text: "⚙️ Configurar", callback_data: "settings:open" },
@@ -279,11 +291,13 @@ export function buildTelegramMenuMarkup(): Record<string, unknown> {
 export function buildTelegramSettingsMessage(options: UsdtMessageOptions): string {
 	const autoModeLabel =
 		options.autoSignalsMode === "usdt"
-			? "💱 UsdtBot"
+			? "💱 A) USDT entre CEXs"
 			: options.autoSignalsMode === "scanner"
-				? "📡 Scanner Bot"
-				: options.autoSignalsMode === "both"
-					? "🧠 Ambos"
+				? "📡 B) Scanner"
+				: options.autoSignalsMode === "usdt_defi"
+					? "🔗 C) USDT -> DeFi"
+					: options.autoSignalsMode === "all"
+						? "🧠 Todas as 3"
 					: "⏸️ Desligado";
 
 	return [
@@ -291,11 +305,7 @@ export function buildTelegramSettingsMessage(options: UsdtMessageOptions): strin
 		"",
 		`Envio automatico de sinais: ${autoModeLabel}`,
 		"",
-		`Incluir DeFi (BRLA) no monitoramento: ${options.includeDefiBrla ? "✅ ativado" : "❌ desativado"}`,
-		"",
-		"Escolha o modo automatico abaixo. O bot envia sinais novos sem precisar apertar atualizar.",
-		"",
-		"Quando ativado, o ranking de venda do UsdtBot inclui 🔗 DeFi BRLA com desconto total estimado de 0.50% (swap + slippage).",
+		"Escolha o modo automatico abaixo. O bot envia novos sinais sem precisar apertar atualizar.",
 	].join("\n");
 }
 
@@ -304,7 +314,7 @@ export function buildTelegramSettingsMarkup(options: UsdtMessageOptions): Record
 		inline_keyboard: [
 			[
 				{
-					text: options.autoSignalsMode === "usdt" ? "Auto: 💱 UsdtBot ✅" : "Auto: 💱 UsdtBot",
+					text: options.autoSignalsMode === "usdt" ? "Auto: 💱 A) CEX↔CEX ✅" : "Auto: 💱 A) CEX↔CEX",
 					callback_data: "settings:auto_usdt",
 				},
 			],
@@ -312,29 +322,30 @@ export function buildTelegramSettingsMarkup(options: UsdtMessageOptions): Record
 				{
 					text:
 						options.autoSignalsMode === "scanner"
-							? "Auto: 📡 Scanner Bot ✅"
-							: "Auto: 📡 Scanner Bot",
+							? "Auto: 📡 B) Scanner ✅"
+							: "Auto: 📡 B) Scanner",
 					callback_data: "settings:auto_scanner",
 				},
 			],
 			[
 				{
-					text: options.autoSignalsMode === "both" ? "Auto: 🧠 Ambos ✅" : "Auto: 🧠 Ambos",
-					callback_data: "settings:auto_both",
+					text:
+						options.autoSignalsMode === "usdt_defi"
+							? "Auto: 🔗 C) CEX→DeFi ✅"
+							: "Auto: 🔗 C) CEX→DeFi",
+					callback_data: "settings:auto_usdt_defi",
+				},
+			],
+			[
+				{
+					text: options.autoSignalsMode === "all" ? "Auto: 🧠 Todas as 3 ✅" : "Auto: 🧠 Todas as 3",
+					callback_data: "settings:auto_all",
 				},
 			],
 			[
 				{
 					text: options.autoSignalsMode === "off" ? "Auto: ⏸️ Desligado ✅" : "Auto: ⏸️ Desligado",
 					callback_data: "settings:auto_off",
-				},
-			],
-			[
-				{
-					text: options.includeDefiBrla
-						? "DeFi (BRLA): ✅ ativado"
-						: "DeFi (BRLA): ❌ desativado",
-					callback_data: "settings:toggle_defi",
 				},
 			],
 			[
@@ -350,15 +361,26 @@ export function buildSignalDigest(message: string): string {
 	return createHash("sha256").update(normalized).digest("hex");
 }
 
-export function buildTelegramSignalMarkup(action: "usdt" | "scanner"): Record<string, unknown> {
+export function buildTelegramSignalMarkup(action: "usdt" | "scanner" | "usdt_defi"): Record<string, unknown> {
 	return {
 		inline_keyboard: [
 			[
-				{ text: action === "usdt" ? "🔄 Atualizar USDT" : "🔄 Atualizar Scanner", callback_data: `mode:${action}` },
+				{
+					text:
+						action === "usdt"
+							? "🔄 Atualizar A) CEX↔CEX"
+							: action === "usdt_defi"
+								? "🔄 Atualizar C) CEX→DeFi"
+								: "🔄 Atualizar B) Scanner",
+					callback_data: `mode:${action}`,
+				},
 			],
 			[
-				{ text: "💱 UsdtBot", callback_data: "mode:usdt" },
-				{ text: "📡 Scanner Bot", callback_data: "mode:scanner" },
+				{ text: "💱 A) CEX↔CEX", callback_data: "mode:usdt" },
+				{ text: "📡 B) Scanner", callback_data: "mode:scanner" },
+			],
+			[
+				{ text: "🔗 C) CEX→DeFi", callback_data: "mode:usdt_defi" },
 			],
 			[
 				{ text: "⚙️ Configurar", callback_data: "settings:open" },
@@ -403,19 +425,6 @@ export async function buildUsdtSignalMessage(
 		}))
 		.filter((candidate) => candidate.priceBrl > 0);
 
-	let defiIncluded = false;
-	if (options.includeDefiBrla) {
-		const defi = await fetchDefiBrlaPrice();
-		if (defi && defi.sellNetBrlPerUsdt > 0) {
-			sellCandidates.push({
-				label: "🔗 DeFi BRLA",
-				priceBrl: Number(defi.sellNetBrlPerUsdt.toFixed(4)),
-				isDefi: true,
-			});
-			defiIncluded = true;
-		}
-	}
-
 	const rankedSells = sellCandidates
 		.slice()
 		.sort((a, b) => b.priceBrl - a.priceBrl)
@@ -445,6 +454,8 @@ export async function buildUsdtSignalMessage(
 	return [
 		`<b>💵 USDT/BRL · ${date} · ${time}</b>`,
 		"",
+		"<b>A) USDT entre CEXs</b>",
+		"",
 		"⬇️ <b>COMPRA mais barata</b>",
 		`   ${escapeHtml(buy.label)}: ${formatBrl(buyPrice)}`,
 		"",
@@ -455,7 +466,60 @@ export async function buildUsdtSignalMessage(
 		`   Capital ${formatBrlCompact(SIM_CAPITAL_BRL)} -> lucro estimado ${formatBrlCompact(bestProfitBrl)}`,
 		"",
 		`📊 <b>Media</b>: ${formatBrl(summary.avg)} | <b>Faixa</b>: ${formatBrl(summary.min)} — ${formatBrl(summary.max)}`,
-		...(defiIncluded ? ["⚠️ DeFi BRLA inclui taxa estimada de 0.50%."] : []),
+	].join("\n");
+}
+
+export async function buildUsdtDefiSignalMessage(baseUrl: string): Promise<string> {
+	const prices = await fetchJson<PricesResponse>(new URL("/api/prices", baseUrl));
+	const entries = Object.values(prices.exchanges).filter(
+		(exchange) => exchange.status === "ok" && typeof exchange.price_brl === "number" && exchange.price_brl > 0
+	);
+	const { date, time } = buildDateAndTime(prices.timestamp);
+
+	if (entries.length < 1) {
+		return [
+			`<b>💵 USDT/BRL · ${date} · ${time}</b>`,
+			"",
+			"<b>C) USDT -> DeFiLlama (BRLA)</b>",
+			"",
+			"⚠️ Sem preco de compra em CEX disponivel agora.",
+		].join("\n");
+	}
+
+	const buy = entries.slice().sort((a, b) => (a.price_brl ?? 0) - (b.price_brl ?? 0))[0];
+	const buyPrice = buy.price_brl ?? 0;
+	const defi = await fetchDefiBrlaPrice();
+
+	if (!defi || buyPrice <= 0) {
+		return [
+			`<b>💵 USDT/BRL · ${date} · ${time}</b>`,
+			"",
+			"<b>C) USDT -> DeFiLlama (BRLA)</b>",
+			"",
+			`⬇️ Compra CEX: ${escapeHtml(buy.label)} a ${formatBrl(buyPrice)}`,
+			"⚠️ DeFiLlama indisponivel no momento (timeout/falha).",
+		].join("\n");
+	}
+
+	const sellDefi = Number(defi.sellNetBrlPerUsdt.toFixed(4));
+	const spreadPct = ((sellDefi - buyPrice) / buyPrice) * 100;
+	const usdtQty = SIM_CAPITAL_BRL / buyPrice;
+	const profit = usdtQty * sellDefi - SIM_CAPITAL_BRL;
+
+	return [
+		`<b>💵 USDT/BRL · ${date} · ${time}</b>`,
+		"",
+		"<b>C) USDT -> DeFiLlama (BRLA)</b>",
+		"",
+		"⬇️ <b>COMPRA em CEX</b>",
+		`   ${escapeHtml(buy.label)}: ${formatBrl(buyPrice)}`,
+		"",
+		"⬆️ <b>VENDA no DeFi</b>",
+		`   🔗 DeFi BRLA: ${formatBrl(sellDefi)}  ${formatPct(spreadPct, 2)}`,
+		"",
+		`💰 <b>Melhor rota</b>: ${escapeHtml(buy.label)} -> 🔗 DeFi BRLA`,
+		`   Capital ${formatBrlCompact(SIM_CAPITAL_BRL)} -> lucro estimado ${formatBrlCompact(profit)}`,
+		"⚠️ DeFi BRLA inclui taxa estimada de 0.50%.",
 	].join("\n");
 }
 
