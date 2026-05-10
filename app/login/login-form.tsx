@@ -36,6 +36,8 @@ export default function LoginForm() {
 
       router.replace(nextPath);
       router.refresh();
+    } catch {
+      setError("Nao foi possivel conectar ao servidor. Tente novamente.");
     } finally {
       setLoading(false);
     }
