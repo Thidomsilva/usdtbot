@@ -112,6 +112,14 @@ function spreadLabelByTrack(track: "a" | "b" | "c"): string {
 	return "C) CEX→DeFi";
 }
 
+function tracksByAutoMode(mode: "off" | "usdt" | "scanner" | "usdt_defi" | "all") {
+	if (mode === "usdt") return { a: true, b: false, c: false };
+	if (mode === "scanner") return { a: false, b: true, c: false };
+	if (mode === "usdt_defi") return { a: false, b: false, c: true };
+	if (mode === "all") return { a: true, b: true, c: true };
+	return { a: false, b: false, c: false };
+}
+
 async function clearPreviousButtons(chatId: number | string, messageId: number | null): Promise<void> {
 	if (messageId === null) return;
 
@@ -596,8 +604,13 @@ export async function POST(request: NextRequest) {
 				: modeKey === "usdt_defi" ? "usdt_defi"
 				: modeKey === "all" ? "all"
 				: "off";
+			const tracks = tracksByAutoMode(mode);
+			const isMonitoringEnabled = mode !== "off";
 			const updated = await setTelegramUserSettings(effectiveChatId, {
 				autoSignalsMode: mode,
+				alertsEnabled: isMonitoringEnabled,
+				alertTracks: tracks,
+				pausedUntil: isMonitoringEnabled ? null : PAUSE_FOREVER,
 				pendingSpreadTrack: null,
 			});
 			await confirmAndShowStatus(

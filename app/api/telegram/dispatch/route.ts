@@ -26,6 +26,14 @@ function isAuthorized(request: NextRequest): boolean {
 	return request.headers.get("authorization") === `Bearer ${secret}`;
 }
 
+function tracksByAutoMode(mode: "off" | "usdt" | "scanner" | "usdt_defi" | "all") {
+	if (mode === "usdt") return { a: true, b: false, c: false };
+	if (mode === "scanner") return { a: false, b: true, c: false };
+	if (mode === "usdt_defi") return { a: false, b: false, c: true };
+	if (mode === "all") return { a: true, b: true, c: true };
+	return { a: false, b: false, c: false };
+}
+
 async function dispatchAlert(
 	chatId: string,
 	origin: string,
@@ -164,15 +172,26 @@ export async function GET(request: NextRequest) {
 			continue;
 		}
 
-		if (!settings.alertsEnabled) {
+		let effectiveSettings = settings;
+
+		if (!settings.alertsEnabled && settings.autoSignalsMode !== "off") {
+			const syncedTracks = tracksByAutoMode(settings.autoSignalsMode);
+			effectiveSettings = await setTelegramUserSettings(chatId, {
+				alertsEnabled: true,
+				alertTracks: syncedTracks,
+				pausedUntil: null,
+			});
+		}
+
+		if (!effectiveSettings.alertsEnabled) {
 			skipped++;
 			continue;
 		}
 
 		const tracks: Array<"a" | "b" | "c"> = [];
-		if (settings.alertTracks.a) tracks.push("a");
-		if (settings.alertTracks.b) tracks.push("b");
-		if (settings.alertTracks.c) tracks.push("c");
+		if (effectiveSettings.alertTracks.a) tracks.push("a");
+		if (effectiveSettings.alertTracks.b) tracks.push("b");
+		if (effectiveSettings.alertTracks.c) tracks.push("c");
 
 		for (const track of tracks) {
 			const result = await dispatchAlert(chatId, origin, track);
