@@ -341,7 +341,7 @@ export async function POST(request: NextRequest) {
 				pendingSpreadTrack: null,
 			});
 			const extra = enabling && !current.alertsEnabled
-				? ["📡 Monitoramento iniciado pela primeira vez."]
+				? ["✅ Monitoramento iniciado pela primeira vez."]
 				: [];
 			await confirmAndShowStatus(
 				effectiveChatId,

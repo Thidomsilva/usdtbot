@@ -346,7 +346,7 @@ export function buildTelegramSettingsMessage(options: TelegramUserSettings): str
 		"",
 		`Plano: ${planLabel}`,
 		`Alertas automaticos: ${alertIcon}${pausedMsg}`,
-		`Trilhas ativas: ${tracks.a ? "💱A" : "━A"} ${tracks.b ? "📡B" : "━B"} ${tracks.c ? "🔗C" : "━C"}`,
+		`Trilhas ativas: ${tracks.a ? "💱A" : "━A"} ${tracks.b ? "✅B" : "━B"} ${tracks.c ? "🔗C" : "━C"}`,
 		`Spread minimo A: ${options.minSpreadA.toFixed(2)}%`,
 		`Spread minimo B: ${options.minSpreadB.toFixed(2)}%`,
 		`Spread minimo C: ${options.minSpreadC.toFixed(2)}%`,
@@ -493,7 +493,7 @@ export function buildMonitoringStatusMessage(settings: TelegramUserSettings): st
 			? "indefinidamente"
 			: pauseResumeLabel(settings);
 		return [
-			"📡 <b>MONITORAMENTO PAUSADO 🔕</b>",
+			"✅ <b>MONITORAMENTO PAUSADO 🔕</b>",
 			"",
 			"Trilha A CEX→CEX    ⏸ pausado",
 			"Trilha B Scanner    ⏸ pausado",
@@ -505,7 +505,7 @@ export function buildMonitoringStatusMessage(settings: TelegramUserSettings): st
 
 	if (!settings.alertsEnabled) {
 		return [
-			"📡 <b>MONITORAMENTO DESATIVADO</b>",
+			"✅ <b>MONITORAMENTO DESATIVADO</b>",
 			"",
 			"Trilha A CEX→CEX    ❌ desativada",
 			"Trilha B Scanner    ❌ desativada",
@@ -516,7 +516,7 @@ export function buildMonitoringStatusMessage(settings: TelegramUserSettings): st
 	}
 
 	return [
-		"📡 <b>MONITORAMENTO ATIVO</b>",
+		"✅ <b>MONITORAMENTO ATIVO</b>",
 		"",
 		`Trilha A CEX→CEX    ${settings.alertTracks.a ? `✅ ${settings.minSpreadA.toFixed(2)}% mín` : "❌ desativada"}`,
 		`Trilha B Scanner    ${settings.alertTracks.b ? `✅ ${settings.minSpreadB.toFixed(2)}% mín` : "❌ desativada"}`,
