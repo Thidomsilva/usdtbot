@@ -122,7 +122,7 @@ export function buildTelegramHelpMessage(): string {
 		"",
 		"Comandos disponiveis:",
 		"/usdt - envia o melhor sinal do monitor USDT/BRL",
-		"/scanner - envia o melhor sinal do scanner de fan tokens",
+		"/scanner - envia o melhor sinal do scanner completo de moedas",
 		"/start - abre o menu bonito com os dois modos",
 		"",
 		"Se quiser, eu posso responder automaticamente aos dois comandos no mesmo chat.",
@@ -139,7 +139,7 @@ export function buildTelegramMenuMessage(): string {
 		"Monitor USDT/BRL entre corretoras e destaque de melhor compra/venda.",
 		"",
 		"<b>Scanner Bot</b>",
-		"Scanner de fan tokens com melhor oportunidade, spread liquido e top 3 sinais.",
+		"Scanner completo do mercado cripto, com melhor oportunidade, spread liquido e top 3 sinais.",
 		"",
 		"Toque em um botao para receber o sinal na hora.",
 	].join("\n");
@@ -240,7 +240,7 @@ export async function buildScannerSignalMessage(baseUrl: string): Promise<string
 		return [
 			"<b>📡 Scanner Bot</b>",
 			"",
-			"Nao encontrei oportunidade valida agora.",
+			"Nao encontrei oportunidade valida no scanner completo agora.",
 			`Atualizado: ${formatTimestamp(payload.timestamp)}`,
 		].join("\n");
 	}
@@ -250,7 +250,7 @@ export async function buildScannerSignalMessage(baseUrl: string): Promise<string
 	return [
 		"<b>📡 Scanner Bot</b>",
 		"",
-		"Melhor oportunidade detectada no momento.",
+		"Melhor oportunidade detectada no scanner completo do mercado.",
 		"",
 		`<b>Melhor oportunidade</b>: ${escapeHtml(best.symbol)} - ${escapeHtml(best.team)}`,
 		`<b>Comprar</b>: ${escapeHtml(best.best_arb.buy_exchange_label)}`,
