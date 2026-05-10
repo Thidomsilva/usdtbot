@@ -281,13 +281,39 @@ export async function POST(request: NextRequest) {
 					});
 					await sendTelegramMessage(
 						effectiveChatId,
-						`✅ Cadastro concluido para <b>${user.username}</b>.\nEste chat foi autenticado com sucesso.`
+						[
+							"<b>🎉 Cadastro Realizado com Sucesso!</b>",
+							"",
+							`👤 Usuário: <b>${user.username}</b>`,
+							"✅ Chat autenticado e vinculado",
+							"",
+							"━━━━━━━━━━━━━━━━━━━━━━",
+							"Você já pode:",
+							"🚀 Acessar o menu completo",
+							"📊 Receber sinais de arbitragem",
+							"⚙️ Configurar suas preferências",
+							"🤖 Ativar monitoramento automático",
+							"",
+							"Use /start para abrir o menu!",
+						].join("\n")
 					);
 					await handleAction("menu", request.nextUrl.origin, effectiveChatId);
 					return NextResponse.json({ ok: true });
 				} catch (error) {
 					const message = error instanceof Error ? error.message : "Falha ao cadastrar usuario";
-					await sendTelegramMessage(effectiveChatId, `⚠️ ${message}`);
+					await sendTelegramMessage(
+						effectiveChatId,
+						[
+							"<b>❌ Erro ao Cadastrar</b>",
+							"",
+							`⚠️ ${message}`,
+							"",
+							"Tente novamente com:",
+							"<code>/cadastro seu_usuario sua_senha</code>",
+							"",
+							"💡 Dica: Use uma senha forte com letras, números e símbolos.",
+						].join("\n")
+					);
 					return NextResponse.json({ ok: true });
 				}
 			}
@@ -298,13 +324,41 @@ export async function POST(request: NextRequest) {
 				chatId: effectiveChatId,
 			});
 			if (!user) {
-				await sendTelegramMessage(effectiveChatId, "⚠️ Usuario/senha invalidos ou acesso desativado.");
+				await sendTelegramMessage(
+					effectiveChatId,
+					[
+						"<b>❌ Login Inválido</b>",
+						"",
+						"Usuário ou senha incorretos, ou acesso desativado.",
+						"",
+						"Verifique os dados e tente novamente:",
+						"<code>/login seu_usuario sua_senha</code>",
+						"",
+						"Caso não tenha conta, crie uma com:",
+						"<code>/cadastro seu_usuario sua_senha</code>",
+						"",
+						"Ainda com dúvidas? Use /help",
+					].join("\n")
+				);
 				return NextResponse.json({ ok: true });
 			}
 
 			await sendTelegramMessage(
 				effectiveChatId,
-				`✅ Chat autenticado com sucesso para <b>${user.username}</b>.`
+				[
+					"<b>🔓 Login Realizado com Sucesso!</b>",
+					"",
+					`👤 Bem-vindo de volta, <b>${user.username}</b>!`,
+					"✅ Chat autenticado com sucesso",
+					"",
+					"━━━━━━━━━━━━━━━━━━━━━━",
+					"Pronto para:",
+					"💱 Acompanhar arbitragens",
+					"📡 Receber sinais do scanner",
+					"🎯 Monitorar oportunidades",
+					"",
+					"Use /start para abrir o menu!",
+				].join("\n")
 			);
 			await handleAction("menu", request.nextUrl.origin, effectiveChatId);
 			return NextResponse.json({ ok: true });
@@ -312,7 +366,20 @@ export async function POST(request: NextRequest) {
 
 		if (messageText.toLowerCase() === "/logout") {
 			await unlinkTelegramChat(effectiveChatId);
-			await sendTelegramMessage(effectiveChatId, "✅ Este chat foi desconectado. Para voltar a usar, envie /login ou /cadastro.");
+			await sendTelegramMessage(
+				effectiveChatId,
+				[
+					"<b>👋 Desconectado com Sucesso!</b>",
+					"",
+					"Este chat foi removido do bot.",
+					"",
+					"Para voltar a usar:",
+					"<code>/login seu_usuario sua_senha</code>",
+					"",
+					"ou crie uma nova conta:",
+					"<code>/cadastro seu_usuario sua_senha</code>",
+				].join("\n")
+			);
 			return NextResponse.json({ ok: true });
 		}
 

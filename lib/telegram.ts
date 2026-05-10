@@ -264,17 +264,29 @@ export function buildTelegramHelpMessage(): string {
 
 export function buildTelegramAuthRequiredMessage(): string {
 	return [
-		"<b>🔐 Acesso restrito</b>",
+		"<b>🔐 Acesso Restrito</b>",
 		"",
-		"Antes de usar o bot, autentique este chat.",
+		"━━━━━━━━━━━━━━━━━━━━━━",
+		"Olá! Para usar este bot você precisa se autenticar.",
+		"━━━━━━━━━━━━━━━━━━━━━━",
 		"",
-		"Se voce ja tem cadastro:",
-		"/login seu_usuario sua_senha",
+		"<b>📝 Opção 1: JÁ TEM CADASTRO?</b>",
+		"Use o comando de login:",
+		"<code>/login seu_usuario sua_senha</code>",
 		"",
-		"Se ainda nao tem cadastro:",
-		"/cadastro seu_usuario sua_senha",
+		"<b>🆕 Opção 2: PRIMEIRA VEZ?</b>",
+		"Crie uma nova conta:",
+		"<code>/cadastro seu_usuario sua_senha</code>",
 		"",
-		"Depois disso eu libero menu, sinais e monitoramento automatico.",
+		"━━━━━━━━━━━━━━━━━━━━━━",
+		"💡 <i>Depois da autenticação você terá acesso a:</i>",
+		"✅ Menu completo de operações",
+		"✅ Sinais de arbitragem em tempo real",
+		"✅ Monitoramento automático 24/7",
+		"✅ Configuração de preferências",
+		"",
+		"<b>💬 Dúvidas?</b>",
+		"Use /help para ver todos os comandos disponíveis.",
 	].join("\n");
 }
 
