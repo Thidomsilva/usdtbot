@@ -1,83 +1,140 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-	buildScannerSignalMessage,
-	buildSignalDigest,
+	buildAlertScannerMessage,
+	buildAlertUsdtDefiMessage,
+	buildAlertUsdtMessage,
+	buildPauseConfirmMessage,
 	buildTelegramSignalMarkup,
-	buildUsdtDefiSignalMessage,
-	buildUsdtSignalMessage,
 	isAllowedTelegramChat,
 	sendTelegramMessage,
 } from "@/lib/telegram";
 import {
-	getTelegramUserSettings,
+	checkAlertEligibility,
 	listTelegramUserSettings,
+	PAUSE_SPAM_MS,
 	setTelegramUserSettings,
 } from "@/lib/telegram-user-settings";
+import { spreadMinimoEfetivo } from "@/lib/plans";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function isAuthorized(request: NextRequest): boolean {
 	const secret = process.env.CRON_SECRET?.trim();
-	if (!secret) {
-		return true;
-	}
-
-	const authHeader = request.headers.get("authorization") ?? "";
-	return authHeader === `Bearer ${secret}`;
+	if (!secret) return true;
+	return request.headers.get("authorization") === `Bearer ${secret}`;
 }
 
-async function dispatchUsdt(chatId: string, origin: string): Promise<"sent" | "skipped"> {
-	const settings = await getTelegramUserSettings(chatId);
-	const message = await buildUsdtSignalMessage(origin, {
-		autoSignalsMode: settings.autoSignalsMode,
-	});
-	const digest = buildSignalDigest(message);
+async function dispatchAlert(
+	chatId: string,
+	origin: string,
+	track: "a" | "b" | "c"
+): Promise<"sent" | "skipped" | "failed"> {
+	try {
+		const { getTelegramUserSettings } = await import("@/lib/telegram-user-settings");
+		const settings = await getTelegramUserSettings(chatId);
 
-	if (settings.lastUsdtDigest === digest) {
-		return "skipped";
+		let scannerKey: string | undefined;
+		let messageText: string | null = null;
+
+		// Build message first (need scannerKey for eligibility check on B)
+		if (track === "b") {
+			const result = await buildAlertScannerMessage(origin, settings);
+			if (!result) return "skipped";
+			scannerKey = result.key;
+			// spread threshold already checked inside buildAlertScannerMessage via settings.minSpreadB
+			// but we still need to check eligibility (cooldown/limits)
+			const check = checkAlertEligibility(settings, "b", scannerKey);
+			if (!check.allowed) return "skipped";
+			messageText = result.message;
+			await setTelegramUserSettings(chatId, check.updates);
+			if (check.autoSpamPause) {
+				const pausedUntil = Date.now() + PAUSE_SPAM_MS;
+				await setTelegramUserSettings(chatId, { pausedUntil });
+				await sendTelegramMessage(
+					chatId,
+					`⚠️ Limite de alertas atingido. Pausando por 30 min.\n${buildPauseConfirmMessage(pausedUntil)}`
+				);
+			}
+		} else if (track === "a") {
+			const check = checkAlertEligibility(settings, "a");
+			if (!check.allowed) return "skipped";
+
+			// Check spread threshold
+			messageText = await buildAlertUsdtMessage(origin, settings);
+			if (!messageText) return "skipped";
+
+			const planInfo = { plan: settings.plan, planActive: settings.planActive, planExpiresAt: settings.planExpiresAt, trialUsed: settings.trialUsed };
+			const spreadOk = await checkUsdtSpread(origin, settings.minSpreadA, planInfo);
+			if (!spreadOk) return "skipped";
+
+			await setTelegramUserSettings(chatId, check.updates);
+			if (check.autoSpamPause) {
+				const pausedUntil = Date.now() + PAUSE_SPAM_MS;
+				await setTelegramUserSettings(chatId, { pausedUntil });
+				await sendTelegramMessage(
+					chatId,
+					`⚠️ Limite de alertas atingido. Pausando por 30 min.\n${buildPauseConfirmMessage(pausedUntil)}`
+				);
+			}
+		} else {
+			// track C
+			const check = checkAlertEligibility(settings, "c");
+			if (!check.allowed) return "skipped";
+
+			messageText = await buildAlertUsdtDefiMessage(origin, settings);
+			if (!messageText) return "skipped"; // returns null when spread <= 0
+
+			await setTelegramUserSettings(chatId, check.updates);
+			if (check.autoSpamPause) {
+				const pausedUntil = Date.now() + PAUSE_SPAM_MS;
+				await setTelegramUserSettings(chatId, { pausedUntil });
+				await sendTelegramMessage(
+					chatId,
+					`⚠️ Limite de alertas atingido. Pausando por 30 min.\n${buildPauseConfirmMessage(pausedUntil)}`
+				);
+			}
+		}
+
+		if (!messageText) return "skipped";
+
+		const signalType = track === "a" ? "usdt" : track === "c" ? "usdt_defi" : "scanner";
+		await sendTelegramMessage(chatId, messageText, {
+			reply_markup: buildTelegramSignalMarkup(signalType),
+		});
+
+		return "sent";
+	} catch (err) {
+		console.error(`[DISPATCH] track=${track} chatId=${chatId} error:`, err);
+		return "failed";
 	}
-
-	await sendTelegramMessage(chatId, message, {
-		reply_markup: buildTelegramSignalMarkup("usdt"),
-	});
-
-	await setTelegramUserSettings(chatId, { lastUsdtDigest: digest });
-	return "sent";
 }
 
-async function dispatchUsdtDefi(chatId: string, origin: string): Promise<"sent" | "skipped"> {
-	const settings = await getTelegramUserSettings(chatId);
-	const message = await buildUsdtDefiSignalMessage(origin);
-	const digest = buildSignalDigest(message);
-
-	if (settings.lastUsdtDefiDigest === digest) {
-		return "skipped";
+async function checkUsdtSpread(
+	origin: string,
+	minSpreadPct: number,
+	planInfo: { plan: import("@/lib/plans").UserPlan; planActive: boolean; planExpiresAt: number | null; trialUsed: boolean }
+): Promise<boolean> {
+	try {
+		const effectiveMin = spreadMinimoEfetivo(planInfo, minSpreadPct);
+		const res = await fetch(new URL("/api/prices", origin), {
+			method: "GET",
+			cache: "no-store",
+			headers: { accept: "application/json", "user-agent": "usdtbot-dispatch/1.0" },
+		});
+		if (!res.ok) return false;
+		const prices = await res.json() as { exchanges: Record<string, { status: string; price_brl?: number }> };
+		const valid = Object.values(prices.exchanges)
+			.filter((e) => e.status === "ok" && typeof e.price_brl === "number" && e.price_brl > 0)
+			.map((e) => e.price_brl as number);
+		if (valid.length < 2) return false;
+		const buyPrice = Math.min(...valid);
+		const sellPrice = Math.max(...valid);
+		const spread = ((sellPrice - buyPrice) / buyPrice) * 100;
+		return spread >= effectiveMin;
+	} catch {
+		return false;
 	}
-
-	await sendTelegramMessage(chatId, message, {
-		reply_markup: buildTelegramSignalMarkup("usdt_defi"),
-	});
-
-	await setTelegramUserSettings(chatId, { lastUsdtDefiDigest: digest });
-	return "sent";
-}
-
-async function dispatchScanner(chatId: string, origin: string): Promise<"sent" | "skipped"> {
-	const settings = await getTelegramUserSettings(chatId);
-	const message = await buildScannerSignalMessage(origin);
-	const digest = buildSignalDigest(message);
-
-	if (settings.lastScannerDigest === digest) {
-		return "skipped";
-	}
-
-	await sendTelegramMessage(chatId, message, {
-		reply_markup: buildTelegramSignalMarkup("scanner"),
-	});
-
-	await setTelegramUserSettings(chatId, { lastScannerDigest: digest });
-	return "sent";
 }
 
 export async function GET(request: NextRequest) {
@@ -93,40 +150,28 @@ export async function GET(request: NextRequest) {
 	let failed = 0;
 
 	for (const user of users) {
-		const chatId = user.chatId;
-		const mode = user.settings.autoSignalsMode;
+		const { chatId, settings } = user;
 
 		if (!isAllowedTelegramChat(chatId)) {
-			skipped += 1;
+			skipped++;
 			continue;
 		}
 
-		if (mode === "off") {
-			skipped += 1;
+		if (!settings.alertsEnabled) {
+			skipped++;
 			continue;
 		}
 
-		try {
-			if (mode === "usdt" || mode === "all") {
-				const result = await dispatchUsdt(chatId, origin);
-				if (result === "sent") sent += 1;
-				if (result === "skipped") skipped += 1;
-			}
+		const tracks: Array<"a" | "b" | "c"> = [];
+		if (settings.alertTracks.a) tracks.push("a");
+		if (settings.alertTracks.b) tracks.push("b");
+		if (settings.alertTracks.c) tracks.push("c");
 
-			if (mode === "scanner" || mode === "all") {
-				const result = await dispatchScanner(chatId, origin);
-				if (result === "sent") sent += 1;
-				if (result === "skipped") skipped += 1;
-			}
-
-			if (mode === "usdt_defi" || mode === "all") {
-				const result = await dispatchUsdtDefi(chatId, origin);
-				if (result === "sent") sent += 1;
-				if (result === "skipped") skipped += 1;
-			}
-		} catch (error) {
-			failed += 1;
-			console.error("[TELEGRAM] Falha ao despachar sinais automaticos:", { chatId, mode, error });
+		for (const track of tracks) {
+			const result = await dispatchAlert(chatId, origin, track);
+			if (result === "sent") sent++;
+			else if (result === "failed") failed++;
+			else skipped++;
 		}
 	}
 

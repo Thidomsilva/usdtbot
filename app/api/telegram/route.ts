@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+	buildOnboardingMessage,
+	buildPauseConfirmMessage,
+	buildPauseMenuMarkup,
 	buildScannerSignalMessage,
 	buildTelegramHelpMessage,
 	buildTelegramMenuMarkup,
@@ -13,19 +16,18 @@ import {
 	getTelegramBotToken,
 	getTelegramWebhookSecret,
 	isAllowedTelegramChat,
+	sendBloqueioMessage,
 	sendTelegramMessage,
 } from "@/lib/telegram";
 import { getTelegramUserSettings, setTelegramUserSettings } from "@/lib/telegram-user-settings";
+import { temAcesso, isTrialAtivo, TRIAL_DAYS } from "@/lib/plans";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function hasValidWebhookSecret(request: NextRequest): boolean {
 	const expectedSecret = getTelegramWebhookSecret();
-	if (!expectedSecret) {
-		return true;
-	}
-
+	if (!expectedSecret) return true;
 	return request.headers.get("x-telegram-bot-api-secret-token") === expectedSecret;
 }
 
@@ -42,6 +44,20 @@ async function handleAction(
 	chatId: number | string
 ) {
 	if (action === "menu") {
+		// First-time trial activation
+		const settings = await getTelegramUserSettings(chatId);
+		if (!settings.trialUsed && isTrialAtivo()) {
+			const trialExpiresAt = Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000;
+			await setTelegramUserSettings(chatId, {
+				plan: "pro",
+				planActive: true,
+				planStartedAt: Date.now(),
+				planExpiresAt: trialExpiresAt,
+				trialUsed: true,
+			});
+			await sendTelegramMessage(chatId, "🎁 <b>Seu trial Pro de 7 dias foi ativado!</b>\nAproveite acesso completo a todas as trilhas.");
+		}
+
 		await sendTelegramMessage(chatId, buildTelegramMenuMessage(), {
 			reply_markup: buildTelegramMenuMarkup(),
 		});
@@ -59,36 +75,37 @@ async function handleAction(
 	}
 
 	if (action === "usdt") {
-		const settings = await setTelegramUserSettings(chatId, {
-			autoSignalsMode: "usdt",
-		});
+		const settings = await setTelegramUserSettings(chatId, { autoSignalsMode: "usdt" });
 		await sendTelegramMessage(
 			chatId,
-			await buildUsdtSignalMessage(baseUrl, {
-				autoSignalsMode: settings.autoSignalsMode,
-			}),
-			{
-				reply_markup: buildTelegramSignalMarkup("usdt"),
-			}
+			await buildUsdtSignalMessage(baseUrl, { autoSignalsMode: settings.autoSignalsMode }),
+			{ reply_markup: buildTelegramSignalMarkup("usdt") }
 		);
 		return;
 	}
 
 	if (action === "usdt_defi") {
-		await setTelegramUserSettings(chatId, {
-			autoSignalsMode: "usdt_defi",
-		});
-
+		const settings = await getTelegramUserSettings(chatId);
+		const planInfo = { plan: settings.plan, planActive: settings.planActive, planExpiresAt: settings.planExpiresAt, trialUsed: settings.trialUsed };
+		if (!temAcesso(planInfo, "trilha_c")) {
+			await sendBloqueioMessage(chatId, "trilha_c");
+			return;
+		}
+		await setTelegramUserSettings(chatId, { autoSignalsMode: "usdt_defi" });
 		await sendTelegramMessage(chatId, await buildUsdtDefiSignalMessage(baseUrl), {
 			reply_markup: buildTelegramSignalMarkup("usdt_defi"),
 		});
 		return;
 	}
 
-	await setTelegramUserSettings(chatId, {
-		autoSignalsMode: "scanner",
-	});
-
+	// scanner
+	const settings = await getTelegramUserSettings(chatId);
+	const planInfo = { plan: settings.plan, planActive: settings.planActive, planExpiresAt: settings.planExpiresAt, trialUsed: settings.trialUsed };
+	if (!temAcesso(planInfo, "trilha_b")) {
+		await sendBloqueioMessage(chatId, "trilha_b");
+		return;
+	}
+	await setTelegramUserSettings(chatId, { autoSignalsMode: "scanner" });
 	await sendTelegramMessage(chatId, await buildScannerSignalMessage(baseUrl), {
 		reply_markup: buildTelegramSignalMarkup("scanner"),
 	});
@@ -109,83 +126,168 @@ export async function POST(request: NextRequest) {
 		| { id?: string; data?: string; message?: { chat?: { id?: number | string } } }
 		| undefined;
 	const callbackData = callbackQuery?.data ?? "";
-	const callbackAction = callbackData.startsWith("mode:")
-		? (callbackData.slice("mode:".length) as "menu" | "usdt" | "usdt_defi" | "scanner")
-		: null;
-	const callbackSettingsAction = callbackData === "settings:open"
-		? "open"
-		: callbackData === "settings:auto_usdt"
-				? "auto_usdt"
-				: callbackData === "settings:auto_scanner"
-					? "auto_scanner"
-					: callbackData === "settings:auto_usdt_defi"
-						? "auto_usdt_defi"
-						: callbackData === "settings:auto_all"
-							? "auto_all"
-						: callbackData === "settings:auto_off"
-							? "auto_off"
-			: null;
-	const effectiveAction = action ?? callbackAction;
 	const effectiveChatId = chatId ?? callbackQuery?.message?.chat?.id ?? null;
 
-	if (!effectiveChatId || (!effectiveAction && !callbackSettingsAction)) {
-		return NextResponse.json({ ok: true });
-	}
+	if (!effectiveChatId) return NextResponse.json({ ok: true });
+	if (!isAllowedTelegramChat(effectiveChatId)) return NextResponse.json({ ok: true, ignored: true });
 
-	if (!isAllowedTelegramChat(effectiveChatId)) {
-		return NextResponse.json({ ok: true, ignored: true });
+	// ack callback immediately
+	if (callbackQuery?.id) {
+		await fetch(`https://api.telegram.org/bot${getTelegramBotToken()}/answerCallbackQuery`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ callback_query_id: callbackQuery.id, show_alert: false }),
+		});
 	}
 
 	try {
-		if (callbackQuery?.id) {
-			await fetch(`https://api.telegram.org/bot${getTelegramBotToken()}/answerCallbackQuery`, {
-				method: "POST",
-				headers: {
-					"content-type": "application/json",
-				},
-				body: JSON.stringify({
-					callback_query_id: callbackQuery.id,
-					text: "Processando sua escolha...",
-					show_alert: false,
-				}),
-			});
+		// --- mode: actions (signal views) ---
+		if (callbackData.startsWith("mode:")) {
+			const modeAction = callbackData.slice("mode:".length) as "menu" | "usdt" | "usdt_defi" | "scanner";
+			await handleAction(modeAction, request.nextUrl.origin, effectiveChatId);
+			return NextResponse.json({ ok: true });
 		}
 
-		if (effectiveChatId && callbackSettingsAction === "open") {
+		// --- settings:open ---
+		if (callbackData === "settings:open") {
 			await sendSettings(effectiveChatId);
 			return NextResponse.json({ ok: true });
 		}
 
-		if (effectiveChatId && callbackSettingsAction?.startsWith("auto_")) {
+		// --- settings:auto_* ---
+		if (callbackData.startsWith("settings:auto_")) {
+			const modeKey = callbackData.replace("settings:auto_", "");
 			const mode =
-				callbackSettingsAction === "auto_usdt"
-					? "usdt"
-					: callbackSettingsAction === "auto_scanner"
-						? "scanner"
-						: callbackSettingsAction === "auto_usdt_defi"
-							? "usdt_defi"
-							: callbackSettingsAction === "auto_all"
-								? "all"
-							: "off";
-
-			const updated = await setTelegramUserSettings(effectiveChatId, {
-				autoSignalsMode: mode,
+				modeKey === "usdt" ? "usdt"
+				: modeKey === "scanner" ? "scanner"
+				: modeKey === "usdt_defi" ? "usdt_defi"
+				: modeKey === "all" ? "all"
+				: "off";
+			const updated = await setTelegramUserSettings(effectiveChatId, { autoSignalsMode: mode });
+			await sendTelegramMessage(effectiveChatId, buildTelegramSettingsMessage(updated), {
+				reply_markup: buildTelegramSettingsMarkup(updated),
 			});
+			return NextResponse.json({ ok: true });
+		}
 
+		// --- alerts:on / alerts:off ---
+		if (callbackData === "alerts:on" || callbackData === "alerts:off") {
+			const enabling = callbackData === "alerts:on";
+			const current = await getTelegramUserSettings(effectiveChatId);
+			const wasDisabled = !current.alertsEnabled;
+			const updated = await setTelegramUserSettings(effectiveChatId, { alertsEnabled: enabling });
+
+			if (enabling && wasDisabled) {
+				await sendTelegramMessage(effectiveChatId, buildOnboardingMessage());
+			}
+			await sendTelegramMessage(effectiveChatId, buildTelegramSettingsMessage(updated), {
+				reply_markup: buildTelegramSettingsMarkup(updated),
+			});
+			return NextResponse.json({ ok: true });
+		}
+
+		// --- track:a_on/off, track:b_on/off, track:c_on/off ---
+		if (callbackData.startsWith("track:")) {
+			const parts = callbackData.slice("track:".length).split("_");
+			const trackKey = parts[0] as "a" | "b" | "c";
+			const on = parts[1] === "on";
+			const current = await getTelegramUserSettings(effectiveChatId);
+			const updatedTracks = { ...current.alertTracks, [trackKey]: on };
+			const updated = await setTelegramUserSettings(effectiveChatId, {
+				alertTracks: updatedTracks,
+			});
+			await sendTelegramMessage(effectiveChatId, buildTelegramSettingsMessage(updated), {
+				reply_markup: buildTelegramSettingsMarkup(updated),
+			});
+			return NextResponse.json({ ok: true });
+		}
+
+		// --- spread_a:<value> ---
+		if (callbackData.startsWith("spread_a:")) {
+			const v = parseFloat(callbackData.split(":")[1]);
+			if (Number.isFinite(v) && v > 0) {
+				const updated = await setTelegramUserSettings(effectiveChatId, { minSpreadA: v });
+				await sendTelegramMessage(effectiveChatId, buildTelegramSettingsMessage(updated), {
+					reply_markup: buildTelegramSettingsMarkup(updated),
+				});
+			}
+			return NextResponse.json({ ok: true });
+		}
+
+		// --- spread_b:<value> ---
+		if (callbackData.startsWith("spread_b:")) {
+			const v = parseFloat(callbackData.split(":")[1]);
+			if (Number.isFinite(v) && v > 0) {
+				const updated = await setTelegramUserSettings(effectiveChatId, { minSpreadB: v });
+				await sendTelegramMessage(effectiveChatId, buildTelegramSettingsMessage(updated), {
+					reply_markup: buildTelegramSettingsMarkup(updated),
+				});
+			}
+			return NextResponse.json({ ok: true });
+		}
+
+		// --- capital:<value> ---
+		if (callbackData.startsWith("capital:")) {
+			const v = parseFloat(callbackData.split(":")[1]);
+			if (Number.isFinite(v) && v > 0) {
+				const updated = await setTelegramUserSettings(effectiveChatId, { simCapital: v });
+				await sendTelegramMessage(effectiveChatId, buildTelegramSettingsMessage(updated), {
+					reply_markup: buildTelegramSettingsMarkup(updated),
+				});
+			}
+			return NextResponse.json({ ok: true });
+		}
+
+		// --- silent:on / silent:off ---
+		if (callbackData === "silent:on" || callbackData === "silent:off") {
+			const updated = await setTelegramUserSettings(effectiveChatId, {
+				silentNight: callbackData === "silent:on",
+			});
+			await sendTelegramMessage(effectiveChatId, buildTelegramSettingsMessage(updated), {
+				reply_markup: buildTelegramSettingsMarkup(updated),
+			});
+			return NextResponse.json({ ok: true });
+		}
+
+		// --- pause:menu (show pause duration choices) ---
+		if (callbackData === "pause:menu") {
 			await sendTelegramMessage(
 				effectiveChatId,
-				buildTelegramSettingsMessage(updated),
-				{ reply_markup: buildTelegramSettingsMarkup(updated) }
+				"🔕 <b>Pausar alertas</b>\nPor quanto tempo?",
+				{ reply_markup: buildPauseMenuMarkup() }
 			);
-
 			return NextResponse.json({ ok: true });
 		}
 
-		if (!effectiveAction) {
+		// --- pause:1h / pause:4h / pause:24h / pause:forever ---
+		if (callbackData.startsWith("pause:") && callbackData !== "pause:menu") {
+			const key = callbackData.split(":")[1];
+			const now = Date.now();
+			const pausedUntil =
+				key === "1h" ? now + 60 * 60 * 1000
+				: key === "4h" ? now + 4 * 60 * 60 * 1000
+				: key === "24h" ? now + 24 * 60 * 60 * 1000
+				: null; // forever
+			await setTelegramUserSettings(effectiveChatId, { pausedUntil });
+			await sendTelegramMessage(effectiveChatId, buildPauseConfirmMessage(pausedUntil));
 			return NextResponse.json({ ok: true });
 		}
 
-		await handleAction(effectiveAction, request.nextUrl.origin, effectiveChatId);
+		// --- plan:upgrade ---
+		if (callbackData === "plan:upgrade") {
+			await sendTelegramMessage(
+				effectiveChatId,
+				"Em breve! Entraremos em contato quando as assinaturas abrirem. 🚀"
+			);
+			return NextResponse.json({ ok: true });
+		}
+
+		// --- text commands ---
+		if (action) {
+			await handleAction(action, request.nextUrl.origin, effectiveChatId);
+			return NextResponse.json({ ok: true });
+		}
+
 		return NextResponse.json({ ok: true });
 	} catch (error) {
 		const message = error instanceof Error ? error.message : "Falha ao processar comando";
@@ -196,6 +298,6 @@ export async function POST(request: NextRequest) {
 export async function GET() {
 	return NextResponse.json({
 		ok: true,
-		help: "Envie /start, /usdt, /usdt_defi ou /scanner no chat do bot.",
+		help: "Envie /start, /usdt, /usdt_defi, /scanner ou /configurar no chat do bot.",
 	});
 }

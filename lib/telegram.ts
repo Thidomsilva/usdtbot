@@ -1,4 +1,11 @@
 import type { PricesResponse } from "@/lib/types";
+import type { TelegramUserSettings } from "@/lib/telegram-user-settings";
+import {
+	buildBloqueioMarkup,
+	buildBloqueioMessage,
+	temAcesso,
+	type Funcionalidade,
+} from "@/lib/plans";
 import { createHash } from "crypto";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
@@ -213,7 +220,7 @@ export function parseTelegramAction(text: string | undefined): TelegramAction | 
 		return "help";
 	}
 
-	if (["/settings", "/config", "config"].includes(command)) {
+	if (["/settings", "/config", "config", "/configurar", "configurar"].includes(command)) {
 		return "settings";
 	}
 
@@ -249,7 +256,9 @@ export function buildTelegramHelpMessage(): string {
 
 export function buildTelegramMenuMessage(): string {
 	return [
-		"<b>USDTBot</b> • painel de sinais",
+		"🦊 <b>Comunidade FOX</b>",
+		"",
+		"Seja bem vindo! 👋",
 		"",
 		"Escolha a trilha que quer acompanhar agora:",
 		"",
@@ -288,7 +297,7 @@ export function buildTelegramMenuMarkup(): Record<string, unknown> {
 	};
 }
 
-export function buildTelegramSettingsMessage(options: UsdtMessageOptions): string {
+export function buildTelegramSettingsMessage(options: TelegramUserSettings): string {
 	const autoModeLabel =
 		options.autoSignalsMode === "usdt"
 			? "💱 A) USDT entre CEXs"
@@ -300,57 +309,89 @@ export function buildTelegramSettingsMessage(options: UsdtMessageOptions): strin
 						? "🧠 Todas as 3"
 					: "⏸️ Desligado";
 
+	const alertIcon = options.alertsEnabled ? "✅" : "❌";
+	const silentIcon = options.silentNight ? "✅" : "❌";
+	const pausedMsg = options.pausedUntil && options.pausedUntil > Date.now()
+		? `\n⏸️ Pausado até ${new Date(options.pausedUntil).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })}`
+		: "";
+	const planLabel = options.plan === "pro" ? "⭐ Pro" : "🆓 Free";
+	const tracks = options.alertTracks;
+
 	return [
-		"<b>⚙️ Configuracoes do monitor</b>",
+		"<b>⚙️ Configuracoes</b>",
 		"",
-		`Envio automatico de sinais: ${autoModeLabel}`,
+		`Plano: ${planLabel}`,
+		`Alertas automaticos: ${alertIcon}${pausedMsg}`,
+		`Trilhas ativas: ${tracks.a ? "💱A" : "━A"} ${tracks.b ? "📡B" : "━B"} ${tracks.c ? "🔗C" : "━C"}`,
+		`Spread minimo A: ${options.minSpreadA.toFixed(2)}%`,
+		`Spread minimo B: ${options.minSpreadB.toFixed(2)}%`,
+		`Capital simulado: R$ ${options.simCapital.toLocaleString("pt-BR")}`,
+		`Silencio noturno: ${silentIcon} ${options.silentStart}–${options.silentEnd}`,
 		"",
-		"Escolha o modo automatico abaixo. O bot envia novos sinais sem precisar apertar atualizar.",
+		"Envio sob demanda (auto-sinal):",
+		autoModeLabel,
 	].join("\n");
 }
 
-export function buildTelegramSettingsMarkup(options: UsdtMessageOptions): Record<string, unknown> {
+export function buildTelegramSettingsMarkup(options: TelegramUserSettings): Record<string, unknown> {
+	const { alertsEnabled, alertTracks, autoSignalsMode, plan } = options;
 	return {
 		inline_keyboard: [
+			// row 1: toggle alerts on/off
+			[{
+				text: alertsEnabled ? "🔔 Alertas: LIGADO ✅" : "🔕 Alertas: DESLIGADO ❌",
+				callback_data: alertsEnabled ? "alerts:off" : "alerts:on",
+			}],
+			// row 2: track toggles
 			[
-				{
-					text: options.autoSignalsMode === "usdt" ? "Auto: 💱 A) CEX↔CEX ✅" : "Auto: 💱 A) CEX↔CEX",
-					callback_data: "settings:auto_usdt",
-				},
+				{ text: alertTracks.a ? "💱A ✅" : "💱A ❌", callback_data: alertTracks.a ? "track:a_off" : "track:a_on" },
+				{ text: alertTracks.b ? "📡B ✅" : "📡B ❌", callback_data: alertTracks.b ? "track:b_off" : "track:b_on" },
+				{ text: alertTracks.c ? "🔗C ✅" : "🔗C ❌", callback_data: alertTracks.c ? "track:c_off" : "track:c_on" },
+			],
+			// row 3: spread A presets
+			[
+				{ text: `A:0.25%${options.minSpreadA === 0.25 ? "✅" : ""}`, callback_data: "spread_a:0.25" },
+				{ text: `A:0.50%${options.minSpreadA === 0.5 ? "✅" : ""}`, callback_data: "spread_a:0.50" },
+				{ text: `A:1.00%${options.minSpreadA === 1.0 ? "✅" : ""}`, callback_data: "spread_a:1.00" },
+				{ text: `A:2.00%${options.minSpreadA === 2.0 ? "✅" : ""}`, callback_data: "spread_a:2.00" },
+			],
+			// row 4: spread B presets
+			[
+				{ text: `B:1%${options.minSpreadB === 1.0 ? "✅" : ""}`, callback_data: "spread_b:1.00" },
+				{ text: `B:2%${options.minSpreadB === 2.0 ? "✅" : ""}`, callback_data: "spread_b:2.00" },
+				{ text: `B:3%${options.minSpreadB === 3.0 ? "✅" : ""}`, callback_data: "spread_b:3.00" },
+				{ text: `B:5%${options.minSpreadB === 5.0 ? "✅" : ""}`, callback_data: "spread_b:5.00" },
+			],
+			// row 5: capital presets
+			[
+				{ text: `R$500${options.simCapital === 500 ? "✅" : ""}`, callback_data: "capital:500" },
+				{ text: `R$1k${options.simCapital === 1000 ? "✅" : ""}`, callback_data: "capital:1000" },
+				{ text: `R$5k${options.simCapital === 5000 ? "✅" : ""}`, callback_data: "capital:5000" },
+				{ text: `R$10k${options.simCapital === 10000 ? "✅" : ""}`, callback_data: "capital:10000" },
+			],
+			// row 6: silent night toggle
+			[{
+				text: options.silentNight ? "🌙 Silencio noturno: ON ✅" : "🌙 Silencio noturno: OFF",
+				callback_data: options.silentNight ? "silent:off" : "silent:on",
+			}],
+			// row 7: auto signal mode
+			[
+				{ text: autoSignalsMode === "usdt" ? "Auto: 💱A ✅" : "Auto: 💱A", callback_data: "settings:auto_usdt" },
+				{ text: autoSignalsMode === "scanner" ? "Auto: 📡B ✅" : "Auto: 📡B", callback_data: "settings:auto_scanner" },
+				{ text: autoSignalsMode === "usdt_defi" ? "Auto: 🔗C ✅" : "Auto: 🔗C", callback_data: "settings:auto_usdt_defi" },
 			],
 			[
-				{
-					text:
-						options.autoSignalsMode === "scanner"
-							? "Auto: 📡 B) Scanner ✅"
-							: "Auto: 📡 B) Scanner",
-					callback_data: "settings:auto_scanner",
-				},
+				{ text: autoSignalsMode === "all" ? "Auto: 🧠 Todas ✅" : "Auto: 🧠 Todas", callback_data: "settings:auto_all" },
+				{ text: autoSignalsMode === "off" ? "Auto: ⏸️ Off ✅" : "Auto: ⏸️ Off", callback_data: "settings:auto_off" },
 			],
-			[
-				{
-					text:
-						options.autoSignalsMode === "usdt_defi"
-							? "Auto: 🔗 C) CEX→DeFi ✅"
-							: "Auto: 🔗 C) CEX→DeFi",
-					callback_data: "settings:auto_usdt_defi",
-				},
-			],
-			[
-				{
-					text: options.autoSignalsMode === "all" ? "Auto: 🧠 Todas as 3 ✅" : "Auto: 🧠 Todas as 3",
-					callback_data: "settings:auto_all",
-				},
-			],
-			[
-				{
-					text: options.autoSignalsMode === "off" ? "Auto: ⏸️ Desligado ✅" : "Auto: ⏸️ Desligado",
-					callback_data: "settings:auto_off",
-				},
-			],
-			[
-				{ text: "🏠 Voltar ao menu", callback_data: "mode:menu" },
-			],
+			// row 8: pause
+			...(plan === "free" ? [] : [[
+				{ text: "🔕 Pausar 1h", callback_data: "pause:1h" },
+				{ text: "🔕 Pausar 4h", callback_data: "pause:4h" },
+				{ text: "🔕 Pausar 24h", callback_data: "pause:24h" },
+			]]),
+			// back
+			[{ text: "🏠 Voltar ao menu", callback_data: "mode:menu" }],
 		],
 	};
 }
@@ -384,12 +425,168 @@ export function buildTelegramSignalMarkup(action: "usdt" | "scanner" | "usdt_def
 			],
 			[
 				{ text: "⚙️ Configurar", callback_data: "settings:open" },
+				{ text: "🔕 Pausar", callback_data: "pause:menu" },
 			],
 			[
 				{ text: "🏠 Menu", callback_data: "mode:menu" },
 			],
 		],
 	};
+}
+
+export function buildPauseMenuMarkup(): Record<string, unknown> {
+	return {
+		inline_keyboard: [
+			[
+				{ text: "🔕 1 hora", callback_data: "pause:1h" },
+				{ text: "🔕 4 horas", callback_data: "pause:4h" },
+			],
+			[
+				{ text: "🔕 24 horas", callback_data: "pause:24h" },
+				{ text: "🔕 Indefinido", callback_data: "pause:forever" },
+			],
+			[
+				{ text: "🔔 Manter ativo", callback_data: "settings:open" },
+			],
+		],
+	};
+}
+
+export function buildPauseConfirmMessage(pausedUntil: number | null): string {
+	if (!pausedUntil) {
+		return "🔕 Alertas pausados por tempo indefinido.\nDigite /configurar para reativar.";
+	}
+	const hora = new Date(pausedUntil).toLocaleTimeString("pt-BR", {
+		timeZone: "America/Sao_Paulo",
+		hour: "2-digit",
+		minute: "2-digit",
+	});
+	return `🔕 Alertas pausados. Retomam às ${hora}.`;
+}
+
+export function buildOnboardingMessage(): string {
+	return [
+		"✅ <b>Alertas automaticos ativados!</b>",
+		"",
+		"Vou te avisar quando aparecer oportunidade acima do seu limite.",
+		"",
+		"Use ⚙️ Configurar para ajustar:",
+		"• Spread minimo (trilhas A, B, C)",
+		"• Capital de simulacao",
+		"• Horario de silencio noturno",
+	].join("\n");
+}
+
+export async function buildAlertUsdtMessage(baseUrl: string, settings: TelegramUserSettings): Promise<string | null> {
+	const prices = await fetchJson<PricesResponse>(new URL("/api/prices", baseUrl));
+	const entries = Object.values(prices.exchanges).filter(
+		(e) => e.status === "ok" && typeof e.price_brl === "number" && e.price_brl > 0
+	);
+
+	if (entries.length < 2) return null;
+
+	const sorted = entries.slice().sort((a, b) => (a.price_brl ?? 0) - (b.price_brl ?? 0));
+	const buy = sorted[0];
+	const sell = sorted[sorted.length - 1];
+	const buyPrice = buy.price_brl ?? 0;
+	const sellPrice = sell.price_brl ?? 0;
+	const spreadPct = ((sellPrice - buyPrice) / buyPrice) * 100;
+
+	const capital = settings.simCapital;
+	const usdtQty = capital / buyPrice;
+	const profit = usdtQty * sellPrice - capital;
+
+	const { time } = buildDateAndTime(prices.timestamp);
+
+	return [
+		"🔔 <b>ALERTA CEX→CEX</b>",
+		"",
+		`⬇️ Compra: ${escapeHtml(buy.label)} ${formatBrl(buyPrice)}`,
+		`⬆️ Venda: ${escapeHtml(sell.label)} ${formatBrl(sellPrice)}`,
+		`📈 Spread: ${formatPct(spreadPct, 2)} liquido`,
+		`💰 ${formatBrlCompact(capital)} → lucro estimado ${formatBrlCompact(profit)}`,
+		"",
+		`⏱ ${time}`,
+	].join("\n");
+}
+
+export async function buildAlertScannerMessage(baseUrl: string, settings: TelegramUserSettings): Promise<{ message: string; key: string } | null> {
+	const payload = await fetchJson<{
+		timestamp: string;
+		tokens: Array<{
+			symbol: string;
+			status: "ok" | "error";
+			best_arb?: {
+				buy_exchange_label: string;
+				sell_exchange_label: string;
+				spread_pct: number;
+				net_spread_pct: number;
+				quality: "inviavel" | "apertada" | "executavel";
+				profit_est_brl_per_100: number;
+			};
+		}>;
+	}>(new URL("/api/fan-tokens", baseUrl));
+
+	const best = payload.tokens
+		.filter((t) => t.status === "ok" && t.best_arb && t.best_arb.net_spread_pct >= settings.minSpreadB)
+		.sort((a, b) => (b.best_arb?.net_spread_pct ?? 0) - (a.best_arb?.net_spread_pct ?? 0))[0];
+
+	if (!best || !best.best_arb) return null;
+
+	const { time } = buildDateAndTime(payload.timestamp);
+	const arb = best.best_arb;
+	const profitPer100 = arb.profit_est_brl_per_100;
+	const key = `${best.symbol}|${arb.buy_exchange_label}|${arb.sell_exchange_label}`;
+
+	const message = [
+		`🔔 <b>ALERTA SCANNER — ${escapeHtml(best.symbol)}</b>`,
+		"",
+		`${escapeHtml(arb.buy_exchange_label)} → ${escapeHtml(arb.sell_exchange_label)}`,
+		`📈 ${formatPct(arb.spread_pct, 2)} bruto · ${formatPct(arb.net_spread_pct, 2)} liquido`,
+		`${qualityBadge(arb.quality)}`,
+		`💰 ${formatBrlCompact(profitPer100)} por R$ 100`,
+		"",
+		`⏱ ${time}`,
+	].join("\n");
+
+	return { message, key };
+}
+
+export async function buildAlertUsdtDefiMessage(baseUrl: string, settings: TelegramUserSettings): Promise<string | null> {
+	const prices = await fetchJson<PricesResponse>(new URL("/api/prices", baseUrl));
+	const entries = Object.values(prices.exchanges).filter(
+		(e) => e.status === "ok" && typeof e.price_brl === "number" && e.price_brl > 0
+	);
+
+	if (entries.length < 1) return null;
+
+	const buy = entries.slice().sort((a, b) => (a.price_brl ?? 0) - (b.price_brl ?? 0))[0];
+	const buyPrice = buy.price_brl ?? 0;
+	const defi = await fetchDefiBrlaPrice();
+
+	if (!defi || buyPrice <= 0) return null;
+
+	const sellDefi = defi.sellNetBrlPerUsdt;
+	const spreadPct = ((sellDefi - buyPrice) / buyPrice) * 100;
+
+	if (spreadPct <= 0) return null;
+
+	const capital = settings.simCapital;
+	const usdtQty = capital / buyPrice;
+	const profit = usdtQty * sellDefi - capital;
+	const { time } = buildDateAndTime(prices.timestamp);
+
+	return [
+		"🔔 <b>ALERTA CEX→DeFi</b>",
+		"",
+		`⬇️ Compra: ${escapeHtml(buy.label)} ${formatBrl(buyPrice)}`,
+		`⬆️ Venda: DeFi BRLA ${formatBrl(Number(sellDefi.toFixed(4)))}`,
+		`📈 Spread: ${formatPct(spreadPct, 2)} liquido`,
+		`💰 ${formatBrlCompact(capital)} → lucro estimado ${formatBrlCompact(profit)}`,
+		"⚠️ Taxa DeFi estimada 0.50% ja descontada",
+		"",
+		`⏱ ${time}`,
+	].join("\n");
 }
 
 export async function buildUsdtSignalMessage(
@@ -606,6 +803,18 @@ export async function sendTelegramMessage(
 	if (!response.ok) {
 		throw new Error(`Telegram API HTTP ${response.status}`);
 	}
+}
+
+export { buildBloqueioMessage, buildBloqueioMarkup, temAcesso };
+export type { Funcionalidade };
+
+export async function sendBloqueioMessage(
+	chatId: number | string,
+	funcionalidade: Funcionalidade
+): Promise<void> {
+	await sendTelegramMessage(chatId, buildBloqueioMessage(funcionalidade), {
+		reply_markup: buildBloqueioMarkup(),
+	});
 }
 
 export function extractTelegramUpdate(update: TelegramWebhookMessage): {
