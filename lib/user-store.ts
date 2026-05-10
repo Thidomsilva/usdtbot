@@ -54,6 +54,8 @@ const SUPABASE_STORAGE_TABLE = (process.env.SUPABASE_STORAGE_TABLE ?? 'app_stora
 
 type StorageBackend = 'file' | 'kv-rest' | 'kv-redis-url' | 'supabase'
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 let redisClient: Redis | null = null
 let redisUrlClient: RedisClientType | null = null
 let redisUrlConnecting: Promise<RedisClientType> | null = null
@@ -210,6 +212,10 @@ function getSupabaseClient(): SupabaseClient {
 
 function hashPassword(password: string, salt: string): string {
   return scryptSync(password, salt, 64).toString('hex')
+}
+
+function isValidEmail(value: string): boolean {
+  return EMAIL_PATTERN.test(value)
 }
 
 function toPublicUser(user: StoredUser): PublicUser {
@@ -722,6 +728,10 @@ export async function createUser(input: {
     throw new Error('Usuario e senha sao obrigatorios')
   }
 
+  if (!isValidEmail(username)) {
+    throw new Error('Cadastro exige um email valido')
+  }
+
   const store = await loadStore()
 
   if (store.users.some((user) => user.username === username)) {
@@ -809,6 +819,10 @@ export async function updateUserCredentials(input: {
 
   if (nextUsername === '') {
     throw new Error('Novo usuario invalido')
+  }
+
+  if (nextUsername && !isValidEmail(nextUsername)) {
+    throw new Error('Novo usuario deve ser um email valido')
   }
 
   if (!nextUsername && !password) {

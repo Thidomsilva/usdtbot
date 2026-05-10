@@ -248,8 +248,8 @@ export function buildTelegramHelpMessage(): string {
 		"<b>USDTBot</b>",
 		"",
 		"Comandos disponiveis:",
-		"/cadastro usuario senha - cria sua conta e vincula este chat",
-		"/login usuario senha - autentica e libera este chat",
+		"/cadastro email senha - cria sua conta e vincula este chat",
+		"/login email senha - autentica e libera este chat",
 		"/logout - remove o vinculo deste chat",
 		"/usdt - usdt entre CEXs (compra e venda entre corretoras)",
 		"/usdt_defi - compra em CEX e venda no DeFiLlama (BRLA)",
@@ -277,8 +277,8 @@ export function buildTelegramAuthRequiredMessage(): string {
 		"✅ Configuração de preferências",
 		"",
 		"Se preferir, também pode usar:",
-		"<code>/login seu_usuario sua_senha</code>",
-		"<code>/cadastro seu_usuario sua_senha</code>",
+		"<code>/login seu_email sua_senha</code>",
+		"<code>/cadastro seu_email sua_senha</code>",
 	].join("\n");
 }
 

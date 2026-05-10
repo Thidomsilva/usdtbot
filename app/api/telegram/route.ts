@@ -305,6 +305,14 @@ export async function POST(request: NextRequest) {
 		if (convState && messageText && !messageText.startsWith("/")) {
 			if (convState.step === "cadastro_username") {
 				const username = messageText.trim().toLowerCase();
+				const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(username);
+				if (!isEmail) {
+					await sendTelegramMessage(
+						effectiveChatId,
+						"⚠️ Digite um <b>email valido</b> para cadastro.\nExemplo: <code>voce@email.com</code>"
+					);
+					return NextResponse.json({ ok: true });
+				}
 				conversationStates.set(chatKey, { step: "cadastro_password", username });
 				await sendTelegramMessage(
 					effectiveChatId,
@@ -405,14 +413,14 @@ export async function POST(request: NextRequest) {
 			conversationStates.set(chatKey, { step: "cadastro_username" });
 			await sendTelegramMessage(
 				effectiveChatId,
-				"👋 Vamos criar sua conta!\n\nDigite o <b>nome de usuário</b> que deseja usar:"
+				"👋 Vamos criar sua conta!\n\nDigite seu <b>email</b>:"
 			);
 			return NextResponse.json({ ok: true });
 		}
 
 		if (messageText.toLowerCase() === "/login") {
 			conversationStates.set(chatKey, { step: "login_username" });
-			await sendTelegramMessage(effectiveChatId, "🔑 Digite seu <b>nome de usuário</b>:");
+			await sendTelegramMessage(effectiveChatId, "🔑 Digite seu <b>email</b>:");
 			return NextResponse.json({ ok: true });
 		}
 
@@ -421,8 +429,8 @@ export async function POST(request: NextRequest) {
 				await sendTelegramMessage(
 					effectiveChatId,
 					credentialsCommand.command === "login"
-						? "Use /login seu_usuario sua_senha"
-						: "Use /cadastro seu_usuario sua_senha"
+						? "Use /login seu_email sua_senha"
+						: "Use /cadastro seu_email sua_senha"
 				);
 				return NextResponse.json({ ok: true });
 			}
@@ -464,7 +472,7 @@ export async function POST(request: NextRequest) {
 							`⚠️ ${message}`,
 							"",
 							"Tente novamente com:",
-							"<code>/cadastro seu_usuario sua_senha</code>",
+							"<code>/cadastro seu_email sua_senha</code>",
 							"",
 							"💡 Dica: Use uma senha forte com letras, números e símbolos.",
 						].join("\n")
@@ -487,10 +495,10 @@ export async function POST(request: NextRequest) {
 						"Usuário ou senha incorretos, ou acesso desativado.",
 						"",
 						"Verifique os dados e tente novamente:",
-						"<code>/login seu_usuario sua_senha</code>",
+						"<code>/login seu_email sua_senha</code>",
 						"",
 						"Caso não tenha conta, crie uma com:",
-						"<code>/cadastro seu_usuario sua_senha</code>",
+						"<code>/cadastro seu_email sua_senha</code>",
 						"",
 						"Ainda com dúvidas? Use /help",
 					].join("\n")
@@ -529,10 +537,10 @@ export async function POST(request: NextRequest) {
 					"Este chat foi removido do bot.",
 					"",
 					"Para voltar a usar:",
-					"<code>/login seu_usuario sua_senha</code>",
+					"<code>/login seu_email sua_senha</code>",
 					"",
 					"ou crie uma nova conta:",
-					"<code>/cadastro seu_usuario sua_senha</code>",
+					"<code>/cadastro seu_email sua_senha</code>",
 				].join("\n")
 			);
 			return NextResponse.json({ ok: true });
@@ -542,14 +550,14 @@ export async function POST(request: NextRequest) {
 			conversationStates.set(chatKey, { step: "cadastro_username" });
 			await sendTelegramMessage(
 				effectiveChatId,
-				"👋 Vamos criar sua conta!\n\nDigite o <b>nome de usuário</b> que deseja usar:"
+				"👋 Vamos criar sua conta!\n\nDigite seu <b>email</b>:"
 			);
 			return NextResponse.json({ ok: true });
 		}
 
 		if (callbackData === "account:login") {
 			conversationStates.set(chatKey, { step: "login_username" });
-			await sendTelegramMessage(effectiveChatId, "🔑 Digite seu <b>nome de usuário</b>:");
+			await sendTelegramMessage(effectiveChatId, "🔑 Digite seu <b>email</b>:");
 			return NextResponse.json({ ok: true });
 		}
 
@@ -917,6 +925,6 @@ export async function POST(request: NextRequest) {
 export async function GET() {
 	return NextResponse.json({
 		ok: true,
-		help: "Envie /cadastro usuario senha ou /login usuario senha para liberar este chat. Depois use /start, /usdt, /usdt_defi, /scanner, /status ou /configurar.",
+		help: "Envie /cadastro email senha ou /login email senha para liberar este chat. Depois use /start, /usdt, /usdt_defi, /scanner, /status ou /configurar.",
 	});
 }
