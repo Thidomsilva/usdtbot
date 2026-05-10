@@ -38,7 +38,7 @@ async function dispatchAlert(
 	chatId: string,
 	origin: string,
 	track: "a" | "b" | "c"
-): Promise<"sent" | "skipped" | "failed"> {
+): Promise<{ status: "sent" | "skipped" | "failed"; reason?: string }> {
 	try {
 		const { getTelegramUserSettings } = await import("@/lib/telegram-user-settings");
 		const settings = await getTelegramUserSettings(chatId);
@@ -49,12 +49,12 @@ async function dispatchAlert(
 		// Build message first (need scannerKey for eligibility check on B)
 		if (track === "b") {
 			const result = await buildAlertScannerMessage(origin, settings);
-			if (!result) return "skipped";
+			if (!result) return { status: "skipped", reason: "track_b_no_spread_or_data" };
 			scannerKey = result.key;
 			// spread threshold already checked inside buildAlertScannerMessage via settings.minSpreadB
 			// but we still need to check eligibility (cooldown/limits)
 			const check = checkAlertEligibility(settings, "b", scannerKey);
-			if (!check.allowed) return "skipped";
+			if (!check.allowed) return { status: "skipped", reason: `track_b_${check.reason}` };
 			messageText = result.message;
 			await setTelegramUserSettings(chatId, check.updates);
 			if (check.autoSpamPause) {
@@ -67,15 +67,17 @@ async function dispatchAlert(
 			}
 		} else if (track === "a") {
 			const check = checkAlertEligibility(settings, "a");
-			if (!check.allowed) return "skipped";
+			if (!check.allowed) return { status: "skipped", reason: `track_a_${check.reason}` };
+			const planInfo = {
+				plan: settings.plan,
+				planActive: settings.planActive,
+				planExpiresAt: settings.planExpiresAt,
+				trialUsed: settings.trialUsed,
+			};
+			const effectiveMinSpreadA = spreadMinimoEfetivo(planInfo, settings.minSpreadA);
 
-			// Check spread threshold
-			messageText = await buildAlertUsdtMessage(origin, settings);
-			if (!messageText) return "skipped";
-
-			const planInfo = { plan: settings.plan, planActive: settings.planActive, planExpiresAt: settings.planExpiresAt, trialUsed: settings.trialUsed };
-			const spreadOk = await checkUsdtSpread(origin, settings.minSpreadA, planInfo);
-			if (!spreadOk) return "skipped";
+			messageText = await buildAlertUsdtMessage(origin, settings, effectiveMinSpreadA);
+			if (!messageText) return { status: "skipped", reason: "track_a_no_spread_or_data" };
 
 			await setTelegramUserSettings(chatId, check.updates);
 			if (check.autoSpamPause) {
@@ -89,10 +91,10 @@ async function dispatchAlert(
 		} else {
 			// track C
 			const check = checkAlertEligibility(settings, "c");
-			if (!check.allowed) return "skipped";
+			if (!check.allowed) return { status: "skipped", reason: `track_c_${check.reason}` };
 
 			messageText = await buildAlertUsdtDefiMessage(origin, settings);
-			if (!messageText) return "skipped"; // returns null when spread <= 0
+			if (!messageText) return { status: "skipped", reason: "track_c_no_spread_or_data" }; // returns null when spread <= 0
 
 			await setTelegramUserSettings(chatId, check.updates);
 			if (check.autoSpamPause) {
@@ -105,44 +107,17 @@ async function dispatchAlert(
 			}
 		}
 
-		if (!messageText) return "skipped";
+		if (!messageText) return { status: "skipped", reason: "message_empty" };
 
 		const signalType = track === "a" ? "usdt" : track === "c" ? "usdt_defi" : "scanner";
 		await sendTelegramMessage(chatId, messageText, {
 			reply_markup: buildTelegramSignalMarkup(signalType),
 		});
 
-		return "sent";
+		return { status: "sent" };
 	} catch (err) {
 		console.error(`[DISPATCH] track=${track} chatId=${chatId} error:`, err);
-		return "failed";
-	}
-}
-
-async function checkUsdtSpread(
-	origin: string,
-	minSpreadPct: number,
-	planInfo: { plan: import("@/lib/plans").UserPlan; planActive: boolean; planExpiresAt: number | null; trialUsed: boolean }
-): Promise<boolean> {
-	try {
-		const effectiveMin = spreadMinimoEfetivo(planInfo, minSpreadPct);
-		const res = await fetch(new URL("/api/prices", origin), {
-			method: "GET",
-			cache: "no-store",
-			headers: { accept: "application/json", "user-agent": "usdtbot-dispatch/1.0" },
-		});
-		if (!res.ok) return false;
-		const prices = await res.json() as { exchanges: Record<string, { status: string; price_brl?: number }> };
-		const valid = Object.values(prices.exchanges)
-			.filter((e) => e.status === "ok" && typeof e.price_brl === "number" && e.price_brl > 0)
-			.map((e) => e.price_brl as number);
-		if (valid.length < 2) return false;
-		const buyPrice = Math.min(...valid);
-		const sellPrice = Math.max(...valid);
-		const spread = ((sellPrice - buyPrice) / buyPrice) * 100;
-		return spread >= effectiveMin;
-	} catch {
-		return false;
+		return { status: "failed", reason: `track_${track}_exception` };
 	}
 }
 
@@ -161,6 +136,7 @@ export async function GET(request: NextRequest) {
 	let skippedUnlinkedUser = 0;
 	let skippedMonitoringDisabled = 0;
 	let skippedNoTrackEnabled = 0;
+	const skippedByReason: Record<string, number> = {};
 
 	for (const user of users) {
 		const { chatId, settings } = user;
@@ -208,9 +184,20 @@ export async function GET(request: NextRequest) {
 
 		for (const track of tracks) {
 			const result = await dispatchAlert(chatId, origin, track);
-			if (result === "sent") sent++;
-			else if (result === "failed") failed++;
-			else skipped++;
+			if (result.status === "sent") {
+				sent++;
+				continue;
+			}
+
+			if (result.status === "failed") {
+				failed++;
+			} else {
+				skipped++;
+			}
+
+			if (result.reason) {
+				skippedByReason[result.reason] = (skippedByReason[result.reason] ?? 0) + 1;
+			}
 		}
 	}
 
@@ -225,6 +212,7 @@ export async function GET(request: NextRequest) {
 			skipped_unlinked_user: skippedUnlinkedUser,
 			skipped_monitoring_disabled: skippedMonitoringDisabled,
 			skipped_no_track_enabled: skippedNoTrackEnabled,
+			skipped_by_reason: skippedByReason,
 		},
 	});
 }

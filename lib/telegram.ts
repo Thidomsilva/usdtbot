@@ -3,6 +3,7 @@ import { PAUSE_FOREVER, type TelegramUserSettings } from "@/lib/telegram-user-se
 import {
 	buildBloqueioMarkup,
 	buildBloqueioMessage,
+	spreadMinimoEfetivo,
 	temAcesso,
 	type Funcionalidade,
 } from "@/lib/plans";
@@ -558,6 +559,16 @@ export function buildMonitoringStatusMessage(settings: TelegramUserSettings): st
 	const silence = settings.silentNight
 		? `${settings.silentStart} — ${settings.silentEnd}`
 		: "desativado";
+	const planInfo = {
+		plan: settings.plan,
+		planActive: settings.planActive,
+		planExpiresAt: settings.planExpiresAt,
+		trialUsed: settings.trialUsed,
+	};
+	const hasAccessA = temAcesso(planInfo, "trilha_a");
+	const hasAccessB = temAcesso(planInfo, "trilha_b");
+	const hasAccessC = temAcesso(planInfo, "trilha_c");
+	const effectiveMinSpreadA = spreadMinimoEfetivo(planInfo, settings.minSpreadA);
 
 	if (paused) {
 		const resume = settings.pausedUntil === PAUSE_FOREVER
@@ -566,9 +577,9 @@ export function buildMonitoringStatusMessage(settings: TelegramUserSettings): st
 		return [
 			"✅ <b>MONITORAMENTO PAUSADO 🔕</b>",
 			"",
-			"Trilha A CEX→CEX    ⏸ pausado",
-			"Trilha B Scanner    ⏸ pausado",
-			"Trilha C CEX→DeFi   ⏸ pausado",
+			`Trilha A CEX→CEX    ${hasAccessA ? "⏸ pausado" : "🔒 indisponivel no plano"}`,
+			`Trilha B Scanner    ${hasAccessB ? "⏸ pausado" : "🔒 indisponivel no plano"}`,
+			`Trilha C CEX→DeFi   ${hasAccessC ? "⏸ pausado" : "🔒 indisponivel no plano"}`,
 			"",
 			`Retoma em: ${resume}`,
 		].join("\n");
@@ -589,9 +600,9 @@ export function buildMonitoringStatusMessage(settings: TelegramUserSettings): st
 	return [
 		"✅ <b>MONITORAMENTO ATIVO</b>",
 		"",
-		`Trilha A CEX→CEX    ${settings.alertTracks.a ? `✅ ${settings.minSpreadA.toFixed(2)}% mín` : "❌ desativada"}`,
-		`Trilha B Scanner    ${settings.alertTracks.b ? `✅ ${settings.minSpreadB.toFixed(2)}% mín` : "❌ desativada"}`,
-		`Trilha C CEX→DeFi   ${settings.alertTracks.c ? `✅ ${settings.minSpreadC.toFixed(2)}% mín` : "❌ desativada"}`,
+		`Trilha A CEX→CEX    ${!hasAccessA ? "🔒 indisponivel no plano" : settings.alertTracks.a ? `✅ ${effectiveMinSpreadA.toFixed(2)}% mín` : "❌ desativada"}`,
+		`Trilha B Scanner    ${!hasAccessB ? "🔒 indisponivel no plano" : settings.alertTracks.b ? `✅ ${settings.minSpreadB.toFixed(2)}% mín` : "❌ desativada"}`,
+		`Trilha C CEX→DeFi   ${!hasAccessC ? "🔒 indisponivel no plano" : settings.alertTracks.c ? `✅ ${settings.minSpreadC.toFixed(2)}% mín` : "❌ desativada"}`,
 		"",
 		`💰 Simulando R$ ${settings.simCapital.toLocaleString("pt-BR")}`,
 		`🔕 Silencio: ${silence}`,
@@ -642,7 +653,11 @@ export function buildOnboardingMessage(): string {
 	].join("\n");
 }
 
-export async function buildAlertUsdtMessage(baseUrl: string, settings: TelegramUserSettings): Promise<string | null> {
+export async function buildAlertUsdtMessage(
+	baseUrl: string,
+	settings: TelegramUserSettings,
+	minSpreadPct = settings.minSpreadA
+): Promise<string | null> {
 	const prices = await fetchJson<PricesResponse>(new URL("/api/prices", baseUrl));
 	const entries = Object.values(prices.exchanges).filter(
 		(e) => e.status === "ok" && typeof e.price_brl === "number" && e.price_brl > 0
@@ -655,7 +670,10 @@ export async function buildAlertUsdtMessage(baseUrl: string, settings: TelegramU
 	const sell = sorted[sorted.length - 1];
 	const buyPrice = buy.price_brl ?? 0;
 	const sellPrice = sell.price_brl ?? 0;
+	if (buyPrice <= 0 || sellPrice <= 0) return null;
 	const spreadPct = ((sellPrice - buyPrice) / buyPrice) * 100;
+
+	if (spreadPct < minSpreadPct) return null;
 
 	const capital = settings.simCapital;
 	const usdtQty = capital / buyPrice;
