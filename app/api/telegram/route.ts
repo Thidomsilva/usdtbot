@@ -569,6 +569,17 @@ export async function POST(request: NextRequest) {
 			return NextResponse.json({ ok: true });
 		}
 
+		// --- account:logout ---
+		if (callbackData === "account:logout") {
+			await unlinkTelegramChat(effectiveChatId);
+			conversationStates.delete(String(effectiveChatId));
+			await sendTelegramMessage(
+				effectiveChatId,
+				"🚪 Logout realizado. Este chat foi desvinculado da sua conta.\nUse /login para entrar novamente quando quiser."
+			);
+			return NextResponse.json({ ok: true });
+		}
+
 		// --- settings:spread_adjust ---
 		if (callbackData === "settings:spread_adjust") {
 			await sendTelegramMessage(

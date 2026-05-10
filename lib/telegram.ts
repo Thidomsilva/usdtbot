@@ -357,6 +357,7 @@ export function buildTelegramMenuMarkup(): Record<string, unknown> {
 			],
 			[
 				{ text: "🏠 Menu", callback_data: "mode:menu" },
+				{ text: "🚪 Logout", callback_data: "account:logout" },
 			],
 		],
 	};
@@ -466,7 +467,10 @@ export function buildTelegramSettingsMarkup(options: TelegramUserSettings): Reco
 				{ text: "🔕 Pausar 24h", callback_data: "pause:24h" },
 			]]),
 			// back
-			[{ text: "🏠 Voltar ao menu", callback_data: "mode:menu" }],
+			[
+				{ text: "🏠 Voltar ao menu", callback_data: "mode:menu" },
+				{ text: "🚪 Logout", callback_data: "account:logout" },
+			],
 		],
 	};
 }
@@ -504,6 +508,7 @@ export function buildTelegramSignalMarkup(action: "usdt" | "scanner" | "usdt_def
 			],
 			[
 				{ text: "🏠 Menu", callback_data: "mode:menu" },
+				{ text: "🚪 Logout", callback_data: "account:logout" },
 			],
 		],
 	};
