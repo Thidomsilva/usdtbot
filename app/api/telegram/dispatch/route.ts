@@ -8,6 +8,7 @@ import {
 	isAllowedTelegramChat,
 	sendTelegramMessage,
 } from "@/lib/telegram";
+import { getUserByTelegramChatId } from "@/lib/user-store";
 import {
 	checkAlertEligibility,
 	listTelegramUserSettings,
@@ -153,6 +154,12 @@ export async function GET(request: NextRequest) {
 		const { chatId, settings } = user;
 
 		if (!isAllowedTelegramChat(chatId)) {
+			skipped++;
+			continue;
+		}
+
+		const linkedUser = await getUserByTelegramChatId(chatId);
+		if (!linkedUser) {
 			skipped++;
 			continue;
 		}

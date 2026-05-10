@@ -248,6 +248,9 @@ export function buildTelegramHelpMessage(): string {
 		"<b>USDTBot</b>",
 		"",
 		"Comandos disponiveis:",
+		"/cadastro usuario senha - cria sua conta e vincula este chat",
+		"/login usuario senha - autentica e libera este chat",
+		"/logout - remove o vinculo deste chat",
 		"/usdt - usdt entre CEXs (compra e venda entre corretoras)",
 		"/usdt_defi - compra em CEX e venda no DeFiLlama (BRLA)",
 		"/scanner - envia o melhor sinal do scanner completo de moedas",
@@ -257,6 +260,51 @@ export function buildTelegramHelpMessage(): string {
 		"",
 		"Se quiser, eu posso responder automaticamente aos dois comandos no mesmo chat.",
 	].join("\n");
+}
+
+export function buildTelegramAuthRequiredMessage(): string {
+	return [
+		"<b>🔐 Acesso restrito</b>",
+		"",
+		"Antes de usar o bot, autentique este chat.",
+		"",
+		"Se voce ja tem cadastro:",
+		"/login seu_usuario sua_senha",
+		"",
+		"Se ainda nao tem cadastro:",
+		"/cadastro seu_usuario sua_senha",
+		"",
+		"Depois disso eu libero menu, sinais e monitoramento automatico.",
+	].join("\n");
+}
+
+export function parseTelegramCredentialsCommand(
+	text: string | undefined
+): { command: "login" | "cadastro"; username: string; password: string } | null {
+	const normalized = trimEnv(text);
+	if (!normalized) return null;
+
+	const parts = normalized.split(/\s+/).filter(Boolean);
+	const command = parts[0]?.toLowerCase() ?? "";
+	if (command !== "/login" && command !== "/cadastro") {
+		return null;
+	}
+
+	const username = parts[1]?.trim().toLowerCase() ?? "";
+	const password = parts.slice(2).join(" ").trim();
+	if (!username || !password) {
+		return {
+			command: command === "/login" ? "login" : "cadastro",
+			username: "",
+			password: "",
+		};
+	}
+
+	return {
+		command: command === "/login" ? "login" : "cadastro",
+		username,
+		password,
+	};
 }
 
 export function buildTelegramMenuMessage(): string {
@@ -524,7 +572,7 @@ export function buildMonitoringStatusMessage(settings: TelegramUserSettings): st
 		"",
 		`💰 Simulando R$ ${settings.simCapital.toLocaleString("pt-BR")}`,
 		`🔕 Silencio: ${silence}`,
-		"⏱ Verificando a cada 30s",
+		"⏱ Verificando a cada 1 min",
 		"",
 		"Te aviso quando aparecer oportunidade acima do limite!",
 	].join("\n");

@@ -13,6 +13,8 @@ export type StoredUser = {
   salt: string
   passwordHash: string
   active: boolean
+  telegramChatId: string | null
+  telegramLinkedAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -36,6 +38,8 @@ export type PublicUser = {
   username: string
   role: UserRole
   active: boolean
+  telegramChatId: string | null
+  telegramLinkedAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -213,6 +217,8 @@ function toPublicUser(user: StoredUser): PublicUser {
     username: user.username,
     role: user.role,
     active: user.active,
+    telegramChatId: user.telegramChatId,
+    telegramLinkedAt: user.telegramLinkedAt,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   }
@@ -222,6 +228,8 @@ function normalizeStoredUser(entry: StoredUser): StoredUser {
   return {
     ...entry,
     username: entry.username.trim().toLowerCase(),
+    telegramChatId: entry.telegramChatId ? String(entry.telegramChatId).trim() : null,
+    telegramLinkedAt: entry.telegramLinkedAt ?? null,
   }
 }
 
@@ -237,6 +245,8 @@ function isStoredUser(entry: unknown): entry is StoredUser {
       typeof candidate.salt === 'string' &&
       typeof candidate.passwordHash === 'string' &&
       typeof candidate.active === 'boolean' &&
+      (typeof candidate.telegramChatId === 'string' || candidate.telegramChatId === null || candidate.telegramChatId === undefined) &&
+      (typeof candidate.telegramLinkedAt === 'string' || candidate.telegramLinkedAt === null || candidate.telegramLinkedAt === undefined) &&
       typeof candidate.createdAt === 'string' &&
       typeof candidate.updatedAt === 'string'
   )
@@ -370,6 +380,8 @@ async function initializeStore(backend: StorageBackend): Promise<UserStore> {
       salt,
       passwordHash: hashPassword(adminPassword, salt),
       active: true,
+      telegramChatId: null,
+      telegramLinkedAt: null,
       createdAt: now,
       updatedAt: now,
     })
@@ -387,6 +399,8 @@ async function initializeStore(backend: StorageBackend): Promise<UserStore> {
       salt,
       passwordHash: hashPassword(seed.password, salt),
       active: true,
+      telegramChatId: null,
+      telegramLinkedAt: null,
       createdAt: now,
       updatedAt: now,
     })
@@ -597,6 +611,8 @@ async function ensureBootstrapAdmin(store: UserStore): Promise<UserStore> {
       salt,
       passwordHash: hashPassword(adminPassword, salt),
       active: true,
+      telegramChatId: null,
+      telegramLinkedAt: null,
       createdAt: now,
       updatedAt: now,
     })
@@ -721,6 +737,8 @@ export async function createUser(input: {
     salt,
     passwordHash: hashPassword(password, salt),
     active: true,
+    telegramChatId: null,
+    telegramLinkedAt: null,
     createdAt: now,
     updatedAt: now,
   }
@@ -884,4 +902,104 @@ export async function verifyUserCredentials(username: string, password: string):
   }
 
   return toPublicUser(user)
+}
+
+export async function getUserByTelegramChatId(chatId: number | string): Promise<PublicUser | null> {
+  const normalizedChatId = String(chatId).trim()
+  if (!normalizedChatId) {
+    return null
+  }
+
+  const store = await loadStore()
+  const user = store.users.find((entry) => entry.telegramChatId === normalizedChatId && entry.active)
+  return user ? toPublicUser(user) : null
+}
+
+export async function linkTelegramChatToUser(input: {
+  username: string
+  password: string
+  chatId: number | string
+}): Promise<PublicUser | null> {
+  const normalizedUsername = input.username.trim().toLowerCase()
+  const normalizedChatId = String(input.chatId).trim()
+  const password = input.password.trim()
+
+  if (!normalizedUsername || !password || !normalizedChatId) {
+    return null
+  }
+
+  const store = await loadStore()
+  const user = store.users.find((entry) => entry.username === normalizedUsername)
+  if (!user || !user.active) {
+    return null
+  }
+
+  const attemptedHash = hashPassword(password, user.salt)
+  const expected = Buffer.from(user.passwordHash, 'hex')
+  const actual = Buffer.from(attemptedHash, 'hex')
+
+  if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
+    return null
+  }
+
+  const now = new Date().toISOString()
+  let changed = false
+
+  for (const entry of store.users) {
+    if (entry.telegramChatId === normalizedChatId && entry.username !== user.username) {
+      entry.telegramChatId = null
+      entry.telegramLinkedAt = null
+      entry.updatedAt = now
+      changed = true
+    }
+  }
+
+  if (user.telegramChatId !== normalizedChatId || user.telegramLinkedAt === null) {
+    user.telegramChatId = normalizedChatId
+    user.telegramLinkedAt = now
+    user.updatedAt = now
+    changed = true
+  }
+
+  if (changed) {
+    await persistStore(store)
+  }
+
+  return toPublicUser(user)
+}
+
+export async function registerTelegramUser(input: {
+  username: string
+  password: string
+  chatId: number | string
+}): Promise<PublicUser> {
+  const username = input.username.trim().toLowerCase()
+  const password = input.password.trim()
+  const normalizedChatId = String(input.chatId).trim()
+
+  if (!username || !password || !normalizedChatId) {
+    throw new Error('Usuario, senha e chat sao obrigatorios')
+  }
+
+  const created = await createUser({ username, password, role: 'user' })
+  const linked = await linkTelegramChatToUser({ username, password, chatId: normalizedChatId })
+  return linked ?? created
+}
+
+export async function unlinkTelegramChat(chatId: number | string): Promise<void> {
+  const normalizedChatId = String(chatId).trim()
+  if (!normalizedChatId) {
+    return
+  }
+
+  const store = await loadStore()
+  const user = store.users.find((entry) => entry.telegramChatId === normalizedChatId)
+  if (!user) {
+    return
+  }
+
+  user.telegramChatId = null
+  user.telegramLinkedAt = null
+  user.updatedAt = new Date().toISOString()
+  await persistStore(store)
 }

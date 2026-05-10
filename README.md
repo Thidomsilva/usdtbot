@@ -107,11 +107,20 @@ Importante:
 
 O bot trabalha com tres solucoes:
 
+- `/cadastro usuario senha` cria um usuario comum e vincula o chat atual
+- `/login usuario senha` autentica um usuario existente e libera o chat atual
+- `/logout` remove o vinculo do chat atual
 - `A) /usdt` USDT entre CEXs (compra e venda entre corretoras)
 - `B) /scanner` scanner completo de moedas
 - `C) /usdt_defi` compra em CEX e venda no DeFiLlama (BRLA)
 - `/start` abre o menu com as tres opcoes
 - `/settings` abre as configuracoes do usuario no Telegram
+
+Fluxo de acesso do bot:
+
+- No primeiro contato, o chat precisa executar `/cadastro usuario senha` ou `/login usuario senha`
+- O vinculo do chat com o usuario fica salvo no storage persistente do sistema
+- Apenas chats autenticados e usuarios ativos recebem menu, sinais e monitoramento automatico
 
 Configuracao por usuario (Telegram):
 

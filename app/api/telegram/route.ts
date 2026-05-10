@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+	buildTelegramAuthRequiredMessage,
 	buildPauseConfirmMessage,
 	buildPauseMenuMarkup,
 	buildMonitoringStatusMarkup,
@@ -8,6 +9,7 @@ import {
 	buildTelegramHelpMessage,
 	buildTelegramMenuMarkup,
 	buildTelegramMenuMessage,
+	parseTelegramCredentialsCommand,
 	buildTelegramSettingsMarkup,
 	buildTelegramSettingsMessage,
 	buildTelegramSignalMarkup,
@@ -22,6 +24,7 @@ import {
 	sendBloqueioMessage,
 	sendTelegramMessage,
 } from "@/lib/telegram";
+import { getUserByTelegramChatId, linkTelegramChatToUser, registerTelegramUser, unlinkTelegramChat } from "@/lib/user-store";
 import { PAUSE_FOREVER, getTelegramUserSettings, setTelegramUserSettings, type TelegramUserSettings } from "@/lib/telegram-user-settings";
 import { temAcesso, isTrialAtivo, TRIAL_DAYS } from "@/lib/plans";
 
@@ -43,6 +46,10 @@ async function sendSettings(chatId: number | string) {
 	await sendTelegramMessage(chatId, buildTelegramSettingsMessage(settings), {
 		reply_markup: buildTelegramSettingsMarkup(settings),
 	});
+}
+
+async function sendAuthRequired(chatId: number | string): Promise<void> {
+	await sendTelegramMessage(chatId, buildTelegramAuthRequiredMessage());
 }
 
 function sleep(ms: number): Promise<void> {
@@ -235,6 +242,9 @@ export async function POST(request: NextRequest) {
 	const callbackMessageId =
 		typeof callbackQuery?.message?.message_id === "number" ? callbackQuery.message.message_id : null;
 	const effectiveChatId = chatId ?? callbackQuery?.message?.chat?.id ?? null;
+	const messageText =
+		typeof update?.message?.text === "string" ? update.message.text.trim() : "";
+	const credentialsCommand = parseTelegramCredentialsCommand(messageText);
 
 	if (!effectiveChatId) return NextResponse.json({ ok: true });
 	if (!isAllowedTelegramChat(effectiveChatId)) return NextResponse.json({ ok: true, ignored: true });
@@ -249,6 +259,80 @@ export async function POST(request: NextRequest) {
 	}
 
 	try {
+		const linkedUser = await getUserByTelegramChatId(effectiveChatId);
+
+		if (credentialsCommand) {
+			if (!credentialsCommand.username || !credentialsCommand.password) {
+				await sendTelegramMessage(
+					effectiveChatId,
+					credentialsCommand.command === "login"
+						? "Use /login seu_usuario sua_senha"
+						: "Use /cadastro seu_usuario sua_senha"
+				);
+				return NextResponse.json({ ok: true });
+			}
+
+			if (credentialsCommand.command === "cadastro") {
+				try {
+					const user = await registerTelegramUser({
+						username: credentialsCommand.username,
+						password: credentialsCommand.password,
+						chatId: effectiveChatId,
+					});
+					await sendTelegramMessage(
+						effectiveChatId,
+						`✅ Cadastro concluido para <b>${user.username}</b>.\nEste chat foi autenticado com sucesso.`
+					);
+					await handleAction("menu", request.nextUrl.origin, effectiveChatId);
+					return NextResponse.json({ ok: true });
+				} catch (error) {
+					const message = error instanceof Error ? error.message : "Falha ao cadastrar usuario";
+					await sendTelegramMessage(effectiveChatId, `⚠️ ${message}`);
+					return NextResponse.json({ ok: true });
+				}
+			}
+
+			const user = await linkTelegramChatToUser({
+				username: credentialsCommand.username,
+				password: credentialsCommand.password,
+				chatId: effectiveChatId,
+			});
+			if (!user) {
+				await sendTelegramMessage(effectiveChatId, "⚠️ Usuario/senha invalidos ou acesso desativado.");
+				return NextResponse.json({ ok: true });
+			}
+
+			await sendTelegramMessage(
+				effectiveChatId,
+				`✅ Chat autenticado com sucesso para <b>${user.username}</b>.`
+			);
+			await handleAction("menu", request.nextUrl.origin, effectiveChatId);
+			return NextResponse.json({ ok: true });
+		}
+
+		if (messageText.toLowerCase() === "/logout") {
+			await unlinkTelegramChat(effectiveChatId);
+			await sendTelegramMessage(effectiveChatId, "✅ Este chat foi desconectado. Para voltar a usar, envie /login ou /cadastro.");
+			return NextResponse.json({ ok: true });
+		}
+
+		if (!linkedUser) {
+			if (callbackQuery) {
+				await sendAuthRequired(effectiveChatId);
+				return NextResponse.json({ ok: true, unauthorized: true });
+			}
+
+			if (messageText && (action === "menu" || action === "help" || action === null)) {
+				await sendAuthRequired(effectiveChatId);
+				return NextResponse.json({ ok: true, unauthorized: true });
+			}
+
+			if (action) {
+				await sendAuthRequired(effectiveChatId);
+				return NextResponse.json({ ok: true, unauthorized: true });
+			}
+		}
+
 		if (callbackQuery) {
 			await clearPreviousButtons(effectiveChatId, callbackMessageId);
 		}
@@ -523,8 +607,6 @@ export async function POST(request: NextRequest) {
 			return NextResponse.json({ ok: true });
 		}
 
-		const messageText =
-			typeof update?.message?.text === "string" ? update.message.text.trim() : "";
 		if (messageText) {
 			const current = await getTelegramUserSettings(effectiveChatId);
 
@@ -577,6 +659,6 @@ export async function POST(request: NextRequest) {
 export async function GET() {
 	return NextResponse.json({
 		ok: true,
-		help: "Envie /start, /usdt, /usdt_defi, /scanner, /status ou /configurar no chat do bot.",
+		help: "Envie /cadastro usuario senha ou /login usuario senha para liberar este chat. Depois use /start, /usdt, /usdt_defi, /scanner, /status ou /configurar.",
 	});
 }
