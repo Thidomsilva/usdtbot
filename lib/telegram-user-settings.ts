@@ -1,6 +1,9 @@
 import { mkdir, readFile, rename, writeFile } from "fs/promises";
 import path from "path";
 import { type UserPlan, temAcesso, maxAlertasPerDay } from "@/lib/plans";
+import { Redis } from "@upstash/redis";
+import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient as createRedisClient, type RedisClientType } from "redis";
 
 export type AlertTracks = { a: boolean; b: boolean; c: boolean };
 export type { UserPlan };
@@ -45,6 +48,8 @@ type TelegramSettingsStore = {
 	users: Record<string, TelegramUserSettings>;
 };
 
+type StorageBackend = "file" | "kv-rest" | "kv-redis-url" | "supabase";
+
 const DEFAULT_SETTINGS: TelegramUserSettings = {
 	includeDefiBrla: false,
 	autoSignalsMode: "off",
@@ -82,6 +87,134 @@ const DATA_DIR = process.env.VERCEL
 	: path.join(process.cwd(), "data");
 
 const SETTINGS_FILE = path.join(DATA_DIR, "telegram-settings.json");
+const KV_TELEGRAM_SETTINGS_KEY = "usdtbot:telegram-settings:v1";
+const SUPABASE_STORAGE_TABLE = (process.env.SUPABASE_STORAGE_TABLE ?? "app_storage").trim();
+
+let redisClient: Redis | null = null;
+let redisUrlClient: RedisClientType | null = null;
+let redisUrlConnecting: Promise<RedisClientType> | null = null;
+let supabaseClient: SupabaseClient | null = null;
+
+function shouldRequireDurableStorage(): boolean {
+	return Boolean(process.env.VERCEL) && process.env.ALLOW_EPHEMERAL_USER_STORAGE !== "true";
+}
+
+function canUseLocalFileFallback(): boolean {
+	return !shouldRequireDurableStorage();
+}
+
+function getFirstEnv(keys: string[]): string | undefined {
+	for (const key of keys) {
+		const value = process.env[key]?.trim();
+		if (value) return value;
+	}
+	return undefined;
+}
+
+function getRestUrl(): string | undefined {
+	return getFirstEnv([
+		"KV_REST_API_URL",
+		"UPSTASH_REDIS_REST_URL",
+		"STORAGE_REST_URL",
+		"REDIS_REST_URL",
+	]);
+}
+
+function getRestToken(): string | undefined {
+	return getFirstEnv([
+		"KV_REST_API_TOKEN",
+		"UPSTASH_REDIS_REST_TOKEN",
+		"STORAGE_REST_TOKEN",
+		"REDIS_REST_TOKEN",
+	]);
+}
+
+function getRedisConnectionUrl(): string | undefined {
+	return getFirstEnv([
+		"KV_REST_API_REDIS_URL",
+		"REDIS_URL",
+		"KV_URL",
+		"UPSTASH_REDIS_URL",
+		"STORAGE_URL",
+	]);
+}
+
+function getSupabaseUrl(): string | undefined {
+	return getFirstEnv(["SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL"]);
+}
+
+function getSupabaseServiceRoleKey(): string | undefined {
+	return getFirstEnv(["SUPABASE_SERVICE_ROLE_KEY"]);
+}
+
+function getStorageBackend(): StorageBackend {
+	if (getSupabaseUrl() && getSupabaseServiceRoleKey()) return "supabase";
+	if (getRestUrl() && getRestToken()) return "kv-rest";
+	if (getRedisConnectionUrl()) return "kv-redis-url";
+	return "file";
+}
+
+function assertDurableStorage(backend: StorageBackend): void {
+	if (backend !== "file") return;
+	if (!shouldRequireDurableStorage()) return;
+	throw new Error(
+		"Storage persistente para configuracoes do Telegram nao configurado. Em deploy Vercel, conecte Supabase ou Redis/KV."
+	);
+}
+
+function getRedisClient(): Redis {
+	if (!redisClient) {
+		const restUrl = getRestUrl();
+		const restToken = getRestToken();
+		if (restUrl && restToken) redisClient = new Redis({ url: restUrl, token: restToken });
+		else redisClient = Redis.fromEnv();
+	}
+	return redisClient;
+}
+
+function getRedisUrl(): string {
+	const url = getRedisConnectionUrl();
+	if (!url) {
+		throw new Error("URL do Redis nao configurada (KV_REST_API_REDIS_URL/REDIS_URL/KV_URL/UPSTASH_REDIS_URL/STORAGE_URL)");
+	}
+	return url;
+}
+
+async function getRedisUrlClient(): Promise<RedisClientType> {
+	if (!redisUrlClient) {
+		redisUrlClient = createRedisClient({ url: getRedisUrl() });
+	}
+
+	if (!redisUrlClient.isOpen) {
+		if (!redisUrlConnecting) {
+			redisUrlConnecting = redisUrlClient.connect().finally(() => {
+				redisUrlConnecting = null;
+			});
+		}
+		await redisUrlConnecting;
+	}
+
+	return redisUrlClient;
+}
+
+function getSupabaseClient(): SupabaseClient {
+	if (supabaseClient) return supabaseClient;
+
+	const url = getSupabaseUrl();
+	const serviceRoleKey = getSupabaseServiceRoleKey();
+	if (!url || !serviceRoleKey) {
+		throw new Error("Supabase nao configurado (SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY)");
+	}
+
+	supabaseClient = createSupabaseClient(url, serviceRoleKey, {
+		auth: {
+			persistSession: false,
+			autoRefreshToken: false,
+		},
+	});
+
+	return supabaseClient;
+}
 
 function cloneDefaultSettings(): TelegramUserSettings {
 	return { ...DEFAULT_SETTINGS };
@@ -177,6 +310,45 @@ function normalizeStore(value: unknown): TelegramSettingsStore {
 }
 
 async function loadStore(): Promise<TelegramSettingsStore> {
+	const backend = getStorageBackend();
+	assertDurableStorage(backend);
+
+	if (backend === "supabase") {
+		try {
+			const client = getSupabaseClient();
+			const { data, error } = await client
+				.from(SUPABASE_STORAGE_TABLE)
+				.select("value")
+				.eq("key", KV_TELEGRAM_SETTINGS_KEY)
+				.maybeSingle();
+			if (error) throw new Error(error.message);
+			if (!data || !("value" in data)) return { users: {} };
+			return normalizeStore((data as { value: unknown }).value);
+		} catch (error) {
+			if (!canUseLocalFileFallback()) throw error;
+		}
+	}
+
+	if (backend === "kv-rest") {
+		try {
+			const store = await getRedisClient().get<TelegramSettingsStore>(KV_TELEGRAM_SETTINGS_KEY);
+			return normalizeStore(store);
+		} catch (error) {
+			if (!canUseLocalFileFallback()) throw error;
+		}
+	}
+
+	if (backend === "kv-redis-url") {
+		try {
+			const client = await getRedisUrlClient();
+			const raw = await client.get(KV_TELEGRAM_SETTINGS_KEY);
+			if (!raw || typeof raw !== "string") return { users: {} };
+			return normalizeStore(JSON.parse(raw));
+		} catch (error) {
+			if (!canUseLocalFileFallback()) throw error;
+		}
+	}
+
 	try {
 		const raw = await readFile(SETTINGS_FILE, "utf8");
 		return normalizeStore(JSON.parse(raw));
@@ -186,10 +358,48 @@ async function loadStore(): Promise<TelegramSettingsStore> {
 }
 
 async function saveStore(store: TelegramSettingsStore): Promise<void> {
-	await mkdir(DATA_DIR, { recursive: true });
-	const tmpFile = `${SETTINGS_FILE}.${Date.now()}.tmp`;
-	await writeFile(tmpFile, JSON.stringify(store, null, 2), "utf8");
-	await rename(tmpFile, SETTINGS_FILE);
+	const backend = getStorageBackend();
+	assertDurableStorage(backend);
+
+	try {
+		if (backend === "supabase") {
+			const client = getSupabaseClient();
+			const { error } = await client
+				.from(SUPABASE_STORAGE_TABLE)
+				.upsert(
+					{
+						key: KV_TELEGRAM_SETTINGS_KEY,
+						value: store,
+						updated_at: new Date().toISOString(),
+					},
+					{ onConflict: "key" }
+				);
+			if (error) throw new Error(error.message);
+			return;
+		}
+
+		if (backend === "kv-rest") {
+			await getRedisClient().set(KV_TELEGRAM_SETTINGS_KEY, store);
+			return;
+		}
+
+		if (backend === "kv-redis-url") {
+			const client = await getRedisUrlClient();
+			await client.set(KV_TELEGRAM_SETTINGS_KEY, JSON.stringify(store));
+			return;
+		}
+
+		await mkdir(DATA_DIR, { recursive: true });
+		const tmpFile = `${SETTINGS_FILE}.${Date.now()}.tmp`;
+		await writeFile(tmpFile, JSON.stringify(store, null, 2), "utf8");
+		await rename(tmpFile, SETTINGS_FILE);
+	} catch (error) {
+		if (!canUseLocalFileFallback()) throw error;
+		await mkdir(DATA_DIR, { recursive: true });
+		const tmpFile = `${SETTINGS_FILE}.${Date.now()}.tmp`;
+		await writeFile(tmpFile, JSON.stringify(store, null, 2), "utf8");
+		await rename(tmpFile, SETTINGS_FILE);
+	}
 }
 
 export async function getTelegramUserSettings(chatId: number | string): Promise<TelegramUserSettings> {

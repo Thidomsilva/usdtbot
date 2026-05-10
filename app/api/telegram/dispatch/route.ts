@@ -157,18 +157,24 @@ export async function GET(request: NextRequest) {
 	let sent = 0;
 	let skipped = 0;
 	let failed = 0;
+	let skippedNotAllowedChat = 0;
+	let skippedUnlinkedUser = 0;
+	let skippedMonitoringDisabled = 0;
+	let skippedNoTrackEnabled = 0;
 
 	for (const user of users) {
 		const { chatId, settings } = user;
 
 		if (!isAllowedTelegramChat(chatId)) {
 			skipped++;
+			skippedNotAllowedChat++;
 			continue;
 		}
 
 		const linkedUser = await getUserByTelegramChatId(chatId);
 		if (!linkedUser) {
 			skipped++;
+			skippedUnlinkedUser++;
 			continue;
 		}
 
@@ -185,6 +191,7 @@ export async function GET(request: NextRequest) {
 
 		if (!effectiveSettings.alertsEnabled) {
 			skipped++;
+			skippedMonitoringDisabled++;
 			continue;
 		}
 
@@ -192,6 +199,12 @@ export async function GET(request: NextRequest) {
 		if (effectiveSettings.alertTracks.a) tracks.push("a");
 		if (effectiveSettings.alertTracks.b) tracks.push("b");
 		if (effectiveSettings.alertTracks.c) tracks.push("c");
+
+		if (tracks.length === 0) {
+			skipped++;
+			skippedNoTrackEnabled++;
+			continue;
+		}
 
 		for (const track of tracks) {
 			const result = await dispatchAlert(chatId, origin, track);
@@ -207,5 +220,11 @@ export async function GET(request: NextRequest) {
 		sent,
 		skipped,
 		failed,
+		diagnostics: {
+			skipped_not_allowed_chat: skippedNotAllowedChat,
+			skipped_unlinked_user: skippedUnlinkedUser,
+			skipped_monitoring_disabled: skippedMonitoringDisabled,
+			skipped_no_track_enabled: skippedNoTrackEnabled,
+		},
 	});
 }
