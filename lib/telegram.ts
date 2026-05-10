@@ -31,7 +31,7 @@ type TelegramWebhookMessage = {
 
 type TelegramMessageOptions = {
 	disable_web_page_preview?: boolean;
-	reply_markup?: Record<string, unknown>;
+	reply_markup?: Record<string, unknown> | null;
 };
 
 type UsdtMessageOptions = {
@@ -325,6 +325,7 @@ export function buildTelegramSettingsMessage(options: TelegramUserSettings): str
 		`Trilhas ativas: ${tracks.a ? "💱A" : "━A"} ${tracks.b ? "📡B" : "━B"} ${tracks.c ? "🔗C" : "━C"}`,
 		`Spread minimo A: ${options.minSpreadA.toFixed(2)}%`,
 		`Spread minimo B: ${options.minSpreadB.toFixed(2)}%`,
+		`Spread minimo C: ${options.minSpreadC.toFixed(2)}%`,
 		`Capital simulado: R$ ${options.simCapital.toLocaleString("pt-BR")}`,
 		`Silencio noturno: ${silentIcon} ${options.silentStart}–${options.silentEnd}`,
 		"",
@@ -337,6 +338,10 @@ export function buildTelegramSettingsMarkup(options: TelegramUserSettings): Reco
 	const { alertsEnabled, alertTracks, autoSignalsMode, plan } = options;
 	return {
 		inline_keyboard: [
+			// row 0: spread editor
+			[
+				{ text: "📈 Ajustar spread minimo", callback_data: "settings:spread_adjust" },
+			],
 			// row 1: toggle alerts on/off
 			[{
 				text: alertsEnabled ? "🔔 Alertas: LIGADO ✅" : "🔕 Alertas: DESLIGADO ❌",
@@ -348,33 +353,19 @@ export function buildTelegramSettingsMarkup(options: TelegramUserSettings): Reco
 				{ text: alertTracks.b ? "📡B ✅" : "📡B ❌", callback_data: alertTracks.b ? "track:b_off" : "track:b_on" },
 				{ text: alertTracks.c ? "🔗C ✅" : "🔗C ❌", callback_data: alertTracks.c ? "track:c_off" : "track:c_on" },
 			],
-			// row 3: spread A presets
-			[
-				{ text: `A:0.25%${options.minSpreadA === 0.25 ? "✅" : ""}`, callback_data: "spread_a:0.25" },
-				{ text: `A:0.50%${options.minSpreadA === 0.5 ? "✅" : ""}`, callback_data: "spread_a:0.50" },
-				{ text: `A:1.00%${options.minSpreadA === 1.0 ? "✅" : ""}`, callback_data: "spread_a:1.00" },
-				{ text: `A:2.00%${options.minSpreadA === 2.0 ? "✅" : ""}`, callback_data: "spread_a:2.00" },
-			],
-			// row 4: spread B presets
-			[
-				{ text: `B:1%${options.minSpreadB === 1.0 ? "✅" : ""}`, callback_data: "spread_b:1.00" },
-				{ text: `B:2%${options.minSpreadB === 2.0 ? "✅" : ""}`, callback_data: "spread_b:2.00" },
-				{ text: `B:3%${options.minSpreadB === 3.0 ? "✅" : ""}`, callback_data: "spread_b:3.00" },
-				{ text: `B:5%${options.minSpreadB === 5.0 ? "✅" : ""}`, callback_data: "spread_b:5.00" },
-			],
-			// row 5: capital presets
+			// row 3: capital presets
 			[
 				{ text: `R$500${options.simCapital === 500 ? "✅" : ""}`, callback_data: "capital:500" },
 				{ text: `R$1k${options.simCapital === 1000 ? "✅" : ""}`, callback_data: "capital:1000" },
 				{ text: `R$5k${options.simCapital === 5000 ? "✅" : ""}`, callback_data: "capital:5000" },
 				{ text: `R$10k${options.simCapital === 10000 ? "✅" : ""}`, callback_data: "capital:10000" },
 			],
-			// row 6: silent night toggle
+			// row 4: silent night toggle
 			[{
 				text: options.silentNight ? "🌙 Silencio noturno: ON ✅" : "🌙 Silencio noturno: OFF",
 				callback_data: options.silentNight ? "silent:off" : "silent:on",
 			}],
-			// row 7: auto signal mode
+			// row 5: auto signal mode
 			[
 				{ text: autoSignalsMode === "usdt" ? "Auto: 💱A ✅" : "Auto: 💱A", callback_data: "settings:auto_usdt" },
 				{ text: autoSignalsMode === "scanner" ? "Auto: 📡B ✅" : "Auto: 📡B", callback_data: "settings:auto_scanner" },
@@ -384,7 +375,7 @@ export function buildTelegramSettingsMarkup(options: TelegramUserSettings): Reco
 				{ text: autoSignalsMode === "all" ? "Auto: 🧠 Todas ✅" : "Auto: 🧠 Todas", callback_data: "settings:auto_all" },
 				{ text: autoSignalsMode === "off" ? "Auto: ⏸️ Off ✅" : "Auto: ⏸️ Off", callback_data: "settings:auto_off" },
 			],
-			// row 8: pause
+			// row 6: pause
 			...(plan === "free" ? [] : [[
 				{ text: "🔕 Pausar 1h", callback_data: "pause:1h" },
 				{ text: "🔕 Pausar 4h", callback_data: "pause:4h" },
@@ -569,7 +560,7 @@ export async function buildAlertUsdtDefiMessage(baseUrl: string, settings: Teleg
 	const sellDefi = defi.sellNetBrlPerUsdt;
 	const spreadPct = ((sellDefi - buyPrice) / buyPrice) * 100;
 
-	if (spreadPct <= 0) return null;
+	if (spreadPct < settings.minSpreadC) return null;
 
 	const capital = settings.simCapital;
 	const usdtQty = capital / buyPrice;
@@ -797,6 +788,57 @@ export async function sendTelegramMessage(
 			parse_mode: "HTML",
 			disable_web_page_preview: true,
 			...options,
+		}),
+	});
+
+	if (!response.ok) {
+		throw new Error(`Telegram API HTTP ${response.status}`);
+	}
+}
+
+export async function clearTelegramMessageReplyMarkup(
+	chatId: number | string,
+	messageId: number
+): Promise<void> {
+	const token = getTelegramBotToken();
+	if (!token) {
+		throw new Error("TELEGRAM_BOT_TOKEN nao configurado");
+	}
+
+	const response = await fetch(`${TELEGRAM_API_BASE}/bot${token}/editMessageReplyMarkup`, {
+		method: "POST",
+		headers: {
+			"content-type": "application/json",
+		},
+		body: JSON.stringify({
+			chat_id: chatId,
+			message_id: messageId,
+			reply_markup: { inline_keyboard: [] },
+		}),
+	});
+
+	if (!response.ok) {
+		throw new Error(`Telegram API HTTP ${response.status}`);
+	}
+}
+
+export async function deleteTelegramMessage(
+	chatId: number | string,
+	messageId: number
+): Promise<void> {
+	const token = getTelegramBotToken();
+	if (!token) {
+		throw new Error("TELEGRAM_BOT_TOKEN nao configurado");
+	}
+
+	const response = await fetch(`${TELEGRAM_API_BASE}/bot${token}/deleteMessage`, {
+		method: "POST",
+		headers: {
+			"content-type": "application/json",
+		},
+		body: JSON.stringify({
+			chat_id: chatId,
+			message_id: messageId,
 		}),
 	});
 

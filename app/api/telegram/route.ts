@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-	buildOnboardingMessage,
 	buildPauseConfirmMessage,
 	buildPauseMenuMarkup,
 	buildScannerSignalMessage,
@@ -12,6 +11,8 @@ import {
 	buildTelegramSignalMarkup,
 	buildUsdtDefiSignalMessage,
 	buildUsdtSignalMessage,
+	clearTelegramMessageReplyMarkup,
+	deleteTelegramMessage,
 	extractTelegramUpdate,
 	getTelegramBotToken,
 	getTelegramWebhookSecret,
@@ -19,11 +20,15 @@ import {
 	sendBloqueioMessage,
 	sendTelegramMessage,
 } from "@/lib/telegram";
-import { getTelegramUserSettings, setTelegramUserSettings } from "@/lib/telegram-user-settings";
+import { getTelegramUserSettings, setTelegramUserSettings, type TelegramUserSettings } from "@/lib/telegram-user-settings";
 import { temAcesso, isTrialAtivo, TRIAL_DAYS } from "@/lib/plans";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const MENU_RETURN_DELAY_MS = 3000;
+const MIN_SPREAD_ALLOWED = 0.1;
+const MAX_SPREAD_ALLOWED = 10;
 
 function hasValidWebhookSecret(request: NextRequest): boolean {
 	const expectedSecret = getTelegramWebhookSecret();
@@ -36,6 +41,83 @@ async function sendSettings(chatId: number | string) {
 	await sendTelegramMessage(chatId, buildTelegramSettingsMessage(settings), {
 		reply_markup: buildTelegramSettingsMarkup(settings),
 	});
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => {
+		setTimeout(resolve, ms);
+	});
+}
+
+function formatTrackList(settings: TelegramUserSettings): string {
+	const tracks: string[] = [];
+	if (settings.alertTracks.a) tracks.push("A");
+	if (settings.alertTracks.b) tracks.push("B");
+	if (settings.alertTracks.c) tracks.push("C");
+	return tracks.length > 0 ? tracks.join(" · ") : "nenhuma";
+}
+
+function buildCleanSettingsConfirmation(
+	settings: TelegramUserSettings,
+	extraLines: string[] = []
+): string {
+	const silence = settings.silentNight
+		? `${settings.silentStart} as ${settings.silentEnd}`
+		: "desativado";
+
+	return [
+		"✅ Configuracoes salvas!",
+		...extraLines,
+		`📊 Spread minimo: A ${settings.minSpreadA.toFixed(2)}% · B ${settings.minSpreadB.toFixed(2)}% · C ${settings.minSpreadC.toFixed(2)}%`,
+		`💰 Valor simulado: R$ ${settings.simCapital.toLocaleString("pt-BR")}`,
+		`🔕 Silencio: ${silence}`,
+		`📡 Trilhas ativas: ${formatTrackList(settings)}`,
+	].join("\n");
+}
+
+function parseSpreadInput(text: string): number | null {
+	const normalized = text.trim().replace(",", ".");
+	const value = Number(normalized);
+	if (!Number.isFinite(value)) return null;
+	return value;
+}
+
+function spreadFieldByTrack(track: "a" | "b" | "c"): "minSpreadA" | "minSpreadB" | "minSpreadC" {
+	if (track === "a") return "minSpreadA";
+	if (track === "b") return "minSpreadB";
+	return "minSpreadC";
+}
+
+function spreadLabelByTrack(track: "a" | "b" | "c"): string {
+	if (track === "a") return "A) CEX→CEX";
+	if (track === "b") return "B) Scanner";
+	return "C) CEX→DeFi";
+}
+
+async function clearPreviousButtons(chatId: number | string, messageId: number | null): Promise<void> {
+	if (messageId === null) return;
+
+	try {
+		await clearTelegramMessageReplyMarkup(chatId, messageId);
+	} catch {
+		try {
+			await deleteTelegramMessage(chatId, messageId);
+		} catch {
+			// ignore cleanup errors to avoid blocking user flow
+		}
+	}
+}
+
+async function sendMainMenu(chatId: number | string): Promise<void> {
+	await sendTelegramMessage(chatId, buildTelegramMenuMessage(), {
+		reply_markup: buildTelegramMenuMarkup(),
+	});
+}
+
+async function confirmAndBackToMenu(chatId: number | string, message: string): Promise<void> {
+	await sendTelegramMessage(chatId, message);
+	await sleep(MENU_RETURN_DELAY_MS);
+	await sendMainMenu(chatId);
 }
 
 async function handleAction(
@@ -123,9 +205,11 @@ export async function POST(request: NextRequest) {
 	const update = await request.json().catch(() => null);
 	const { chatId, action } = extractTelegramUpdate(update ?? {});
 	const callbackQuery = update?.callback_query as
-		| { id?: string; data?: string; message?: { chat?: { id?: number | string } } }
+		| { id?: string; data?: string; message?: { message_id?: number; chat?: { id?: number | string } } }
 		| undefined;
 	const callbackData = callbackQuery?.data ?? "";
+	const callbackMessageId =
+		typeof callbackQuery?.message?.message_id === "number" ? callbackQuery.message.message_id : null;
 	const effectiveChatId = chatId ?? callbackQuery?.message?.chat?.id ?? null;
 
 	if (!effectiveChatId) return NextResponse.json({ ok: true });
@@ -141,6 +225,10 @@ export async function POST(request: NextRequest) {
 	}
 
 	try {
+		if (callbackQuery) {
+			await clearPreviousButtons(effectiveChatId, callbackMessageId);
+		}
+
 		// --- mode: actions (signal views) ---
 		if (callbackData.startsWith("mode:")) {
 			const modeAction = callbackData.slice("mode:".length) as "menu" | "usdt" | "usdt_defi" | "scanner";
@@ -154,6 +242,50 @@ export async function POST(request: NextRequest) {
 			return NextResponse.json({ ok: true });
 		}
 
+		// --- settings:spread_adjust ---
+		if (callbackData === "settings:spread_adjust") {
+			await sendTelegramMessage(
+				effectiveChatId,
+				"Qual trilha deseja ajustar?",
+				{
+					reply_markup: {
+						inline_keyboard: [
+							[
+								{ text: "A) CEX→CEX", callback_data: "spread_pick:a" },
+								{ text: "B) Scanner", callback_data: "spread_pick:b" },
+								{ text: "C) CEX→DeFi", callback_data: "spread_pick:c" },
+							],
+						],
+					},
+				}
+			);
+			return NextResponse.json({ ok: true });
+		}
+
+		// --- spread_pick:a|b|c ---
+		if (callbackData.startsWith("spread_pick:")) {
+			const track = callbackData.split(":")[1] as "a" | "b" | "c";
+			if (track !== "a" && track !== "b" && track !== "c") {
+				return NextResponse.json({ ok: true });
+			}
+
+			const current = await setTelegramUserSettings(effectiveChatId, {
+				pendingSpreadTrack: track,
+			});
+			const spreadField = spreadFieldByTrack(track);
+			const currentValue = current[spreadField];
+
+			await sendTelegramMessage(
+				effectiveChatId,
+				[
+					`Digite o spread minimo para alertas da trilha ${spreadLabelByTrack(track)}`,
+					`Atual: ${currentValue.toFixed(2)}%`,
+					"Minimo: 0.10% · Maximo: 10.00%",
+				].join("\n")
+			);
+			return NextResponse.json({ ok: true });
+		}
+
 		// --- settings:auto_* ---
 		if (callbackData.startsWith("settings:auto_")) {
 			const modeKey = callbackData.replace("settings:auto_", "");
@@ -163,26 +295,22 @@ export async function POST(request: NextRequest) {
 				: modeKey === "usdt_defi" ? "usdt_defi"
 				: modeKey === "all" ? "all"
 				: "off";
-			const updated = await setTelegramUserSettings(effectiveChatId, { autoSignalsMode: mode });
-			await sendTelegramMessage(effectiveChatId, buildTelegramSettingsMessage(updated), {
-				reply_markup: buildTelegramSettingsMarkup(updated),
+			const updated = await setTelegramUserSettings(effectiveChatId, {
+				autoSignalsMode: mode,
+				pendingSpreadTrack: null,
 			});
+			await confirmAndBackToMenu(effectiveChatId, buildCleanSettingsConfirmation(updated));
 			return NextResponse.json({ ok: true });
 		}
 
 		// --- alerts:on / alerts:off ---
 		if (callbackData === "alerts:on" || callbackData === "alerts:off") {
 			const enabling = callbackData === "alerts:on";
-			const current = await getTelegramUserSettings(effectiveChatId);
-			const wasDisabled = !current.alertsEnabled;
-			const updated = await setTelegramUserSettings(effectiveChatId, { alertsEnabled: enabling });
-
-			if (enabling && wasDisabled) {
-				await sendTelegramMessage(effectiveChatId, buildOnboardingMessage());
-			}
-			await sendTelegramMessage(effectiveChatId, buildTelegramSettingsMessage(updated), {
-				reply_markup: buildTelegramSettingsMarkup(updated),
+			const updated = await setTelegramUserSettings(effectiveChatId, {
+				alertsEnabled: enabling,
+				pendingSpreadTrack: null,
 			});
+			await confirmAndBackToMenu(effectiveChatId, buildCleanSettingsConfirmation(updated));
 			return NextResponse.json({ ok: true });
 		}
 
@@ -195,21 +323,26 @@ export async function POST(request: NextRequest) {
 			const updatedTracks = { ...current.alertTracks, [trackKey]: on };
 			const updated = await setTelegramUserSettings(effectiveChatId, {
 				alertTracks: updatedTracks,
+				pendingSpreadTrack: null,
 			});
-			await sendTelegramMessage(effectiveChatId, buildTelegramSettingsMessage(updated), {
-				reply_markup: buildTelegramSettingsMarkup(updated),
-			});
+			await confirmAndBackToMenu(effectiveChatId, buildCleanSettingsConfirmation(updated));
 			return NextResponse.json({ ok: true });
 		}
 
 		// --- spread_a:<value> ---
 		if (callbackData.startsWith("spread_a:")) {
 			const v = parseFloat(callbackData.split(":")[1]);
-			if (Number.isFinite(v) && v > 0) {
-				const updated = await setTelegramUserSettings(effectiveChatId, { minSpreadA: v });
-				await sendTelegramMessage(effectiveChatId, buildTelegramSettingsMessage(updated), {
-					reply_markup: buildTelegramSettingsMarkup(updated),
+			if (Number.isFinite(v) && v >= MIN_SPREAD_ALLOWED && v <= MAX_SPREAD_ALLOWED) {
+				const updated = await setTelegramUserSettings(effectiveChatId, {
+					minSpreadA: v,
+					pendingSpreadTrack: null,
 				});
+				await confirmAndBackToMenu(effectiveChatId, buildCleanSettingsConfirmation(updated));
+			} else {
+				await sendTelegramMessage(
+					effectiveChatId,
+					"⚠️ Valor invalido. Digite entre 0.10 e 10.00"
+				);
 			}
 			return NextResponse.json({ ok: true });
 		}
@@ -217,11 +350,35 @@ export async function POST(request: NextRequest) {
 		// --- spread_b:<value> ---
 		if (callbackData.startsWith("spread_b:")) {
 			const v = parseFloat(callbackData.split(":")[1]);
-			if (Number.isFinite(v) && v > 0) {
-				const updated = await setTelegramUserSettings(effectiveChatId, { minSpreadB: v });
-				await sendTelegramMessage(effectiveChatId, buildTelegramSettingsMessage(updated), {
-					reply_markup: buildTelegramSettingsMarkup(updated),
+			if (Number.isFinite(v) && v >= MIN_SPREAD_ALLOWED && v <= MAX_SPREAD_ALLOWED) {
+				const updated = await setTelegramUserSettings(effectiveChatId, {
+					minSpreadB: v,
+					pendingSpreadTrack: null,
 				});
+				await confirmAndBackToMenu(effectiveChatId, buildCleanSettingsConfirmation(updated));
+			} else {
+				await sendTelegramMessage(
+					effectiveChatId,
+					"⚠️ Valor invalido. Digite entre 0.10 e 10.00"
+				);
+			}
+			return NextResponse.json({ ok: true });
+		}
+
+		// --- spread_c:<value> ---
+		if (callbackData.startsWith("spread_c:")) {
+			const v = parseFloat(callbackData.split(":")[1]);
+			if (Number.isFinite(v) && v >= MIN_SPREAD_ALLOWED && v <= MAX_SPREAD_ALLOWED) {
+				const updated = await setTelegramUserSettings(effectiveChatId, {
+					minSpreadC: v,
+					pendingSpreadTrack: null,
+				});
+				await confirmAndBackToMenu(effectiveChatId, buildCleanSettingsConfirmation(updated));
+			} else {
+				await sendTelegramMessage(
+					effectiveChatId,
+					"⚠️ Valor invalido. Digite entre 0.10 e 10.00"
+				);
 			}
 			return NextResponse.json({ ok: true });
 		}
@@ -230,10 +387,11 @@ export async function POST(request: NextRequest) {
 		if (callbackData.startsWith("capital:")) {
 			const v = parseFloat(callbackData.split(":")[1]);
 			if (Number.isFinite(v) && v > 0) {
-				const updated = await setTelegramUserSettings(effectiveChatId, { simCapital: v });
-				await sendTelegramMessage(effectiveChatId, buildTelegramSettingsMessage(updated), {
-					reply_markup: buildTelegramSettingsMarkup(updated),
+				const updated = await setTelegramUserSettings(effectiveChatId, {
+					simCapital: v,
+					pendingSpreadTrack: null,
 				});
+				await confirmAndBackToMenu(effectiveChatId, buildCleanSettingsConfirmation(updated));
 			}
 			return NextResponse.json({ ok: true });
 		}
@@ -242,10 +400,9 @@ export async function POST(request: NextRequest) {
 		if (callbackData === "silent:on" || callbackData === "silent:off") {
 			const updated = await setTelegramUserSettings(effectiveChatId, {
 				silentNight: callbackData === "silent:on",
+				pendingSpreadTrack: null,
 			});
-			await sendTelegramMessage(effectiveChatId, buildTelegramSettingsMessage(updated), {
-				reply_markup: buildTelegramSettingsMarkup(updated),
-			});
+			await confirmAndBackToMenu(effectiveChatId, buildCleanSettingsConfirmation(updated));
 			return NextResponse.json({ ok: true });
 		}
 
@@ -268,18 +425,58 @@ export async function POST(request: NextRequest) {
 				: key === "4h" ? now + 4 * 60 * 60 * 1000
 				: key === "24h" ? now + 24 * 60 * 60 * 1000
 				: null; // forever
-			await setTelegramUserSettings(effectiveChatId, { pausedUntil });
-			await sendTelegramMessage(effectiveChatId, buildPauseConfirmMessage(pausedUntil));
+			const updated = await setTelegramUserSettings(effectiveChatId, {
+				pausedUntil,
+				pendingSpreadTrack: null,
+			});
+			await confirmAndBackToMenu(
+				effectiveChatId,
+				buildCleanSettingsConfirmation(updated, [buildPauseConfirmMessage(pausedUntil)])
+			);
 			return NextResponse.json({ ok: true });
 		}
 
 		// --- plan:upgrade ---
 		if (callbackData === "plan:upgrade") {
-			await sendTelegramMessage(
+			await confirmAndBackToMenu(
 				effectiveChatId,
-				"Em breve! Entraremos em contato quando as assinaturas abrirem. 🚀"
+				"✅ Acao concluida!\nEm breve entraremos em contato quando as assinaturas abrirem."
 			);
 			return NextResponse.json({ ok: true });
+		}
+
+		const messageText =
+			typeof update?.message?.text === "string" ? update.message.text.trim() : "";
+		if (messageText) {
+			const current = await getTelegramUserSettings(effectiveChatId);
+
+			if (current.pendingSpreadTrack && !action) {
+				const parsed = parseSpreadInput(messageText);
+				if (
+					parsed === null ||
+					parsed < MIN_SPREAD_ALLOWED ||
+					parsed > MAX_SPREAD_ALLOWED
+				) {
+					await sendTelegramMessage(
+						effectiveChatId,
+						"⚠️ Valor invalido. Digite entre 0.10 e 10.00"
+					);
+					return NextResponse.json({ ok: true });
+				}
+
+				const spreadField = spreadFieldByTrack(current.pendingSpreadTrack);
+				const updated = await setTelegramUserSettings(effectiveChatId, {
+					[spreadField]: parsed,
+					pendingSpreadTrack: null,
+				});
+
+				await confirmAndBackToMenu(effectiveChatId, buildCleanSettingsConfirmation(updated));
+				return NextResponse.json({ ok: true });
+			}
+
+			if (current.pendingSpreadTrack && action) {
+				await setTelegramUserSettings(effectiveChatId, { pendingSpreadTrack: null });
+			}
 		}
 
 		// --- text commands ---

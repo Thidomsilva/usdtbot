@@ -18,10 +18,12 @@ export type TelegramUserSettings = {
 	alertTracks: AlertTracks;
 	minSpreadA: number;
 	minSpreadB: number;
+	minSpreadC: number;
 	simCapital: number;
 	silentNight: boolean;
 	silentStart: string;
 	silentEnd: string;
+	pendingSpreadTrack: "a" | "b" | "c" | null;
 	pausedUntil: number | null;
 	alertsThisHour: number;
 	alertsHourReset: number;
@@ -54,10 +56,12 @@ const DEFAULT_SETTINGS: TelegramUserSettings = {
 	alertTracks: { a: true, b: true, c: true },
 	minSpreadA: 0.5,
 	minSpreadB: 2.0,
+	minSpreadC: 0.1,
 	simCapital: 1000,
 	silentNight: false,
 	silentStart: "23:00",
 	silentEnd: "07:00",
+	pendingSpreadTrack: null,
 	pausedUntil: null,
 	alertsThisHour: 0,
 	alertsHourReset: 0,
@@ -129,10 +133,15 @@ function normalizeSettings(value: unknown): TelegramUserSettings {
 		alertTracks: normalizeAlertTracks(c["alertTracks"]),
 		minSpreadA: normalizePositiveNumber(c["minSpreadA"], DEFAULT_SETTINGS.minSpreadA),
 		minSpreadB: normalizePositiveNumber(c["minSpreadB"], DEFAULT_SETTINGS.minSpreadB),
+		minSpreadC: normalizePositiveNumber(c["minSpreadC"], DEFAULT_SETTINGS.minSpreadC),
 		simCapital: normalizePositiveNumber(c["simCapital"], DEFAULT_SETTINGS.simCapital),
 		silentNight: c["silentNight"] === true,
 		silentStart: typeof c["silentStart"] === "string" ? c["silentStart"] : DEFAULT_SETTINGS.silentStart,
 		silentEnd: typeof c["silentEnd"] === "string" ? c["silentEnd"] : DEFAULT_SETTINGS.silentEnd,
+		pendingSpreadTrack:
+			c["pendingSpreadTrack"] === "a" || c["pendingSpreadTrack"] === "b" || c["pendingSpreadTrack"] === "c"
+				? c["pendingSpreadTrack"]
+				: null,
 		pausedUntil: typeof c["pausedUntil"] === "number" ? c["pausedUntil"] : null,
 		alertsThisHour: normalizeEpoch(c["alertsThisHour"]),
 		alertsHourReset: normalizeEpoch(c["alertsHourReset"]),
@@ -225,10 +234,17 @@ export async function setTelegramUserSettings(
 		alertTracks: next.alertTracks !== undefined ? { ...current.alertTracks, ...next.alertTracks } : current.alertTracks,
 		minSpreadA: typeof next.minSpreadA === "number" && next.minSpreadA > 0 ? next.minSpreadA : current.minSpreadA,
 		minSpreadB: typeof next.minSpreadB === "number" && next.minSpreadB > 0 ? next.minSpreadB : current.minSpreadB,
+		minSpreadC: typeof next.minSpreadC === "number" && next.minSpreadC > 0 ? next.minSpreadC : current.minSpreadC,
 		simCapital: typeof next.simCapital === "number" && next.simCapital > 0 ? next.simCapital : current.simCapital,
 		silentNight: typeof next.silentNight === "boolean" ? next.silentNight : current.silentNight,
 		silentStart: typeof next.silentStart === "string" ? next.silentStart : current.silentStart,
 		silentEnd: typeof next.silentEnd === "string" ? next.silentEnd : current.silentEnd,
+		pendingSpreadTrack:
+			next.pendingSpreadTrack === "a" || next.pendingSpreadTrack === "b" || next.pendingSpreadTrack === "c"
+				? next.pendingSpreadTrack
+				: "pendingSpreadTrack" in next
+					? null
+					: current.pendingSpreadTrack,
 		pausedUntil: "pausedUntil" in next ? (next.pausedUntil ?? null) : current.pausedUntil,
 		alertsThisHour: typeof next.alertsThisHour === "number" ? next.alertsThisHour : current.alertsThisHour,
 		alertsHourReset: typeof next.alertsHourReset === "number" ? next.alertsHourReset : current.alertsHourReset,
