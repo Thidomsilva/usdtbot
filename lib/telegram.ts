@@ -1,5 +1,5 @@
 import type { PricesResponse } from "@/lib/types";
-import type { TelegramUserSettings } from "@/lib/telegram-user-settings";
+import { PAUSE_FOREVER, type TelegramUserSettings } from "@/lib/telegram-user-settings";
 import {
 	buildBloqueioMarkup,
 	buildBloqueioMessage,
@@ -18,7 +18,7 @@ const DEFI_BRLA_CACHE_TTL_MS = 15_000;
 const DEFI_BRLA_TIMEOUT_MS = 3_000;
 const SIM_CAPITAL_BRL = 1000;
 
-type TelegramAction = "menu" | "settings" | "usdt" | "usdt_defi" | "scanner" | "help";
+type TelegramAction = "menu" | "settings" | "usdt" | "usdt_defi" | "scanner" | "help" | "status";
 
 type TelegramCallbackAction = "menu" | TelegramAction;
 
@@ -236,6 +236,10 @@ export function parseTelegramAction(text: string | undefined): TelegramAction | 
 		return "scanner";
 	}
 
+	if (["/status", "status"].includes(command) || command.startsWith("/status@")) {
+		return "status";
+	}
+
 	return null;
 }
 
@@ -248,6 +252,7 @@ export function buildTelegramHelpMessage(): string {
 		"/usdt_defi - compra em CEX e venda no DeFiLlama (BRLA)",
 		"/scanner - envia o melhor sinal do scanner completo de moedas",
 		"/settings - configura o monitor por usuario",
+		"/status - mostra o status atual do monitoramento",
 		"/start - abre o menu com os tres modos",
 		"",
 		"Se quiser, eu posso responder automaticamente aos dois comandos no mesmo chat.",
@@ -297,6 +302,23 @@ export function buildTelegramMenuMarkup(): Record<string, unknown> {
 	};
 }
 
+function isAlertsPaused(settings: TelegramUserSettings): boolean {
+	if (settings.pausedUntil === PAUSE_FOREVER) return true;
+	return settings.pausedUntil !== null && settings.pausedUntil > Date.now();
+}
+
+function pauseResumeLabel(settings: TelegramUserSettings): string {
+	if (settings.pausedUntil === PAUSE_FOREVER) return "indefinidamente";
+	if (settings.pausedUntil !== null && settings.pausedUntil > Date.now()) {
+		return new Date(settings.pausedUntil).toLocaleTimeString("pt-BR", {
+			timeZone: "America/Sao_Paulo",
+			hour: "2-digit",
+			minute: "2-digit",
+		});
+	}
+	return "agora";
+}
+
 export function buildTelegramSettingsMessage(options: TelegramUserSettings): string {
 	const autoModeLabel =
 		options.autoSignalsMode === "usdt"
@@ -307,12 +329,14 @@ export function buildTelegramSettingsMessage(options: TelegramUserSettings): str
 					? "🔗 C) USDT -> DeFi"
 					: options.autoSignalsMode === "all"
 						? "🧠 Todas as 3"
-					: "⏸️ Desligado";
+						: "⏸️ Desligado";
 
 	const alertIcon = options.alertsEnabled ? "✅" : "❌";
 	const silentIcon = options.silentNight ? "✅" : "❌";
-	const pausedMsg = options.pausedUntil && options.pausedUntil > Date.now()
-		? `\n⏸️ Pausado até ${new Date(options.pausedUntil).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })}`
+	const pausedMsg = isAlertsPaused(options)
+		? options.pausedUntil === PAUSE_FOREVER
+			? "\n⏸️ Pausado indefinidamente"
+			: `\n⏸️ Pausado até ${pauseResumeLabel(options)}`
 		: "";
 	const planLabel = options.plan === "pro" ? "⭐ Pro" : "🆓 Free";
 	const tracks = options.alertTracks;
@@ -444,8 +468,11 @@ export function buildPauseMenuMarkup(): Record<string, unknown> {
 }
 
 export function buildPauseConfirmMessage(pausedUntil: number | null): string {
-	if (!pausedUntil) {
-		return "🔕 Alertas pausados por tempo indefinido.\nDigite /configurar para reativar.";
+	if (pausedUntil === PAUSE_FOREVER) {
+		return "🔕 Alertas pausados por tempo indefinido.\nDigite /status para checar e retomar quando quiser.";
+	}
+	if (pausedUntil === null) {
+		return "🔔 Alertas retomados.";
 	}
 	const hora = new Date(pausedUntil).toLocaleTimeString("pt-BR", {
 		timeZone: "America/Sao_Paulo",
@@ -453,6 +480,82 @@ export function buildPauseConfirmMessage(pausedUntil: number | null): string {
 		minute: "2-digit",
 	});
 	return `🔕 Alertas pausados. Retomam às ${hora}.`;
+}
+
+export function buildMonitoringStatusMessage(settings: TelegramUserSettings): string {
+	const paused = isAlertsPaused(settings);
+	const silence = settings.silentNight
+		? `${settings.silentStart} — ${settings.silentEnd}`
+		: "desativado";
+
+	if (paused) {
+		const resume = settings.pausedUntil === PAUSE_FOREVER
+			? "indefinidamente"
+			: pauseResumeLabel(settings);
+		return [
+			"📡 <b>MONITORAMENTO PAUSADO 🔕</b>",
+			"",
+			"Trilha A CEX→CEX    ⏸ pausado",
+			"Trilha B Scanner    ⏸ pausado",
+			"Trilha C CEX→DeFi   ⏸ pausado",
+			"",
+			`Retoma em: ${resume}`,
+		].join("\n");
+	}
+
+	if (!settings.alertsEnabled) {
+		return [
+			"📡 <b>MONITORAMENTO DESATIVADO</b>",
+			"",
+			"Trilha A CEX→CEX    ❌ desativada",
+			"Trilha B Scanner    ❌ desativada",
+			"Trilha C CEX→DeFi   ❌ desativada",
+			"",
+			"Ative os alertas para iniciar o monitoramento.",
+		].join("\n");
+	}
+
+	return [
+		"📡 <b>MONITORAMENTO ATIVO</b>",
+		"",
+		`Trilha A CEX→CEX    ${settings.alertTracks.a ? `✅ ${settings.minSpreadA.toFixed(2)}% mín` : "❌ desativada"}`,
+		`Trilha B Scanner    ${settings.alertTracks.b ? `✅ ${settings.minSpreadB.toFixed(2)}% mín` : "❌ desativada"}`,
+		`Trilha C CEX→DeFi   ${settings.alertTracks.c ? `✅ ${settings.minSpreadC.toFixed(2)}% mín` : "❌ desativada"}`,
+		"",
+		`💰 Simulando R$ ${settings.simCapital.toLocaleString("pt-BR")}`,
+		`🔕 Silencio: ${silence}`,
+		"⏱ Verificando a cada 30s",
+		"",
+		"Te aviso quando aparecer oportunidade acima do limite!",
+	].join("\n");
+}
+
+export function buildMonitoringStatusMarkup(settings: TelegramUserSettings): Record<string, unknown> {
+	if (isAlertsPaused(settings)) {
+		return {
+			inline_keyboard: [
+				[
+					{ text: "▶️ Retomar agora", callback_data: "pause:resume" },
+					{ text: "⚙️ Ajustar", callback_data: "settings:open" },
+				],
+				[
+					{ text: "🏠 Menu", callback_data: "mode:menu" },
+				],
+			],
+		};
+	}
+
+	return {
+		inline_keyboard: [
+			[
+				{ text: "⚙️ Ajustar", callback_data: "settings:open" },
+				{ text: "🔕 Pausar tudo", callback_data: "pause:menu" },
+			],
+			[
+				{ text: "🏠 Menu", callback_data: "mode:menu" },
+			],
+		],
+	};
 }
 
 export function buildOnboardingMessage(): string {

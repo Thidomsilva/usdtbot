@@ -286,6 +286,7 @@ export const COOLDOWN_A_MS = 10 * 60 * 1000;    // 10 min
 export const COOLDOWN_B_MS = 15 * 60 * 1000;    // 15 min
 export const COOLDOWN_C_MS = 10 * 60 * 1000;    // 10 min
 export const PAUSE_SPAM_MS = 30 * 60 * 1000;    // auto-pause 30min when limit hit
+export const PAUSE_FOREVER = -1;
 
 function isInSilentHours(settings: TelegramUserSettings): boolean {
 	if (!settings.silentNight) return false;
@@ -321,7 +322,9 @@ export function checkAlertEligibility(
 
 	if (!settings.alertsEnabled) return { allowed: false, reason: "disabled" };
 
-	if (settings.pausedUntil && settings.pausedUntil > now) return { allowed: false, reason: "paused" };
+	if (settings.pausedUntil === PAUSE_FOREVER || (settings.pausedUntil !== null && settings.pausedUntil > now)) {
+		return { allowed: false, reason: "paused" };
+	}
 
 	// Plan check via central temAcesso
 	const planInfo = { plan: settings.plan, planActive: settings.planActive, planExpiresAt: settings.planExpiresAt, trialUsed: settings.trialUsed };

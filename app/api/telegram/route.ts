@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import {
 	buildPauseConfirmMessage,
 	buildPauseMenuMarkup,
+	buildMonitoringStatusMarkup,
+	buildMonitoringStatusMessage,
 	buildScannerSignalMessage,
 	buildTelegramHelpMessage,
 	buildTelegramMenuMarkup,
@@ -20,7 +22,7 @@ import {
 	sendBloqueioMessage,
 	sendTelegramMessage,
 } from "@/lib/telegram";
-import { getTelegramUserSettings, setTelegramUserSettings, type TelegramUserSettings } from "@/lib/telegram-user-settings";
+import { PAUSE_FOREVER, getTelegramUserSettings, setTelegramUserSettings, type TelegramUserSettings } from "@/lib/telegram-user-settings";
 import { temAcesso, isTrialAtivo, TRIAL_DAYS } from "@/lib/plans";
 
 export const runtime = "nodejs";
@@ -114,6 +116,22 @@ async function sendMainMenu(chatId: number | string): Promise<void> {
 	});
 }
 
+async function sendMonitoringStatus(chatId: number | string, settings?: TelegramUserSettings): Promise<void> {
+	const current = settings ?? await getTelegramUserSettings(chatId);
+	await sendTelegramMessage(chatId, buildMonitoringStatusMessage(current), {
+		reply_markup: buildMonitoringStatusMarkup(current),
+	});
+}
+
+async function confirmAndShowStatus(
+	chatId: number | string,
+	message: string,
+	settings?: TelegramUserSettings
+): Promise<void> {
+	await sendTelegramMessage(chatId, message);
+	await sendMonitoringStatus(chatId, settings);
+}
+
 async function confirmAndBackToMenu(chatId: number | string, message: string): Promise<void> {
 	await sendTelegramMessage(chatId, message);
 	await sleep(MENU_RETURN_DELAY_MS);
@@ -121,7 +139,7 @@ async function confirmAndBackToMenu(chatId: number | string, message: string): P
 }
 
 async function handleAction(
-	action: "menu" | "settings" | "help" | "usdt" | "usdt_defi" | "scanner",
+	action: "menu" | "settings" | "help" | "usdt" | "usdt_defi" | "scanner" | "status",
 	baseUrl: string,
 	chatId: number | string
 ) {
@@ -153,6 +171,12 @@ async function handleAction(
 
 	if (action === "help") {
 		await sendTelegramMessage(chatId, buildTelegramHelpMessage());
+		return;
+	}
+
+	if (action === "status") {
+		const settings = await getTelegramUserSettings(chatId);
+		await sendMonitoringStatus(chatId, settings);
 		return;
 	}
 
@@ -299,18 +323,31 @@ export async function POST(request: NextRequest) {
 				autoSignalsMode: mode,
 				pendingSpreadTrack: null,
 			});
-			await confirmAndBackToMenu(effectiveChatId, buildCleanSettingsConfirmation(updated));
+			await confirmAndShowStatus(
+				effectiveChatId,
+				buildCleanSettingsConfirmation(updated),
+				updated
+			);
 			return NextResponse.json({ ok: true });
 		}
 
 		// --- alerts:on / alerts:off ---
 		if (callbackData === "alerts:on" || callbackData === "alerts:off") {
+			const current = await getTelegramUserSettings(effectiveChatId);
 			const enabling = callbackData === "alerts:on";
 			const updated = await setTelegramUserSettings(effectiveChatId, {
 				alertsEnabled: enabling,
+				pausedUntil: enabling ? null : current.pausedUntil,
 				pendingSpreadTrack: null,
 			});
-			await confirmAndBackToMenu(effectiveChatId, buildCleanSettingsConfirmation(updated));
+			const extra = enabling && !current.alertsEnabled
+				? ["📡 Monitoramento iniciado pela primeira vez."]
+				: [];
+			await confirmAndShowStatus(
+				effectiveChatId,
+				buildCleanSettingsConfirmation(updated, extra),
+				updated
+			);
 			return NextResponse.json({ ok: true });
 		}
 
@@ -325,7 +362,11 @@ export async function POST(request: NextRequest) {
 				alertTracks: updatedTracks,
 				pendingSpreadTrack: null,
 			});
-			await confirmAndBackToMenu(effectiveChatId, buildCleanSettingsConfirmation(updated));
+			await confirmAndShowStatus(
+				effectiveChatId,
+				buildCleanSettingsConfirmation(updated),
+				updated
+			);
 			return NextResponse.json({ ok: true });
 		}
 
@@ -337,7 +378,11 @@ export async function POST(request: NextRequest) {
 					minSpreadA: v,
 					pendingSpreadTrack: null,
 				});
-				await confirmAndBackToMenu(effectiveChatId, buildCleanSettingsConfirmation(updated));
+				await confirmAndShowStatus(
+					effectiveChatId,
+					buildCleanSettingsConfirmation(updated),
+					updated
+				);
 			} else {
 				await sendTelegramMessage(
 					effectiveChatId,
@@ -355,7 +400,11 @@ export async function POST(request: NextRequest) {
 					minSpreadB: v,
 					pendingSpreadTrack: null,
 				});
-				await confirmAndBackToMenu(effectiveChatId, buildCleanSettingsConfirmation(updated));
+				await confirmAndShowStatus(
+					effectiveChatId,
+					buildCleanSettingsConfirmation(updated),
+					updated
+				);
 			} else {
 				await sendTelegramMessage(
 					effectiveChatId,
@@ -373,7 +422,11 @@ export async function POST(request: NextRequest) {
 					minSpreadC: v,
 					pendingSpreadTrack: null,
 				});
-				await confirmAndBackToMenu(effectiveChatId, buildCleanSettingsConfirmation(updated));
+				await confirmAndShowStatus(
+					effectiveChatId,
+					buildCleanSettingsConfirmation(updated),
+					updated
+				);
 			} else {
 				await sendTelegramMessage(
 					effectiveChatId,
@@ -391,7 +444,11 @@ export async function POST(request: NextRequest) {
 					simCapital: v,
 					pendingSpreadTrack: null,
 				});
-				await confirmAndBackToMenu(effectiveChatId, buildCleanSettingsConfirmation(updated));
+				await confirmAndShowStatus(
+					effectiveChatId,
+					buildCleanSettingsConfirmation(updated),
+					updated
+				);
 			}
 			return NextResponse.json({ ok: true });
 		}
@@ -402,7 +459,11 @@ export async function POST(request: NextRequest) {
 				silentNight: callbackData === "silent:on",
 				pendingSpreadTrack: null,
 			});
-			await confirmAndBackToMenu(effectiveChatId, buildCleanSettingsConfirmation(updated));
+			await confirmAndShowStatus(
+				effectiveChatId,
+				buildCleanSettingsConfirmation(updated),
+				updated
+			);
 			return NextResponse.json({ ok: true });
 		}
 
@@ -416,6 +477,21 @@ export async function POST(request: NextRequest) {
 			return NextResponse.json({ ok: true });
 		}
 
+		// --- pause:resume ---
+		if (callbackData === "pause:resume") {
+			const updated = await setTelegramUserSettings(effectiveChatId, {
+				alertsEnabled: true,
+				pausedUntil: null,
+				pendingSpreadTrack: null,
+			});
+			await confirmAndShowStatus(
+				effectiveChatId,
+				buildCleanSettingsConfirmation(updated, [buildPauseConfirmMessage(null)]),
+				updated
+			);
+			return NextResponse.json({ ok: true });
+		}
+
 		// --- pause:1h / pause:4h / pause:24h / pause:forever ---
 		if (callbackData.startsWith("pause:") && callbackData !== "pause:menu") {
 			const key = callbackData.split(":")[1];
@@ -424,14 +500,16 @@ export async function POST(request: NextRequest) {
 				key === "1h" ? now + 60 * 60 * 1000
 				: key === "4h" ? now + 4 * 60 * 60 * 1000
 				: key === "24h" ? now + 24 * 60 * 60 * 1000
-				: null; // forever
+				: PAUSE_FOREVER;
 			const updated = await setTelegramUserSettings(effectiveChatId, {
+				alertsEnabled: true,
 				pausedUntil,
 				pendingSpreadTrack: null,
 			});
-			await confirmAndBackToMenu(
+			await confirmAndShowStatus(
 				effectiveChatId,
-				buildCleanSettingsConfirmation(updated, [buildPauseConfirmMessage(pausedUntil)])
+				buildCleanSettingsConfirmation(updated, [buildPauseConfirmMessage(pausedUntil)]),
+				updated
 			);
 			return NextResponse.json({ ok: true });
 		}
@@ -470,7 +548,11 @@ export async function POST(request: NextRequest) {
 					pendingSpreadTrack: null,
 				});
 
-				await confirmAndBackToMenu(effectiveChatId, buildCleanSettingsConfirmation(updated));
+				await confirmAndShowStatus(
+					effectiveChatId,
+					buildCleanSettingsConfirmation(updated),
+					updated
+				);
 				return NextResponse.json({ ok: true });
 			}
 
@@ -495,6 +577,6 @@ export async function POST(request: NextRequest) {
 export async function GET() {
 	return NextResponse.json({
 		ok: true,
-		help: "Envie /start, /usdt, /usdt_defi, /scanner ou /configurar no chat do bot.",
+		help: "Envie /start, /usdt, /usdt_defi, /scanner, /status ou /configurar no chat do bot.",
 	});
 }
