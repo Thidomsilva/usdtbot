@@ -8,9 +8,10 @@ import {
 	isAllowedTelegramChat,
 	sendTelegramMessage,
 } from "@/lib/telegram";
-import { getUserByTelegramChatId } from "@/lib/user-store";
+import { getUserByTelegramChatId, listUsers } from "@/lib/user-store";
 import {
 	checkAlertEligibility,
+	getTelegramUserSettings,
 	listTelegramUserSettings,
 	PAUSE_SPAM_MS,
 	setTelegramUserSettings,
@@ -40,7 +41,6 @@ async function dispatchAlert(
 	track: "a" | "b" | "c"
 ): Promise<{ status: "sent" | "skipped" | "failed"; reason?: string }> {
 	try {
-		const { getTelegramUserSettings } = await import("@/lib/telegram-user-settings");
 		const settings = await getTelegramUserSettings(chatId);
 
 		let scannerKey: string | undefined;
@@ -126,8 +126,26 @@ export async function GET(request: NextRequest) {
 		return NextResponse.json({ error: "Nao autorizado" }, { status: 401 });
 	}
 
-	const users = await listTelegramUserSettings();
+	const settingsEntries = await listTelegramUserSettings();
+	const users = await listUsers();
 	const origin = request.nextUrl.origin;
+
+	const settingsByChatId = new Map(
+		settingsEntries.map((entry) => [entry.chatId, entry.settings] as const)
+	);
+
+	const dispatchChatIds = new Set<string>();
+	for (const user of users) {
+		if (!user.active) continue;
+		if (!user.telegramChatId) continue;
+		dispatchChatIds.add(user.telegramChatId);
+	}
+
+	// Mantem compatibilidade com settings antigos que ainda nao possuem usuario vinculado
+	// (serao descartados no check de vinculo abaixo).
+	for (const entry of settingsEntries) {
+		dispatchChatIds.add(entry.chatId);
+	}
 
 	let sent = 0;
 	let skipped = 0;
@@ -138,8 +156,8 @@ export async function GET(request: NextRequest) {
 	let skippedNoTrackEnabled = 0;
 	const skippedByReason: Record<string, number> = {};
 
-	for (const user of users) {
-		const { chatId, settings } = user;
+	for (const chatId of dispatchChatIds) {
+		const settings = settingsByChatId.get(chatId) ?? (await getTelegramUserSettings(chatId));
 
 		const linkedUser = await getUserByTelegramChatId(chatId);
 		if (!linkedUser) {
@@ -204,6 +222,8 @@ export async function GET(request: NextRequest) {
 	return NextResponse.json({
 		ok: true,
 		total_users: users.length,
+		total_settings: settingsEntries.length,
+		total_dispatch_chats: dispatchChatIds.size,
 		sent,
 		skipped,
 		failed,

@@ -123,6 +123,23 @@ function tracksByAutoMode(mode: "off" | "usdt" | "scanner" | "usdt_defi" | "all"
 	return { a: false, b: false, c: false };
 }
 
+async function saveSpreadWithAutoMonitoring(
+	chatId: number | string,
+	updates: Partial<Pick<TelegramUserSettings, "minSpreadA" | "minSpreadB" | "minSpreadC">>
+): Promise<TelegramUserSettings> {
+	const current = await getTelegramUserSettings(chatId);
+	const shouldAutoEnable = !current.alertsEnabled && current.autoSignalsMode === "off";
+
+	return setTelegramUserSettings(chatId, {
+		...updates,
+		pendingSpreadTrack: null,
+		alertsEnabled: shouldAutoEnable ? true : current.alertsEnabled,
+		autoSignalsMode: shouldAutoEnable ? "all" : current.autoSignalsMode,
+		pausedUntil: shouldAutoEnable ? null : current.pausedUntil,
+		alertTracks: shouldAutoEnable ? tracksByAutoMode("all") : current.alertTracks,
+	});
+}
+
 async function clearPreviousButtons(chatId: number | string, messageId: number | null): Promise<void> {
 	if (messageId === null) return;
 
@@ -724,9 +741,8 @@ export async function POST(request: NextRequest) {
 		if (callbackData.startsWith("spread_a:")) {
 			const v = parseFloat(callbackData.split(":")[1]);
 			if (Number.isFinite(v) && v >= MIN_SPREAD_ALLOWED && v <= MAX_SPREAD_ALLOWED) {
-				const updated = await setTelegramUserSettings(effectiveChatId, {
+				const updated = await saveSpreadWithAutoMonitoring(effectiveChatId, {
 					minSpreadA: v,
-					pendingSpreadTrack: null,
 				});
 				await confirmAndShowStatus(
 					effectiveChatId,
@@ -746,9 +762,8 @@ export async function POST(request: NextRequest) {
 		if (callbackData.startsWith("spread_b:")) {
 			const v = parseFloat(callbackData.split(":")[1]);
 			if (Number.isFinite(v) && v >= MIN_SPREAD_ALLOWED && v <= MAX_SPREAD_ALLOWED) {
-				const updated = await setTelegramUserSettings(effectiveChatId, {
+				const updated = await saveSpreadWithAutoMonitoring(effectiveChatId, {
 					minSpreadB: v,
-					pendingSpreadTrack: null,
 				});
 				await confirmAndShowStatus(
 					effectiveChatId,
@@ -768,9 +783,8 @@ export async function POST(request: NextRequest) {
 		if (callbackData.startsWith("spread_c:")) {
 			const v = parseFloat(callbackData.split(":")[1]);
 			if (Number.isFinite(v) && v >= MIN_SPREAD_ALLOWED && v <= MAX_SPREAD_ALLOWED) {
-				const updated = await setTelegramUserSettings(effectiveChatId, {
+				const updated = await saveSpreadWithAutoMonitoring(effectiveChatId, {
 					minSpreadC: v,
-					pendingSpreadTrack: null,
 				});
 				await confirmAndShowStatus(
 					effectiveChatId,
@@ -891,9 +905,8 @@ export async function POST(request: NextRequest) {
 				}
 
 				const spreadField = spreadFieldByTrack(current.pendingSpreadTrack);
-				const updated = await setTelegramUserSettings(effectiveChatId, {
+				const updated = await saveSpreadWithAutoMonitoring(effectiveChatId, {
 					[spreadField]: parsed,
-					pendingSpreadTrack: null,
 				});
 
 				await confirmAndShowStatus(
