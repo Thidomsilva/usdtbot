@@ -266,28 +266,34 @@ export function buildTelegramAuthRequiredMessage(): string {
 	return [
 		"<b>🔐 Acesso Restrito</b>",
 		"",
-		"━━━━━━━━━━━━━━━━━━━━━━",
 		"Olá! Para usar este bot você precisa se autenticar.",
-		"━━━━━━━━━━━━━━━━━━━━━━",
 		"",
-		"<b>📝 Opção 1: JÁ TEM CADASTRO?</b>",
-		"Use o comando de login:",
-		"<code>/login seu_usuario sua_senha</code>",
+		"Use os botões abaixo para entrar ou criar sua conta.",
 		"",
-		"<b>🆕 Opção 2: PRIMEIRA VEZ?</b>",
-		"Crie uma nova conta:",
-		"<code>/cadastro seu_usuario sua_senha</code>",
-		"",
-		"━━━━━━━━━━━━━━━━━━━━━━",
 		"💡 <i>Depois da autenticação você terá acesso a:</i>",
 		"✅ Menu completo de operações",
 		"✅ Sinais de arbitragem em tempo real",
 		"✅ Monitoramento automático 24/7",
 		"✅ Configuração de preferências",
 		"",
-		"<b>💬 Dúvidas?</b>",
-		"Use /help para ver todos os comandos disponíveis.",
+		"Se preferir, também pode usar:",
+		"<code>/login seu_usuario sua_senha</code>",
+		"<code>/cadastro seu_usuario sua_senha</code>",
 	].join("\n");
+}
+
+export function buildTelegramAuthRequiredMarkup(): Record<string, unknown> {
+	return {
+		inline_keyboard: [
+			[
+				{ text: "🔑 Login", callback_data: "account:login" },
+				{ text: "🆕 Cadastro", callback_data: "account:cadastro" },
+			],
+			[
+				{ text: "❓ Ajuda", callback_data: "account:help" },
+			],
+		],
+	};
 }
 
 export function parseTelegramCredentialsCommand(

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
 	buildTelegramAuthRequiredMessage,
+	buildTelegramAuthRequiredMarkup,
 	buildPauseConfirmMessage,
 	buildPauseMenuMarkup,
 	buildMonitoringStatusMarkup,
@@ -58,7 +59,9 @@ async function sendSettings(chatId: number | string) {
 }
 
 async function sendAuthRequired(chatId: number | string): Promise<void> {
-	await sendTelegramMessage(chatId, buildTelegramAuthRequiredMessage());
+	await sendTelegramMessage(chatId, buildTelegramAuthRequiredMessage(), {
+		reply_markup: buildTelegramAuthRequiredMarkup(),
+	});
 }
 
 function sleep(ms: number): Promise<void> {
@@ -532,6 +535,26 @@ export async function POST(request: NextRequest) {
 					"<code>/cadastro seu_usuario sua_senha</code>",
 				].join("\n")
 			);
+			return NextResponse.json({ ok: true });
+		}
+
+		if (callbackData === "account:cadastro") {
+			conversationStates.set(chatKey, { step: "cadastro_username" });
+			await sendTelegramMessage(
+				effectiveChatId,
+				"👋 Vamos criar sua conta!\n\nDigite o <b>nome de usuário</b> que deseja usar:"
+			);
+			return NextResponse.json({ ok: true });
+		}
+
+		if (callbackData === "account:login") {
+			conversationStates.set(chatKey, { step: "login_username" });
+			await sendTelegramMessage(effectiveChatId, "🔑 Digite seu <b>nome de usuário</b>:");
+			return NextResponse.json({ ok: true });
+		}
+
+		if (callbackData === "account:help") {
+			await sendTelegramMessage(effectiveChatId, buildTelegramHelpMessage());
 			return NextResponse.json({ ok: true });
 		}
 
