@@ -105,18 +105,18 @@ Importante:
 
 ## Telegram
 
-O bot responde a dois comandos:
+O bot trabalha com tres solucoes:
 
-- `/start` abre um menu com os dois botões
-- `/usdt` envia o melhor sinal do monitor USDT/BRL
-- `/scanner` envia o melhor sinal do scanner completo de moedas
+- `A) /usdt` USDT entre CEXs (compra e venda entre corretoras)
+- `B) /scanner` scanner completo de moedas
+- `C) /usdt_defi` compra em CEX e venda no DeFiLlama (BRLA)
+- `/start` abre o menu com as tres opcoes
 - `/settings` abre as configuracoes do usuario no Telegram
 
 Configuracao por usuario (Telegram):
 
-- `Incluir DeFi (BRLA) no monitoramento`: desativado por padrao
-- Quando ativado, o ranking de venda do `UsdtBot` inclui `🔗 DeFi BRLA` com desconto estimado de 0.50%
-- `Envio automatico de sinais`: `UsdtBot`, `Scanner Bot`, `Ambos` ou `Desligado`
+- `Envio automatico de sinais`: `A) USDT entre CEXs`, `B) Scanner`, `C) USDT -> DeFi`, `Todas as 3` ou `Desligado`
+- No modo `C`, a venda no DeFi considera taxa estimada total de 0.50% (swap + slippage)
 
 Envio automatico:
 
