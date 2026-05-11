@@ -12,6 +12,7 @@ import {
 	checkAlertEligibility,
 	type DispatchTrackStatus,
 	getTelegramUserSettings,
+	PAUSE_FOREVER,
 	PAUSE_SPAM_MS,
 	setTelegramUserSettings,
 } from "@/lib/telegram-user-settings";
