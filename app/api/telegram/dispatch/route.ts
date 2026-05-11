@@ -188,8 +188,6 @@ export async function GET(request: NextRequest) {
 		return NextResponse.json({ error: "Nao autorizado" }, { status: 401 });
 	}
 
-	const healMode = request.nextUrl.searchParams.get("heal") === "1";
-
 	const users = await listUsers();
 	const origin = request.nextUrl.origin;
 
@@ -239,16 +237,6 @@ export async function GET(request: NextRequest) {
 
 		let effectiveSettings = settings;
 
-		if (healMode && !effectiveSettings.alertsEnabled && !effectiveSettings.suppressDispatchUntilAuth) {
-			effectiveSettings = await setTelegramUserSettings(chatId, {
-				alertsEnabled: true,
-				autoSignalsMode: effectiveSettings.autoSignalsMode === "off" ? "all" : effectiveSettings.autoSignalsMode,
-				alertTracks: tracksByAutoMode("all"),
-				pausedUntil: null,
-			});
-			autoEnabledMissingSettings++;
-		}
-
 		if (!effectiveSettings.alertsEnabled) {
 			const explicitlyDisabled =
 				effectiveSettings.autoSignalsMode === "off" &&
@@ -263,20 +251,19 @@ export async function GET(request: NextRequest) {
 				(effectiveSettings.alertTracks.a ||
 					effectiveSettings.alertTracks.b ||
 					effectiveSettings.alertTracks.c);
-			const shouldRecoverByHeal = healMode && effectiveSettings.autoSignalsMode === "off";
 			if (
 				!explicitlyDisabled &&
-				(shouldRecoverByMode || shouldRecoverFreshDefault || shouldRecoverInconsistentDisabled || shouldRecoverByHeal)
+				(shouldRecoverByMode || shouldRecoverFreshDefault || shouldRecoverInconsistentDisabled)
 			) {
 				const syncedTracks = shouldRecoverByMode
 					? tracksByAutoMode(effectiveSettings.autoSignalsMode)
-					: shouldRecoverFreshDefault || shouldRecoverInconsistentDisabled || shouldRecoverByHeal
+					: shouldRecoverFreshDefault || shouldRecoverInconsistentDisabled
 						? tracksByAutoMode("all")
 						: effectiveSettings.alertTracks;
 				effectiveSettings = await setTelegramUserSettings(chatId, {
 					alertsEnabled: true,
 					autoSignalsMode:
-						(shouldRecoverFreshDefault || shouldRecoverInconsistentDisabled || shouldRecoverByHeal) &&
+						(shouldRecoverFreshDefault || shouldRecoverInconsistentDisabled) &&
 						effectiveSettings.autoSignalsMode === "off"
 							? "all"
 							: effectiveSettings.autoSignalsMode,
