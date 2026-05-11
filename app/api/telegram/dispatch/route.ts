@@ -12,7 +12,6 @@ import {
 	checkAlertEligibility,
 	type DispatchTrackStatus,
 	getTelegramUserSettings,
-	listTelegramUserSettings,
 	PAUSE_SPAM_MS,
 	setTelegramUserSettings,
 } from "@/lib/telegram-user-settings";
@@ -80,21 +79,6 @@ async function dispatchAlert(
 		let scannerKey: string | undefined;
 		let messageText: string | null = null;
 		let nextSettings = settings;
-
-		if (!nextSettings.alertsEnabled || !nextSettings.alertTracks[track]) {
-			const trackPatch = {
-				a: track === "a" ? true : nextSettings.alertTracks.a,
-				b: track === "b" ? true : nextSettings.alertTracks.b,
-				c: track === "c" ? true : nextSettings.alertTracks.c,
-			};
-
-			nextSettings = await setTelegramUserSettings(chatId, {
-				alertsEnabled: true,
-				autoSignalsMode: nextSettings.autoSignalsMode === "off" ? "all" : nextSettings.autoSignalsMode,
-				alertTracks: trackPatch,
-				pausedUntil: null,
-			});
-		}
 
 		// Build message first (need scannerKey for eligibility check on B)
 		if (track === "b") {
@@ -175,25 +159,14 @@ export async function GET(request: NextRequest) {
 		return NextResponse.json({ error: "Nao autorizado" }, { status: 401 });
 	}
 
-	const settingsEntries = await listTelegramUserSettings();
 	const users = await listUsers();
 	const origin = request.nextUrl.origin;
-
-	const settingsByChatId = new Map(
-		settingsEntries.map((entry) => [entry.chatId, entry.settings] as const)
-	);
 
 	const dispatchChatIds = new Set<string>();
 	for (const user of users) {
 		if (!user.active) continue;
 		if (!user.telegramChatId) continue;
 		dispatchChatIds.add(user.telegramChatId);
-	}
-
-	// Mantem compatibilidade com settings antigos que ainda nao possuem usuario vinculado
-	// (serao descartados no check de vinculo abaixo).
-	for (const entry of settingsEntries) {
-		dispatchChatIds.add(entry.chatId);
 	}
 
 	let sent = 0;
@@ -207,8 +180,7 @@ export async function GET(request: NextRequest) {
 	const skippedByReason: Record<string, number> = {};
 
 	for (const chatId of dispatchChatIds) {
-		const persistedSettings = settingsByChatId.get(chatId);
-		const settings = persistedSettings ?? (await getTelegramUserSettings(chatId));
+		const settings = await getTelegramUserSettings(chatId);
 
 		const linkedUser = await getUserByTelegramChatId(chatId);
 		if (!linkedUser) {
@@ -225,23 +197,14 @@ export async function GET(request: NextRequest) {
 
 		let effectiveSettings = settings;
 
-		if (!persistedSettings) {
-			effectiveSettings = await setTelegramUserSettings(chatId, {
-				autoSignalsMode: "all",
-				alertsEnabled: true,
-				alertTracks: tracksByAutoMode("all"),
-				pausedUntil: null,
-			});
-			autoEnabledMissingSettings++;
-		}
-
-		if (!settings.alertsEnabled && settings.autoSignalsMode !== "off") {
-			const syncedTracks = tracksByAutoMode(settings.autoSignalsMode);
+		if (!effectiveSettings.alertsEnabled && effectiveSettings.autoSignalsMode !== "off") {
+			const syncedTracks = tracksByAutoMode(effectiveSettings.autoSignalsMode);
 			effectiveSettings = await setTelegramUserSettings(chatId, {
 				alertsEnabled: true,
 				alertTracks: syncedTracks,
 				pausedUntil: null,
 			});
+			autoEnabledMissingSettings++;
 		}
 
 		if (!effectiveSettings.alertsEnabled) {
@@ -262,6 +225,7 @@ export async function GET(request: NextRequest) {
 		}
 
 		for (const track of tracks) {
+			effectiveSettings = await getTelegramUserSettings(chatId);
 			const result = await dispatchAlert(chatId, origin, effectiveSettings, track);
 			effectiveSettings = await setTelegramUserSettings(chatId, {
 				...result.settings,
@@ -287,7 +251,7 @@ export async function GET(request: NextRequest) {
 	return NextResponse.json({
 		ok: true,
 		total_users: users.length,
-		total_settings: settingsEntries.length,
+		total_settings: dispatchChatIds.size,
 		total_dispatch_chats: dispatchChatIds.size,
 		sent,
 		skipped,
