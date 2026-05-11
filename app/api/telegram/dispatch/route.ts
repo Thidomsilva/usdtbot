@@ -41,19 +41,6 @@ function tracksByAutoMode(mode: "off" | "usdt" | "scanner" | "usdt_defi" | "all"
 	return { a: false, b: false, c: false };
 }
 
-function hasHistoricalMonitoringEvidence(
-	settings: Awaited<ReturnType<typeof getTelegramUserSettings>>
-): boolean {
-	return Boolean(
-		settings.lastCronAt !== null ||
-		settings.lastDispatchAtA !== null ||
-		settings.lastDispatchAtB !== null ||
-		settings.lastDispatchAtC !== null ||
-		settings.alertsThisHour > 0 ||
-		settings.alertsToday > 0
-	);
-}
-
 function isLikelyFreshDefaultSettings(
 	settings: Awaited<ReturnType<typeof getTelegramUserSettings>>
 ): boolean {
@@ -263,24 +250,23 @@ export async function GET(request: NextRequest) {
 		}
 
 		if (!effectiveSettings.alertsEnabled) {
+			const explicitlyDisabled =
+				effectiveSettings.autoSignalsMode === "off" &&
+				effectiveSettings.pausedUntil === PAUSE_FOREVER &&
+				!effectiveSettings.alertTracks.a &&
+				!effectiveSettings.alertTracks.b &&
+				!effectiveSettings.alertTracks.c;
 			const shouldRecoverByMode = effectiveSettings.autoSignalsMode !== "off";
-			const shouldRecoverByHistory = hasHistoricalMonitoringEvidence(effectiveSettings);
 			const shouldRecoverFreshDefault = isLikelyFreshDefaultSettings(effectiveSettings);
 			const shouldRecoverInconsistentDisabled =
 				effectiveSettings.pausedUntil === null &&
 				(effectiveSettings.alertTracks.a ||
 					effectiveSettings.alertTracks.b ||
 					effectiveSettings.alertTracks.c);
-			const shouldRecoverByHeal =
-				healMode &&
-				effectiveSettings.autoSignalsMode === "off" &&
-				!shouldRecoverByHistory;
+			const shouldRecoverByHeal = healMode && effectiveSettings.autoSignalsMode === "off";
 			if (
-				shouldRecoverByMode ||
-				shouldRecoverByHistory ||
-				shouldRecoverFreshDefault ||
-				shouldRecoverInconsistentDisabled ||
-				shouldRecoverByHeal
+				!explicitlyDisabled &&
+				(shouldRecoverByMode || shouldRecoverFreshDefault || shouldRecoverInconsistentDisabled || shouldRecoverByHeal)
 			) {
 				const syncedTracks = shouldRecoverByMode
 					? tracksByAutoMode(effectiveSettings.autoSignalsMode)
