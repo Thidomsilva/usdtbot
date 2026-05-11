@@ -55,8 +55,7 @@ function isLikelyFreshDefaultSettings(
 		settings.minSpreadC === 0.1 &&
 		settings.simCapital === 1000 &&
 		settings.silentNight === false &&
-		settings.pausedUntil === null &&
-		!hasHistoricalMonitoringEvidence(settings)
+		settings.pausedUntil === null
 	);
 }
 
