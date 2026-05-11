@@ -23,7 +23,14 @@ export const dynamic = "force-dynamic";
 function isAuthorized(request: NextRequest): boolean {
 	const secret = process.env.CRON_SECRET?.trim();
 	if (!secret) return true;
-	return request.headers.get("authorization") === `Bearer ${secret}`;
+
+	const authHeader = request.headers.get("authorization");
+	if (authHeader === `Bearer ${secret}`) return true;
+
+	// Fallback para cron nativo da Vercel quando Authorization nao estiver presente.
+	if (request.headers.get("x-vercel-cron") === "1") return true;
+
+	return false;
 }
 
 function tracksByAutoMode(mode: "off" | "usdt" | "scanner" | "usdt_defi" | "all") {
