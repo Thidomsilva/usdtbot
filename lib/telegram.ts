@@ -183,11 +183,24 @@ async function fetchJson<T>(url: URL): Promise<T> {
 		}
 	}
 
-	const response = await fetch(url, {
+	const requestInit = {
 		method: "GET",
-		cache: "no-store",
+		cache: "no-store" as const,
 		headers,
-	});
+	};
+
+	let response = await fetch(url, requestInit);
+
+	// Some deployment/proxy setups may reject custom Authorization on internal API calls.
+	// If that happens, retry once without Authorization before failing.
+	if (response.status === 401 && headers.authorization) {
+		const retryHeaders = { ...headers };
+		delete retryHeaders.authorization;
+		response = await fetch(url, {
+			...requestInit,
+			headers: retryHeaders,
+		});
+	}
 
 	if (!response.ok) {
 		throw new Error(`HTTP ${response.status}`);
