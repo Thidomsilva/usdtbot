@@ -387,6 +387,56 @@ function pauseResumeLabel(settings: TelegramUserSettings): string {
 	return "agora";
 }
 
+function formatDispatchTime(epochMs: number): string {
+	return new Date(epochMs).toLocaleTimeString("pt-BR", {
+		timeZone: "America/Sao_Paulo",
+		hour: "2-digit",
+		minute: "2-digit",
+	});
+}
+
+function simplifyDispatchReason(reason: string | null): string {
+	if (!reason) return "sem detalhes";
+	const normalized = reason.replace(/^track_[abc]_/, "");
+
+	if (normalized === "no_spread_or_data") return "sem oportunidade acima do minimo";
+	if (normalized === "cooldown") return "aguardando cooldown";
+	if (normalized === "paused") return "monitor pausado";
+	if (normalized === "silent") return "silencio noturno";
+	if (normalized === "ratelimit") return "limite horario atingido";
+	if (normalized === "plan") return "limitado pelo plano";
+	if (normalized === "disabled") return "trilha desativada";
+	if (normalized === "exception") return "erro interno";
+	if (normalized === "message_empty") return "mensagem vazia";
+
+	return normalized;
+}
+
+function buildTrackDispatchStatusLine(params: {
+	label: "A" | "B" | "C";
+	enabled: boolean;
+	hasAccess: boolean;
+	at: number | null;
+	status: "sent" | "skipped" | "failed" | null;
+	reason: string | null;
+}): string | null {
+	if (!params.enabled || !params.hasAccess) return null;
+	if (params.at === null || params.status === null) {
+		return `${params.label}: aguardando primeira verificacao`;
+	}
+
+	const when = formatDispatchTime(params.at);
+	if (params.status === "sent") {
+		return `${params.label}: ${when} enviado ✅`;
+	}
+
+	if (params.status === "failed") {
+		return `${params.label}: ${when} falhou (${simplifyDispatchReason(params.reason)})`;
+	}
+
+	return `${params.label}: ${when} sem envio (${simplifyDispatchReason(params.reason)})`;
+}
+
 export function buildTelegramSettingsMessage(options: TelegramUserSettings): string {
 	const autoModeLabel =
 		options.autoSignalsMode === "usdt"
@@ -569,6 +619,32 @@ export function buildMonitoringStatusMessage(settings: TelegramUserSettings): st
 	const hasAccessB = temAcesso(planInfo, "trilha_b");
 	const hasAccessC = temAcesso(planInfo, "trilha_c");
 	const effectiveMinSpreadA = spreadMinimoEfetivo(planInfo, settings.minSpreadA);
+	const dispatchLines = [
+		buildTrackDispatchStatusLine({
+			label: "A",
+			enabled: settings.alertTracks.a,
+			hasAccess: hasAccessA,
+			at: settings.lastDispatchAtA,
+			status: settings.lastDispatchStatusA,
+			reason: settings.lastDispatchReasonA,
+		}),
+		buildTrackDispatchStatusLine({
+			label: "B",
+			enabled: settings.alertTracks.b,
+			hasAccess: hasAccessB,
+			at: settings.lastDispatchAtB,
+			status: settings.lastDispatchStatusB,
+			reason: settings.lastDispatchReasonB,
+		}),
+		buildTrackDispatchStatusLine({
+			label: "C",
+			enabled: settings.alertTracks.c,
+			hasAccess: hasAccessC,
+			at: settings.lastDispatchAtC,
+			status: settings.lastDispatchStatusC,
+			reason: settings.lastDispatchReasonC,
+		}),
+	].filter((line): line is string => Boolean(line));
 
 	if (paused) {
 		const resume = settings.pausedUntil === PAUSE_FOREVER
@@ -607,6 +683,9 @@ export function buildMonitoringStatusMessage(settings: TelegramUserSettings): st
 		`💰 Simulando R$ ${settings.simCapital.toLocaleString("pt-BR")}`,
 		`🔕 Silencio: ${silence}`,
 		"⏱ Verificando a cada 1 min",
+		...(dispatchLines.length > 0
+			? ["", "🧪 Ultima verificacao automatica", ...dispatchLines]
+			: []),
 		"",
 		"Te aviso quando aparecer oportunidade acima do limite!",
 	].join("\n");

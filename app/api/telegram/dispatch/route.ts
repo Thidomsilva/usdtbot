@@ -11,6 +11,7 @@ import {
 import { getUserByTelegramChatId, listUsers } from "@/lib/user-store";
 import {
 	checkAlertEligibility,
+	type DispatchTrackStatus,
 	getTelegramUserSettings,
 	listTelegramUserSettings,
 	PAUSE_SPAM_MS,
@@ -33,6 +34,37 @@ function tracksByAutoMode(mode: "off" | "usdt" | "scanner" | "usdt_defi" | "all"
 	if (mode === "usdt_defi") return { a: false, b: false, c: true };
 	if (mode === "all") return { a: true, b: true, c: true };
 	return { a: false, b: false, c: false };
+}
+
+function buildDispatchTrackPatch(
+	track: "a" | "b" | "c",
+	status: DispatchTrackStatus,
+	reason?: string
+) {
+	const now = Date.now();
+	const normalizedReason = reason ?? null;
+
+	if (track === "a") {
+		return {
+			lastDispatchAtA: now,
+			lastDispatchStatusA: status,
+			lastDispatchReasonA: normalizedReason,
+		};
+	}
+
+	if (track === "b") {
+		return {
+			lastDispatchAtB: now,
+			lastDispatchStatusB: status,
+			lastDispatchReasonB: normalizedReason,
+		};
+	}
+
+	return {
+		lastDispatchAtC: now,
+		lastDispatchStatusC: status,
+		lastDispatchReasonC: normalizedReason,
+	};
 }
 
 async function dispatchAlert(
@@ -233,7 +265,10 @@ export async function GET(request: NextRequest) {
 
 		for (const track of tracks) {
 			const result = await dispatchAlert(chatId, origin, effectiveSettings, track);
-			effectiveSettings = result.settings;
+			effectiveSettings = await setTelegramUserSettings(chatId, {
+				...result.settings,
+				...buildDispatchTrackPatch(track, result.status, result.reason),
+			});
 			if (result.status === "sent") {
 				sent++;
 				continue;

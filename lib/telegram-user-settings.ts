@@ -6,6 +6,7 @@ import { createClient as createSupabaseClient, type SupabaseClient } from "@supa
 import { createClient as createRedisClient, type RedisClientType } from "redis";
 
 export type AlertTracks = { a: boolean; b: boolean; c: boolean };
+export type DispatchTrackStatus = "sent" | "skipped" | "failed" | null;
 export type { UserPlan };
 
 export type TelegramUserSettings = {
@@ -35,6 +36,15 @@ export type TelegramUserSettings = {
 	lastAlertA: number | null;
 	lastAlertB: Record<string, number>;
 	lastAlertC: number | null;
+	lastDispatchAtA: number | null;
+	lastDispatchAtB: number | null;
+	lastDispatchAtC: number | null;
+	lastDispatchStatusA: DispatchTrackStatus;
+	lastDispatchStatusB: DispatchTrackStatus;
+	lastDispatchStatusC: DispatchTrackStatus;
+	lastDispatchReasonA: string | null;
+	lastDispatchReasonB: string | null;
+	lastDispatchReasonC: string | null;
 	plan: UserPlan;
 	// extended plan fields
 	planActive: boolean;
@@ -75,6 +85,15 @@ const DEFAULT_SETTINGS: TelegramUserSettings = {
 	lastAlertA: null,
 	lastAlertB: {},
 	lastAlertC: null,
+	lastDispatchAtA: null,
+	lastDispatchAtB: null,
+	lastDispatchAtC: null,
+	lastDispatchStatusA: null,
+	lastDispatchStatusB: null,
+	lastDispatchStatusC: null,
+	lastDispatchReasonA: null,
+	lastDispatchReasonB: null,
+	lastDispatchReasonC: null,
 	plan: "free",
 	planActive: true,
 	planExpiresAt: null,
@@ -242,6 +261,11 @@ function normalizeEpoch(value: unknown): number {
 	return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
+function normalizeDispatchStatus(value: unknown): DispatchTrackStatus {
+	if (value === "sent" || value === "skipped" || value === "failed") return value;
+	return null;
+}
+
 function normalizeSettings(value: unknown): TelegramUserSettings {
 	if (!value || typeof value !== "object") {
 		return cloneDefaultSettings();
@@ -285,6 +309,15 @@ function normalizeSettings(value: unknown): TelegramUserSettings {
 			? (c["lastAlertB"] as Record<string, number>)
 			: {},
 		lastAlertC: typeof c["lastAlertC"] === "number" ? c["lastAlertC"] : null,
+		lastDispatchAtA: typeof c["lastDispatchAtA"] === "number" ? c["lastDispatchAtA"] : null,
+		lastDispatchAtB: typeof c["lastDispatchAtB"] === "number" ? c["lastDispatchAtB"] : null,
+		lastDispatchAtC: typeof c["lastDispatchAtC"] === "number" ? c["lastDispatchAtC"] : null,
+		lastDispatchStatusA: normalizeDispatchStatus(c["lastDispatchStatusA"]),
+		lastDispatchStatusB: normalizeDispatchStatus(c["lastDispatchStatusB"]),
+		lastDispatchStatusC: normalizeDispatchStatus(c["lastDispatchStatusC"]),
+		lastDispatchReasonA: typeof c["lastDispatchReasonA"] === "string" ? c["lastDispatchReasonA"] : null,
+		lastDispatchReasonB: typeof c["lastDispatchReasonB"] === "string" ? c["lastDispatchReasonB"] : null,
+		lastDispatchReasonC: typeof c["lastDispatchReasonC"] === "string" ? c["lastDispatchReasonC"] : null,
 		plan: c["plan"] === "pro" ? "pro" : c["plan"] === "admin" ? "admin" : "free",
 		planActive: c["planActive"] !== false,
 		planExpiresAt: typeof c["planExpiresAt"] === "number" ? c["planExpiresAt"] : null,
@@ -463,6 +496,39 @@ export async function setTelegramUserSettings(
 		lastAlertA: "lastAlertA" in next ? (next.lastAlertA ?? null) : current.lastAlertA,
 		lastAlertB: next.lastAlertB !== undefined ? { ...current.lastAlertB, ...next.lastAlertB } : current.lastAlertB,
 		lastAlertC: "lastAlertC" in next ? (next.lastAlertC ?? null) : current.lastAlertC,
+		lastDispatchAtA: "lastDispatchAtA" in next ? (next.lastDispatchAtA ?? null) : current.lastDispatchAtA,
+		lastDispatchAtB: "lastDispatchAtB" in next ? (next.lastDispatchAtB ?? null) : current.lastDispatchAtB,
+		lastDispatchAtC: "lastDispatchAtC" in next ? (next.lastDispatchAtC ?? null) : current.lastDispatchAtC,
+		lastDispatchStatusA:
+			next.lastDispatchStatusA === "sent" || next.lastDispatchStatusA === "skipped" || next.lastDispatchStatusA === "failed"
+				? next.lastDispatchStatusA
+				: "lastDispatchStatusA" in next
+					? null
+					: current.lastDispatchStatusA,
+		lastDispatchStatusB:
+			next.lastDispatchStatusB === "sent" || next.lastDispatchStatusB === "skipped" || next.lastDispatchStatusB === "failed"
+				? next.lastDispatchStatusB
+				: "lastDispatchStatusB" in next
+					? null
+					: current.lastDispatchStatusB,
+		lastDispatchStatusC:
+			next.lastDispatchStatusC === "sent" || next.lastDispatchStatusC === "skipped" || next.lastDispatchStatusC === "failed"
+				? next.lastDispatchStatusC
+				: "lastDispatchStatusC" in next
+					? null
+					: current.lastDispatchStatusC,
+		lastDispatchReasonA:
+			typeof next.lastDispatchReasonA === "string" || next.lastDispatchReasonA === null
+				? (next.lastDispatchReasonA ?? null)
+				: current.lastDispatchReasonA,
+		lastDispatchReasonB:
+			typeof next.lastDispatchReasonB === "string" || next.lastDispatchReasonB === null
+				? (next.lastDispatchReasonB ?? null)
+				: current.lastDispatchReasonB,
+		lastDispatchReasonC:
+			typeof next.lastDispatchReasonC === "string" || next.lastDispatchReasonC === null
+				? (next.lastDispatchReasonC ?? null)
+				: current.lastDispatchReasonC,
 		plan: next.plan === "free" || next.plan === "pro" || next.plan === "admin" ? next.plan : current.plan,
 		planActive: typeof next.planActive === "boolean" ? next.planActive : current.planActive,
 		planExpiresAt: "planExpiresAt" in next ? (next.planExpiresAt ?? null) : current.planExpiresAt,
