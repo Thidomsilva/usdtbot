@@ -179,6 +179,8 @@ export async function GET(request: NextRequest) {
 		return NextResponse.json({ error: "Nao autorizado" }, { status: 401 });
 	}
 
+	const healMode = request.nextUrl.searchParams.get("heal") === "1";
+
 	const users = await listUsers();
 	const origin = request.nextUrl.origin;
 
@@ -220,12 +222,22 @@ export async function GET(request: NextRequest) {
 		if (!effectiveSettings.alertsEnabled) {
 			const shouldRecoverByMode = effectiveSettings.autoSignalsMode !== "off";
 			const shouldRecoverByHistory = hasHistoricalMonitoringEvidence(effectiveSettings);
-			if (shouldRecoverByMode || shouldRecoverByHistory) {
+			const shouldRecoverByHeal =
+				healMode &&
+				effectiveSettings.autoSignalsMode === "off" &&
+				!shouldRecoverByHistory;
+			if (shouldRecoverByMode || shouldRecoverByHistory || shouldRecoverByHeal) {
 				const syncedTracks = shouldRecoverByMode
 					? tracksByAutoMode(effectiveSettings.autoSignalsMode)
-					: effectiveSettings.alertTracks;
+					: shouldRecoverByHeal
+						? tracksByAutoMode("all")
+						: effectiveSettings.alertTracks;
 				effectiveSettings = await setTelegramUserSettings(chatId, {
 					alertsEnabled: true,
+					autoSignalsMode:
+						shouldRecoverByHeal && effectiveSettings.autoSignalsMode === "off"
+							? "all"
+							: effectiveSettings.autoSignalsMode,
 					alertTracks: syncedTracks,
 					pausedUntil: null,
 				});
