@@ -295,7 +295,6 @@ export async function GET(request: NextRequest) {
 		}
 
 		for (const track of tracks) {
-			effectiveSettings = await getTelegramUserSettings(chatId);
 			// Sempre registra que o cron passou por este usuario nesta rodada.
 			if (effectiveSettings.lastCronAt === null || Date.now() - effectiveSettings.lastCronAt > 30_000) {
 				effectiveSettings = await setTelegramUserSettings(chatId, { lastCronAt: Date.now() });
