@@ -157,6 +157,18 @@ async function clearPreviousButtons(chatId: number | string, messageId: number |
 	}
 }
 
+async function deleteIncomingMessageIfPossible(
+	chatId: number | string,
+	messageId: number | null
+): Promise<void> {
+	if (messageId === null) return;
+	try {
+		await deleteTelegramMessage(chatId, messageId);
+	} catch {
+		// Ignore: bot may not have permission in some chat types.
+	}
+}
+
 async function sendMainMenu(chatId: number | string): Promise<void> {
 	await sendTelegramMessage(chatId, buildTelegramMenuMessage(), {
 		reply_markup: buildTelegramMenuMarkup(),
@@ -299,6 +311,7 @@ export async function POST(request: NextRequest) {
 	const callbackData = callbackQuery?.data ?? "";
 	const callbackMessageId =
 		typeof callbackQuery?.message?.message_id === "number" ? callbackQuery.message.message_id : null;
+	const incomingMessageId = typeof update?.message?.message_id === "number" ? update.message.message_id : null;
 	const effectiveChatId = chatId ?? callbackQuery?.message?.chat?.id ?? null;
 	const messageText =
 		typeof update?.message?.text === "string" ? update.message.text.trim() : "";
@@ -324,6 +337,7 @@ export async function POST(request: NextRequest) {
 		// Fluxo conversacional: estado ativo
 		if (convState && messageText && !messageText.startsWith("/")) {
 			if (convState.step === "cadastro_username") {
+				await deleteIncomingMessageIfPossible(effectiveChatId, incomingMessageId);
 				const username = messageText.trim().toLowerCase();
 				const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(username);
 				if (!isEmail) {
@@ -342,6 +356,7 @@ export async function POST(request: NextRequest) {
 			}
 
 			if (convState.step === "cadastro_password") {
+				await deleteIncomingMessageIfPossible(effectiveChatId, incomingMessageId);
 				const password = messageText.trim();
 				conversationStates.delete(chatKey);
 				try {
@@ -386,6 +401,7 @@ export async function POST(request: NextRequest) {
 			}
 
 			if (convState.step === "login_username") {
+				await deleteIncomingMessageIfPossible(effectiveChatId, incomingMessageId);
 				const username = messageText.trim().toLowerCase();
 				conversationStates.set(chatKey, { step: "login_password", username });
 				await sendTelegramMessage(effectiveChatId, "🔒 Agora digite sua <b>senha</b>:");
@@ -393,6 +409,7 @@ export async function POST(request: NextRequest) {
 			}
 
 			if (convState.step === "login_password") {
+				await deleteIncomingMessageIfPossible(effectiveChatId, incomingMessageId);
 				const password = messageText.trim();
 				conversationStates.delete(chatKey);
 				const user = await linkTelegramChatToUser({
@@ -445,6 +462,7 @@ export async function POST(request: NextRequest) {
 		}
 
 		if (credentialsCommand) {
+			await deleteIncomingMessageIfPossible(effectiveChatId, incomingMessageId);
 			if (!credentialsCommand.username || !credentialsCommand.password) {
 				await sendTelegramMessage(
 					effectiveChatId,
