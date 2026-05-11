@@ -241,6 +241,16 @@ export async function GET(request: NextRequest) {
 
 		let effectiveSettings = settings;
 
+		if (healMode && !effectiveSettings.alertsEnabled) {
+			effectiveSettings = await setTelegramUserSettings(chatId, {
+				alertsEnabled: true,
+				autoSignalsMode: effectiveSettings.autoSignalsMode === "off" ? "all" : effectiveSettings.autoSignalsMode,
+				alertTracks: tracksByAutoMode("all"),
+				pausedUntil: null,
+			});
+			autoEnabledMissingSettings++;
+		}
+
 		if (!effectiveSettings.alertsEnabled) {
 			const shouldRecoverByMode = effectiveSettings.autoSignalsMode !== "off";
 			const shouldRecoverByHistory = hasHistoricalMonitoringEvidence(effectiveSettings);
