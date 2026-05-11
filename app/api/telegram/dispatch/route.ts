@@ -50,14 +50,29 @@ async function dispatchAlert(
 		let messageText: string | null = null;
 		let nextSettings = settings;
 
+		if (!nextSettings.alertsEnabled || !nextSettings.alertTracks[track]) {
+			const trackPatch = {
+				a: track === "a" ? true : nextSettings.alertTracks.a,
+				b: track === "b" ? true : nextSettings.alertTracks.b,
+				c: track === "c" ? true : nextSettings.alertTracks.c,
+			};
+
+			nextSettings = await setTelegramUserSettings(chatId, {
+				alertsEnabled: true,
+				autoSignalsMode: nextSettings.autoSignalsMode === "off" ? "all" : nextSettings.autoSignalsMode,
+				alertTracks: trackPatch,
+				pausedUntil: null,
+			});
+		}
+
 		// Build message first (need scannerKey for eligibility check on B)
 		if (track === "b") {
-			const result = await buildAlertScannerMessage(origin, settings);
+			const result = await buildAlertScannerMessage(origin, nextSettings);
 			if (!result) return { status: "skipped", reason: "track_b_no_spread_or_data", settings: nextSettings };
 			scannerKey = result.key;
 			// spread threshold already checked inside buildAlertScannerMessage via settings.minSpreadB
 			// but we still need to check eligibility (cooldown/limits)
-			const check = checkAlertEligibility(settings, "b", scannerKey);
+			const check = checkAlertEligibility(nextSettings, "b", scannerKey);
 			if (!check.allowed) return { status: "skipped", reason: `track_b_${check.reason}`, settings: nextSettings };
 			messageText = result.message;
 			nextSettings = await setTelegramUserSettings(chatId, check.updates);
@@ -70,17 +85,17 @@ async function dispatchAlert(
 				);
 			}
 		} else if (track === "a") {
-			const check = checkAlertEligibility(settings, "a");
+			const check = checkAlertEligibility(nextSettings, "a");
 			if (!check.allowed) return { status: "skipped", reason: `track_a_${check.reason}`, settings: nextSettings };
 			const planInfo = {
-				plan: settings.plan,
-				planActive: settings.planActive,
-				planExpiresAt: settings.planExpiresAt,
-				trialUsed: settings.trialUsed,
+				plan: nextSettings.plan,
+				planActive: nextSettings.planActive,
+				planExpiresAt: nextSettings.planExpiresAt,
+				trialUsed: nextSettings.trialUsed,
 			};
-			const effectiveMinSpreadA = spreadMinimoEfetivo(planInfo, settings.minSpreadA);
+			const effectiveMinSpreadA = spreadMinimoEfetivo(planInfo, nextSettings.minSpreadA);
 
-			messageText = await buildAlertUsdtMessage(origin, settings, effectiveMinSpreadA);
+			messageText = await buildAlertUsdtMessage(origin, nextSettings, effectiveMinSpreadA);
 			if (!messageText) return { status: "skipped", reason: "track_a_no_spread_or_data", settings: nextSettings };
 
 			nextSettings = await setTelegramUserSettings(chatId, check.updates);
@@ -94,10 +109,10 @@ async function dispatchAlert(
 			}
 		} else {
 			// track C
-			const check = checkAlertEligibility(settings, "c");
+			const check = checkAlertEligibility(nextSettings, "c");
 			if (!check.allowed) return { status: "skipped", reason: `track_c_${check.reason}`, settings: nextSettings };
 
-			messageText = await buildAlertUsdtDefiMessage(origin, settings);
+			messageText = await buildAlertUsdtDefiMessage(origin, nextSettings);
 			if (!messageText) return { status: "skipped", reason: "track_c_no_spread_or_data", settings: nextSettings }; // returns null when spread <= 0
 
 			nextSettings = await setTelegramUserSettings(chatId, check.updates);
