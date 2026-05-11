@@ -396,6 +396,7 @@ export async function POST(request: NextRequest) {
 						password,
 						chatId: effectiveChatId,
 					});
+					await setTelegramUserSettings(effectiveChatId, { suppressDispatchUntilAuth: false });
 					await sendTelegramMessage(
 						effectiveChatId,
 						[
@@ -459,6 +460,7 @@ export async function POST(request: NextRequest) {
 						].join("\n")
 					);
 				} else {
+					await setTelegramUserSettings(effectiveChatId, { suppressDispatchUntilAuth: false });
 					await sendTelegramMessage(
 						effectiveChatId,
 						[
@@ -512,6 +514,7 @@ export async function POST(request: NextRequest) {
 						password: credentialsCommand.password,
 						chatId: effectiveChatId,
 					});
+					await setTelegramUserSettings(effectiveChatId, { suppressDispatchUntilAuth: false });
 					await sendTelegramMessage(
 						effectiveChatId,
 						[
@@ -577,6 +580,8 @@ export async function POST(request: NextRequest) {
 			}
 
 			await sendTelegramMessage(
+			await setTelegramUserSettings(effectiveChatId, { suppressDispatchUntilAuth: false });
+			await sendTelegramMessage(
 				effectiveChatId,
 				[
 					"<b>🔓 Login Realizado com Sucesso!</b>",
@@ -604,6 +609,7 @@ export async function POST(request: NextRequest) {
 				autoSignalsMode: "off",
 				alertsEnabled: false,
 				alertTracks: { a: false, b: false, c: false },
+				suppressDispatchUntilAuth: true,
 				pausedUntil: PAUSE_FOREVER,
 				pendingSpreadTrack: null,
 			});
@@ -686,6 +692,7 @@ export async function POST(request: NextRequest) {
 				autoSignalsMode: "off",
 				alertsEnabled: false,
 				alertTracks: { a: false, b: false, c: false },
+				suppressDispatchUntilAuth: true,
 				pausedUntil: PAUSE_FOREVER,
 				pendingSpreadTrack: null,
 			});

@@ -225,6 +225,11 @@ export async function GET(request: NextRequest) {
 
 	for (const chatId of dispatchChatIds) {
 		const settings = await getTelegramUserSettings(chatId);
+		if (settings.suppressDispatchUntilAuth) {
+			skipped++;
+			skippedByReason["logged_out_waiting_auth"] = (skippedByReason["logged_out_waiting_auth"] ?? 0) + 1;
+			continue;
+		}
 		if (settings.pendingAuthStep) {
 			skipped++;
 			skippedByReason[`auth_in_progress_${settings.pendingAuthStep}`] =
@@ -247,7 +252,7 @@ export async function GET(request: NextRequest) {
 
 		let effectiveSettings = settings;
 
-		if (healMode && !effectiveSettings.alertsEnabled) {
+		if (healMode && !effectiveSettings.alertsEnabled && !effectiveSettings.suppressDispatchUntilAuth) {
 			effectiveSettings = await setTelegramUserSettings(chatId, {
 				alertsEnabled: true,
 				autoSignalsMode: effectiveSettings.autoSignalsMode === "off" ? "all" : effectiveSettings.autoSignalsMode,

@@ -30,6 +30,7 @@ export type TelegramUserSettings = {
 	pendingSpreadTrack: "a" | "b" | "c" | null;
 	pendingAuthStep: "cadastro_username" | "cadastro_password" | "login_username" | "login_password" | null;
 	pendingAuthUsername: string | null;
+	suppressDispatchUntilAuth: boolean;
 	pausedUntil: number | null;
 	alertsThisHour: number;
 	alertsHourReset: number;
@@ -82,6 +83,7 @@ const DEFAULT_SETTINGS: TelegramUserSettings = {
 	pendingSpreadTrack: null,
 	pendingAuthStep: null,
 	pendingAuthUsername: null,
+	suppressDispatchUntilAuth: false,
 	pausedUntil: null,
 	alertsThisHour: 0,
 	alertsHourReset: 0,
@@ -313,6 +315,7 @@ function normalizeSettings(value: unknown): TelegramUserSettings {
 				? c["pendingAuthStep"]
 				: null,
 		pendingAuthUsername: typeof c["pendingAuthUsername"] === "string" ? c["pendingAuthUsername"] : null,
+		suppressDispatchUntilAuth: c["suppressDispatchUntilAuth"] === true,
 		pausedUntil: typeof c["pausedUntil"] === "number" ? c["pausedUntil"] : null,
 		alertsThisHour: normalizeEpoch(c["alertsThisHour"]),
 		alertsHourReset: normalizeEpoch(c["alertsHourReset"]),
@@ -516,6 +519,10 @@ export async function setTelegramUserSettings(
 			typeof next.pendingAuthUsername === "string" || next.pendingAuthUsername === null
 				? (next.pendingAuthUsername ?? null)
 				: current.pendingAuthUsername,
+		suppressDispatchUntilAuth:
+			typeof next.suppressDispatchUntilAuth === "boolean"
+				? next.suppressDispatchUntilAuth
+				: current.suppressDispatchUntilAuth,
 		pausedUntil: "pausedUntil" in next ? (next.pausedUntil ?? null) : current.pausedUntil,
 		alertsThisHour: typeof next.alertsThisHour === "number" ? next.alertsThisHour : current.alertsThisHour,
 		alertsHourReset: typeof next.alertsHourReset === "number" ? next.alertsHourReset : current.alertsHourReset,
