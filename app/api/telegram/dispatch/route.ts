@@ -38,28 +38,32 @@ function tracksByAutoMode(mode: "off" | "usdt" | "scanner" | "usdt_defi" | "all"
 async function dispatchAlert(
 	chatId: string,
 	origin: string,
+	settings: Awaited<ReturnType<typeof getTelegramUserSettings>>,
 	track: "a" | "b" | "c"
-): Promise<{ status: "sent" | "skipped" | "failed"; reason?: string }> {
+): Promise<{
+	status: "sent" | "skipped" | "failed";
+	reason?: string;
+	settings: Awaited<ReturnType<typeof getTelegramUserSettings>>;
+}> {
 	try {
-		const settings = await getTelegramUserSettings(chatId);
-
 		let scannerKey: string | undefined;
 		let messageText: string | null = null;
+		let nextSettings = settings;
 
 		// Build message first (need scannerKey for eligibility check on B)
 		if (track === "b") {
 			const result = await buildAlertScannerMessage(origin, settings);
-			if (!result) return { status: "skipped", reason: "track_b_no_spread_or_data" };
+			if (!result) return { status: "skipped", reason: "track_b_no_spread_or_data", settings: nextSettings };
 			scannerKey = result.key;
 			// spread threshold already checked inside buildAlertScannerMessage via settings.minSpreadB
 			// but we still need to check eligibility (cooldown/limits)
 			const check = checkAlertEligibility(settings, "b", scannerKey);
-			if (!check.allowed) return { status: "skipped", reason: `track_b_${check.reason}` };
+			if (!check.allowed) return { status: "skipped", reason: `track_b_${check.reason}`, settings: nextSettings };
 			messageText = result.message;
-			await setTelegramUserSettings(chatId, check.updates);
+			nextSettings = await setTelegramUserSettings(chatId, check.updates);
 			if (check.autoSpamPause) {
 				const pausedUntil = Date.now() + PAUSE_SPAM_MS;
-				await setTelegramUserSettings(chatId, { pausedUntil });
+				nextSettings = await setTelegramUserSettings(chatId, { pausedUntil });
 				await sendTelegramMessage(
 					chatId,
 					`⚠️ Limite de alertas atingido. Pausando por 30 min.\n${buildPauseConfirmMessage(pausedUntil)}`
@@ -67,7 +71,7 @@ async function dispatchAlert(
 			}
 		} else if (track === "a") {
 			const check = checkAlertEligibility(settings, "a");
-			if (!check.allowed) return { status: "skipped", reason: `track_a_${check.reason}` };
+			if (!check.allowed) return { status: "skipped", reason: `track_a_${check.reason}`, settings: nextSettings };
 			const planInfo = {
 				plan: settings.plan,
 				planActive: settings.planActive,
@@ -77,12 +81,12 @@ async function dispatchAlert(
 			const effectiveMinSpreadA = spreadMinimoEfetivo(planInfo, settings.minSpreadA);
 
 			messageText = await buildAlertUsdtMessage(origin, settings, effectiveMinSpreadA);
-			if (!messageText) return { status: "skipped", reason: "track_a_no_spread_or_data" };
+			if (!messageText) return { status: "skipped", reason: "track_a_no_spread_or_data", settings: nextSettings };
 
-			await setTelegramUserSettings(chatId, check.updates);
+			nextSettings = await setTelegramUserSettings(chatId, check.updates);
 			if (check.autoSpamPause) {
 				const pausedUntil = Date.now() + PAUSE_SPAM_MS;
-				await setTelegramUserSettings(chatId, { pausedUntil });
+				nextSettings = await setTelegramUserSettings(chatId, { pausedUntil });
 				await sendTelegramMessage(
 					chatId,
 					`⚠️ Limite de alertas atingido. Pausando por 30 min.\n${buildPauseConfirmMessage(pausedUntil)}`
@@ -91,15 +95,15 @@ async function dispatchAlert(
 		} else {
 			// track C
 			const check = checkAlertEligibility(settings, "c");
-			if (!check.allowed) return { status: "skipped", reason: `track_c_${check.reason}` };
+			if (!check.allowed) return { status: "skipped", reason: `track_c_${check.reason}`, settings: nextSettings };
 
 			messageText = await buildAlertUsdtDefiMessage(origin, settings);
-			if (!messageText) return { status: "skipped", reason: "track_c_no_spread_or_data" }; // returns null when spread <= 0
+			if (!messageText) return { status: "skipped", reason: "track_c_no_spread_or_data", settings: nextSettings }; // returns null when spread <= 0
 
-			await setTelegramUserSettings(chatId, check.updates);
+			nextSettings = await setTelegramUserSettings(chatId, check.updates);
 			if (check.autoSpamPause) {
 				const pausedUntil = Date.now() + PAUSE_SPAM_MS;
-				await setTelegramUserSettings(chatId, { pausedUntil });
+				nextSettings = await setTelegramUserSettings(chatId, { pausedUntil });
 				await sendTelegramMessage(
 					chatId,
 					`⚠️ Limite de alertas atingido. Pausando por 30 min.\n${buildPauseConfirmMessage(pausedUntil)}`
@@ -107,17 +111,17 @@ async function dispatchAlert(
 			}
 		}
 
-		if (!messageText) return { status: "skipped", reason: "message_empty" };
+		if (!messageText) return { status: "skipped", reason: "message_empty", settings: nextSettings };
 
 		const signalType = track === "a" ? "usdt" : track === "c" ? "usdt_defi" : "scanner";
 		await sendTelegramMessage(chatId, messageText, {
 			reply_markup: buildTelegramSignalMarkup(signalType),
 		});
 
-		return { status: "sent" };
+		return { status: "sent", settings: nextSettings };
 	} catch (err) {
 		console.error(`[DISPATCH] track=${track} chatId=${chatId} error:`, err);
-		return { status: "failed", reason: `track_${track}_exception` };
+		return { status: "failed", reason: `track_${track}_exception`, settings };
 	}
 }
 
@@ -213,7 +217,8 @@ export async function GET(request: NextRequest) {
 		}
 
 		for (const track of tracks) {
-			const result = await dispatchAlert(chatId, origin, track);
+			const result = await dispatchAlert(chatId, origin, effectiveSettings, track);
+			effectiveSettings = result.settings;
 			if (result.status === "sent") {
 				sent++;
 				continue;
