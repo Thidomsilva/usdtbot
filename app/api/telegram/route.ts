@@ -546,6 +546,13 @@ export async function POST(request: NextRequest) {
 
 		if (messageText.toLowerCase() === "/logout") {
 			await unlinkTelegramChat(effectiveChatId);
+			await setTelegramUserSettings(effectiveChatId, {
+				autoSignalsMode: "off",
+				alertsEnabled: false,
+				alertTracks: { a: false, b: false, c: false },
+				pausedUntil: PAUSE_FOREVER,
+				pendingSpreadTrack: null,
+			});
 			await sendTelegramMessage(
 				effectiveChatId,
 				[
@@ -620,6 +627,13 @@ export async function POST(request: NextRequest) {
 		// --- account:logout ---
 		if (callbackData === "account:logout") {
 			await unlinkTelegramChat(effectiveChatId);
+			await setTelegramUserSettings(effectiveChatId, {
+				autoSignalsMode: "off",
+				alertsEnabled: false,
+				alertTracks: { a: false, b: false, c: false },
+				pausedUntil: PAUSE_FOREVER,
+				pendingSpreadTrack: null,
+			});
 			conversationStates.delete(String(effectiveChatId));
 			await sendTelegramMessage(
 				effectiveChatId,

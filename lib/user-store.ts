@@ -1007,13 +1007,18 @@ export async function unlinkTelegramChat(chatId: number | string): Promise<void>
   }
 
   const store = await loadStore()
-  const user = store.users.find((entry) => entry.telegramChatId === normalizedChatId)
-  if (!user) {
-    return
+  const now = new Date().toISOString()
+  let changed = false
+
+  for (const user of store.users) {
+    if (user.telegramChatId !== normalizedChatId) continue
+    user.telegramChatId = null
+    user.telegramLinkedAt = null
+    user.updatedAt = now
+    changed = true
   }
 
-  user.telegramChatId = null
-  user.telegramLinkedAt = null
-  user.updatedAt = new Date().toISOString()
-  await persistStore(store)
+  if (changed) {
+    await persistStore(store)
+  }
 }
