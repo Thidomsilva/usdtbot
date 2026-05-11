@@ -75,6 +75,7 @@ async function dispatchAlert(
 ): Promise<{
 	status: "sent" | "skipped" | "failed";
 	reason?: string;
+	error?: string;
 	settings: Awaited<ReturnType<typeof getTelegramUserSettings>>;
 }> {
 	try {
@@ -167,8 +168,9 @@ async function dispatchAlert(
 
 		return { status: "sent", settings: nextSettings };
 	} catch (err) {
+		const errorMessage = err instanceof Error ? err.message : String(err ?? "unknown error");
 		console.error(`[DISPATCH] track=${track} chatId=${chatId} error:`, err);
-		return { status: "failed", reason: `track_${track}_exception`, settings };
+		return { status: "failed", reason: `track_${track}_exception`, error: errorMessage, settings };
 	}
 }
 
@@ -276,6 +278,9 @@ export async function GET(request: NextRequest) {
 
 			if (result.status === "failed") {
 				failed++;
+				if (result.error) {
+					await setTelegramUserSettings(chatId, buildDispatchTrackPatch(track, result.status, `${result.reason}:${result.error}`));
+				}
 			} else {
 				skipped++;
 			}

@@ -407,6 +407,7 @@ function simplifyDispatchReason(reason: string | null): string {
 	if (normalized === "plan") return "limitado pelo plano";
 	if (normalized === "disabled") return "trilha desativada";
 	if (normalized === "exception") return "erro interno";
+	if (normalized.startsWith("exception:")) return `erro interno: ${normalized.slice("exception:".length)}`;
 	if (normalized === "message_empty") return "mensagem vazia";
 
 	return normalized;
