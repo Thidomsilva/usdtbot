@@ -45,6 +45,7 @@ export type TelegramUserSettings = {
 	lastDispatchReasonA: string | null;
 	lastDispatchReasonB: string | null;
 	lastDispatchReasonC: string | null;
+	lastCronAt: number | null;
 	plan: UserPlan;
 	// extended plan fields
 	planActive: boolean;
@@ -94,6 +95,7 @@ const DEFAULT_SETTINGS: TelegramUserSettings = {
 	lastDispatchReasonA: null,
 	lastDispatchReasonB: null,
 	lastDispatchReasonC: null,
+	lastCronAt: null,
 	plan: "free",
 	planActive: true,
 	planExpiresAt: null,
@@ -318,6 +320,7 @@ function normalizeSettings(value: unknown): TelegramUserSettings {
 		lastDispatchReasonA: typeof c["lastDispatchReasonA"] === "string" ? c["lastDispatchReasonA"] : null,
 		lastDispatchReasonB: typeof c["lastDispatchReasonB"] === "string" ? c["lastDispatchReasonB"] : null,
 		lastDispatchReasonC: typeof c["lastDispatchReasonC"] === "string" ? c["lastDispatchReasonC"] : null,
+		lastCronAt: typeof c["lastCronAt"] === "number" ? c["lastCronAt"] : null,
 		plan: c["plan"] === "pro" ? "pro" : c["plan"] === "admin" ? "admin" : "free",
 		planActive: c["planActive"] !== false,
 		planExpiresAt: typeof c["planExpiresAt"] === "number" ? c["planExpiresAt"] : null,
@@ -529,6 +532,7 @@ export async function setTelegramUserSettings(
 			typeof next.lastDispatchReasonC === "string" || next.lastDispatchReasonC === null
 				? (next.lastDispatchReasonC ?? null)
 				: current.lastDispatchReasonC,
+		lastCronAt: "lastCronAt" in next ? (next.lastCronAt ?? null) : current.lastCronAt,
 		plan: next.plan === "free" || next.plan === "pro" || next.plan === "admin" ? next.plan : current.plan,
 		planActive: typeof next.planActive === "boolean" ? next.planActive : current.planActive,
 		planExpiresAt: "planExpiresAt" in next ? (next.planExpiresAt ?? null) : current.planExpiresAt,

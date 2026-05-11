@@ -805,6 +805,16 @@ export function buildMonitoringStatusMessage(settings: TelegramUserSettings): st
 		].join("\n");
 	}
 
+	const now = Date.now();
+	const cronAgo = settings.lastCronAt !== null ? now - settings.lastCronAt : null;
+	const cronStatus = cronAgo === null
+		? "⏳ aguardando primeira execucao"
+		: cronAgo < 90_000
+			? `✅ ${formatDispatchTime(settings.lastCronAt!)} (ha ${Math.round(cronAgo / 1000)}s)`
+			: cronAgo < 300_000
+				? `🟡 ${formatDispatchTime(settings.lastCronAt!)} (ha ${Math.round(cronAgo / 60_000)} min)`
+				: `🔴 ${formatDispatchTime(settings.lastCronAt!)} (ha ${Math.round(cronAgo / 60_000)} min — cron pode estar parado)`;
+
 	return [
 		"✅ <b>MONITORAMENTO ATIVO</b>",
 		"",
@@ -814,7 +824,7 @@ export function buildMonitoringStatusMessage(settings: TelegramUserSettings): st
 		"",
 		`💰 Simulando R$ ${settings.simCapital.toLocaleString("pt-BR")}`,
 		`🔕 Silencio: ${silence}`,
-		"⏱ Verificando a cada 1 min",
+		`⏱ Cron: ${cronStatus}`,
 		...(dispatchLines.length > 0
 			? ["", "🧪 Ultima verificacao automatica", ...dispatchLines]
 			: []),
