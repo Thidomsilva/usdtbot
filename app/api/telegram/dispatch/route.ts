@@ -41,6 +41,19 @@ function tracksByAutoMode(mode: "off" | "usdt" | "scanner" | "usdt_defi" | "all"
 	return { a: false, b: false, c: false };
 }
 
+function hasHistoricalMonitoringEvidence(
+	settings: Awaited<ReturnType<typeof getTelegramUserSettings>>
+): boolean {
+	return Boolean(
+		settings.lastCronAt !== null ||
+		settings.lastDispatchAtA !== null ||
+		settings.lastDispatchAtB !== null ||
+		settings.lastDispatchAtC !== null ||
+		settings.alertsThisHour > 0 ||
+		settings.alertsToday > 0
+	);
+}
+
 function buildDispatchTrackPatch(
 	track: "a" | "b" | "c",
 	status: DispatchTrackStatus,
@@ -204,14 +217,20 @@ export async function GET(request: NextRequest) {
 
 		let effectiveSettings = settings;
 
-		if (!effectiveSettings.alertsEnabled && effectiveSettings.autoSignalsMode !== "off") {
-			const syncedTracks = tracksByAutoMode(effectiveSettings.autoSignalsMode);
-			effectiveSettings = await setTelegramUserSettings(chatId, {
-				alertsEnabled: true,
-				alertTracks: syncedTracks,
-				pausedUntil: null,
-			});
-			autoEnabledMissingSettings++;
+		if (!effectiveSettings.alertsEnabled) {
+			const shouldRecoverByMode = effectiveSettings.autoSignalsMode !== "off";
+			const shouldRecoverByHistory = hasHistoricalMonitoringEvidence(effectiveSettings);
+			if (shouldRecoverByMode || shouldRecoverByHistory) {
+				const syncedTracks = shouldRecoverByMode
+					? tracksByAutoMode(effectiveSettings.autoSignalsMode)
+					: effectiveSettings.alertTracks;
+				effectiveSettings = await setTelegramUserSettings(chatId, {
+					alertsEnabled: true,
+					alertTracks: syncedTracks,
+					pausedUntil: null,
+				});
+				autoEnabledMissingSettings++;
+			}
 		}
 
 		if (!effectiveSettings.alertsEnabled) {
