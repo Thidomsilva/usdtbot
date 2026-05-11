@@ -28,6 +28,8 @@ export type TelegramUserSettings = {
 	silentStart: string;
 	silentEnd: string;
 	pendingSpreadTrack: "a" | "b" | "c" | null;
+	pendingAuthStep: "cadastro_username" | "cadastro_password" | "login_username" | "login_password" | null;
+	pendingAuthUsername: string | null;
 	pausedUntil: number | null;
 	alertsThisHour: number;
 	alertsHourReset: number;
@@ -78,6 +80,8 @@ const DEFAULT_SETTINGS: TelegramUserSettings = {
 	silentStart: "23:00",
 	silentEnd: "07:00",
 	pendingSpreadTrack: null,
+	pendingAuthStep: null,
+	pendingAuthUsername: null,
 	pausedUntil: null,
 	alertsThisHour: 0,
 	alertsHourReset: 0,
@@ -301,6 +305,14 @@ function normalizeSettings(value: unknown): TelegramUserSettings {
 			c["pendingSpreadTrack"] === "a" || c["pendingSpreadTrack"] === "b" || c["pendingSpreadTrack"] === "c"
 				? c["pendingSpreadTrack"]
 				: null,
+		pendingAuthStep:
+			c["pendingAuthStep"] === "cadastro_username" ||
+			c["pendingAuthStep"] === "cadastro_password" ||
+			c["pendingAuthStep"] === "login_username" ||
+			c["pendingAuthStep"] === "login_password"
+				? c["pendingAuthStep"]
+				: null,
+		pendingAuthUsername: typeof c["pendingAuthUsername"] === "string" ? c["pendingAuthUsername"] : null,
 		pausedUntil: typeof c["pausedUntil"] === "number" ? c["pausedUntil"] : null,
 		alertsThisHour: normalizeEpoch(c["alertsThisHour"]),
 		alertsHourReset: normalizeEpoch(c["alertsHourReset"]),
@@ -491,6 +503,19 @@ export async function setTelegramUserSettings(
 				: "pendingSpreadTrack" in next
 					? null
 					: current.pendingSpreadTrack,
+		pendingAuthStep:
+			next.pendingAuthStep === "cadastro_username" ||
+			next.pendingAuthStep === "cadastro_password" ||
+			next.pendingAuthStep === "login_username" ||
+			next.pendingAuthStep === "login_password"
+				? next.pendingAuthStep
+				: "pendingAuthStep" in next
+					? null
+					: current.pendingAuthStep,
+		pendingAuthUsername:
+			typeof next.pendingAuthUsername === "string" || next.pendingAuthUsername === null
+				? (next.pendingAuthUsername ?? null)
+				: current.pendingAuthUsername,
 		pausedUntil: "pausedUntil" in next ? (next.pausedUntil ?? null) : current.pausedUntil,
 		alertsThisHour: typeof next.alertsThisHour === "number" ? next.alertsThisHour : current.alertsThisHour,
 		alertsHourReset: typeof next.alertsHourReset === "number" ? next.alertsHourReset : current.alertsHourReset,

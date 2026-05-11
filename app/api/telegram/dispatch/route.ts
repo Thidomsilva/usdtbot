@@ -225,6 +225,12 @@ export async function GET(request: NextRequest) {
 
 	for (const chatId of dispatchChatIds) {
 		const settings = await getTelegramUserSettings(chatId);
+		if (settings.pendingAuthStep) {
+			skipped++;
+			skippedByReason[`auth_in_progress_${settings.pendingAuthStep}`] =
+				(skippedByReason[`auth_in_progress_${settings.pendingAuthStep}`] ?? 0) + 1;
+			continue;
+		}
 
 		const linkedUser = await getUserByTelegramChatId(chatId);
 		if (!linkedUser) {

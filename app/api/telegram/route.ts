@@ -37,14 +37,14 @@ export const dynamic = "force-dynamic";
 
 const MENU_RETURN_DELAY_MS = 3000;
 
-// Fluxo conversacional de cadastro/login
+// Fluxo conversacional de cadastro/login (persistido por chat, sem estado em memoria)
+type ConversationStep = "cadastro_username" | "cadastro_password" | "login_username" | "login_password";
+
 type ConversationState =
 	| { step: "cadastro_username" }
 	| { step: "cadastro_password"; username: string }
 	| { step: "login_username" }
 	| { step: "login_password"; username: string };
-
-const conversationStates = new Map<string, ConversationState>();
 const MIN_SPREAD_ALLOWED = 0.1;
 const MAX_SPREAD_ALLOWED = 10;
 
@@ -167,6 +167,37 @@ async function deleteIncomingMessageIfPossible(
 	} catch {
 		// Ignore: bot may not have permission in some chat types.
 	}
+}
+
+function getConversationStateFromSettings(settings: TelegramUserSettings): ConversationState | null {
+	if (!settings.pendingAuthStep) return null;
+	if (settings.pendingAuthStep === "cadastro_username") return { step: "cadastro_username" };
+	if (settings.pendingAuthStep === "login_username") return { step: "login_username" };
+	if (settings.pendingAuthStep === "cadastro_password" && settings.pendingAuthUsername) {
+		return { step: "cadastro_password", username: settings.pendingAuthUsername };
+	}
+	if (settings.pendingAuthStep === "login_password" && settings.pendingAuthUsername) {
+		return { step: "login_password", username: settings.pendingAuthUsername };
+	}
+	return null;
+}
+
+async function setConversationState(
+	chatId: number | string,
+	step: ConversationStep,
+	username: string | null = null
+): Promise<void> {
+	await setTelegramUserSettings(chatId, {
+		pendingAuthStep: step,
+		pendingAuthUsername: username,
+	});
+}
+
+async function clearConversationState(chatId: number | string): Promise<void> {
+	await setTelegramUserSettings(chatId, {
+		pendingAuthStep: null,
+		pendingAuthUsername: null,
+	});
 }
 
 async function sendMainMenu(chatId: number | string): Promise<void> {
@@ -331,8 +362,8 @@ export async function POST(request: NextRequest) {
 
 	try {
 		const linkedUser = await getUserByTelegramChatId(effectiveChatId);
-		const chatKey = String(effectiveChatId);
-		const convState = conversationStates.get(chatKey);
+		const authSettings = await getTelegramUserSettings(effectiveChatId);
+		const convState = getConversationStateFromSettings(authSettings);
 
 		// Fluxo conversacional: estado ativo
 		if (convState && messageText && !messageText.startsWith("/")) {
@@ -347,7 +378,7 @@ export async function POST(request: NextRequest) {
 					);
 					return NextResponse.json({ ok: true });
 				}
-				conversationStates.set(chatKey, { step: "cadastro_password", username });
+				await setConversationState(effectiveChatId, "cadastro_password", username);
 				await sendTelegramMessage(
 					effectiveChatId,
 					"🔒 Agora digite sua <b>senha</b>:\n\n💡 Use letras, números e símbolos para uma senha forte."
@@ -358,7 +389,7 @@ export async function POST(request: NextRequest) {
 			if (convState.step === "cadastro_password") {
 				await deleteIncomingMessageIfPossible(effectiveChatId, incomingMessageId);
 				const password = messageText.trim();
-				conversationStates.delete(chatKey);
+				await clearConversationState(effectiveChatId);
 				try {
 					const user = await registerTelegramUser({
 						username: convState.username,
@@ -403,7 +434,7 @@ export async function POST(request: NextRequest) {
 			if (convState.step === "login_username") {
 				await deleteIncomingMessageIfPossible(effectiveChatId, incomingMessageId);
 				const username = messageText.trim().toLowerCase();
-				conversationStates.set(chatKey, { step: "login_password", username });
+				await setConversationState(effectiveChatId, "login_password", username);
 				await sendTelegramMessage(effectiveChatId, "🔒 Agora digite sua <b>senha</b>:");
 				return NextResponse.json({ ok: true });
 			}
@@ -411,7 +442,7 @@ export async function POST(request: NextRequest) {
 			if (convState.step === "login_password") {
 				await deleteIncomingMessageIfPossible(effectiveChatId, incomingMessageId);
 				const password = messageText.trim();
-				conversationStates.delete(chatKey);
+				await clearConversationState(effectiveChatId);
 				const user = await linkTelegramChatToUser({
 					username: convState.username,
 					password,
@@ -447,7 +478,7 @@ export async function POST(request: NextRequest) {
 
 		// Iniciar fluxo conversacional via /cadastro ou /login sem argumentos
 		if (messageText.toLowerCase() === "/cadastro") {
-			conversationStates.set(chatKey, { step: "cadastro_username" });
+			await setConversationState(effectiveChatId, "cadastro_username");
 			await sendTelegramMessage(
 				effectiveChatId,
 				"👋 Vamos criar sua conta!\n\nDigite seu <b>email</b>:"
@@ -456,13 +487,14 @@ export async function POST(request: NextRequest) {
 		}
 
 		if (messageText.toLowerCase() === "/login") {
-			conversationStates.set(chatKey, { step: "login_username" });
+			await setConversationState(effectiveChatId, "login_username");
 			await sendTelegramMessage(effectiveChatId, "🔑 Digite seu <b>email</b>:");
 			return NextResponse.json({ ok: true });
 		}
 
 		if (credentialsCommand) {
 			await deleteIncomingMessageIfPossible(effectiveChatId, incomingMessageId);
+			await clearConversationState(effectiveChatId);
 			if (!credentialsCommand.username || !credentialsCommand.password) {
 				await sendTelegramMessage(
 					effectiveChatId,
@@ -566,6 +598,7 @@ export async function POST(request: NextRequest) {
 		}
 
 		if (messageText.toLowerCase() === "/logout") {
+			await clearConversationState(effectiveChatId);
 			await unlinkTelegramChat(effectiveChatId);
 			await setTelegramUserSettings(effectiveChatId, {
 				autoSignalsMode: "off",
@@ -592,7 +625,7 @@ export async function POST(request: NextRequest) {
 		}
 
 		if (callbackData === "account:cadastro") {
-			conversationStates.set(chatKey, { step: "cadastro_username" });
+			await setConversationState(effectiveChatId, "cadastro_username");
 			await sendTelegramMessage(
 				effectiveChatId,
 				"👋 Vamos criar sua conta!\n\nDigite seu <b>email</b>:"
@@ -601,7 +634,7 @@ export async function POST(request: NextRequest) {
 		}
 
 		if (callbackData === "account:login") {
-			conversationStates.set(chatKey, { step: "login_username" });
+			await setConversationState(effectiveChatId, "login_username");
 			await sendTelegramMessage(effectiveChatId, "🔑 Digite seu <b>email</b>:");
 			return NextResponse.json({ ok: true });
 		}
@@ -647,6 +680,7 @@ export async function POST(request: NextRequest) {
 
 		// --- account:logout ---
 		if (callbackData === "account:logout") {
+			await clearConversationState(effectiveChatId);
 			await unlinkTelegramChat(effectiveChatId);
 			await setTelegramUserSettings(effectiveChatId, {
 				autoSignalsMode: "off",
@@ -655,7 +689,6 @@ export async function POST(request: NextRequest) {
 				pausedUntil: PAUSE_FOREVER,
 				pendingSpreadTrack: null,
 			});
-			conversationStates.delete(String(effectiveChatId));
 			await sendTelegramMessage(
 				effectiveChatId,
 				"🚪 Logout realizado. Este chat foi desvinculado da sua conta.\nUse /login para entrar novamente quando quiser."
