@@ -52,6 +52,20 @@ type CexOpportunity = {
 	profitBrl: number;
 };
 
+function formatCexOpportunityEntry(params: {
+	index: number;
+	buyLabel: string;
+	buyPrice: number;
+	opportunity: CexOpportunity;
+}): string {
+	const { index, buyLabel, buyPrice, opportunity } = params;
+	return [
+		`<b>${index}. ${escapeHtml(buyLabel)} → ${escapeHtml(opportunity.sellLabel)}</b>`,
+		`Spread ${formatPct(opportunity.spreadPct, 2)} · Lucro ${formatBrlCompact(opportunity.profitBrl)}`,
+		`${formatBrl(buyPrice)} → ${formatBrl(opportunity.sellPrice)}`,
+	].join("\n");
+}
+
 let defiBrlaCache: { expiresAt: number; value: DefiBrlaPrice } | null = null;
 
 function trimEnv(value: string | undefined): string {
@@ -837,23 +851,27 @@ export async function buildAlertUsdtMessage(
 	if (!ranking) return null;
 
 	const { time } = buildDateAndTime(prices.timestamp);
-	const opportunitiesLines = ranking.opportunities.map((opportunity, index) => [
-		`${index + 1}. <b>${escapeHtml(ranking.buyLabel)} → ${escapeHtml(opportunity.sellLabel)}</b>`,
-		`   Compra: ${formatBrl(ranking.buyPrice)} | Venda: ${formatBrl(opportunity.sellPrice)}`,
-		`   Lucro: ${formatBrlCompact(opportunity.profitBrl)} (${formatPct(opportunity.spreadPct, 2)})`,
-	].join("\n"));
+	const opportunitiesLines = ranking.opportunities.map((opportunity, index) =>
+		formatCexOpportunityEntry({
+			index: index + 1,
+			buyLabel: ranking.buyLabel,
+			buyPrice: ranking.buyPrice,
+			opportunity,
+		})
+	);
 
 	return [
-		"🔔 <b>ALERTA CEX→CEX</b>",
+		"🔔 <b>CEX→CEX · Oportunidades</b>",
 		"",
-		`⏱ Atualizacao: ${time}`,
-		`💰 Simulacao: ${formatBrlCompact(capital)}`,
-		`⬇️ Compra base: ${escapeHtml(ranking.buyLabel)} ${formatBrl(ranking.buyPrice)}`,
-		`📈 Acima de ${formatPct(minSpreadPct, 2)}: ${ranking.opportunities.length} oportunidades`,
+		`⏱ ${time}  |  💰 ${formatBrlCompact(capital)}`,
+		`Base: ${escapeHtml(ranking.buyLabel)} (${formatBrl(ranking.buyPrice)})`,
+		`Filtro: ≥ ${formatPct(minSpreadPct, 2)}  |  ${ranking.opportunities.length} rotas`,
+		"",
+		"<b>Ranking</b>",
 		"",
 		...opportunitiesLines,
 		"",
-		"✅ Rotas CEX→CEX ranqueadas por spread.",
+		"✅ Ordenado por spread liquido.",
 	].join("\n");
 }
 
@@ -965,11 +983,14 @@ export async function buildUsdtSignalMessage(
 			"⚠️ Nao foi possivel montar oportunidades CEX→CEX agora.",
 		].join("\n");
 	}
-	const rankingLines = ranking.opportunities.map((opportunity, index) => [
-		`${index + 1}. <b>${escapeHtml(ranking.buyLabel)} → ${escapeHtml(opportunity.sellLabel)}</b>`,
-		`   Compra: ${formatBrl(ranking.buyPrice)} | Venda: ${formatBrl(opportunity.sellPrice)}`,
-		`   Lucro: ${formatBrlCompact(opportunity.profitBrl)} (${formatPct(opportunity.spreadPct, 2)})`,
-	].join("\n"));
+	const rankingLines = ranking.opportunities.map((opportunity, index) =>
+		formatCexOpportunityEntry({
+			index: index + 1,
+			buyLabel: ranking.buyLabel,
+			buyPrice: ranking.buyPrice,
+			opportunity,
+		})
+	);
 	const best = ranking.opportunities[0];
 
 	return [
@@ -977,14 +998,15 @@ export async function buildUsdtSignalMessage(
 		"",
 		"<b>A) USDT entre CEXs</b>",
 		"",
-		`💰 Simulacao: ${formatBrlCompact(SIM_CAPITAL_BRL)}`,
-		`⬇️ Compra base: ${escapeHtml(ranking.buyLabel)} ${formatBrl(ranking.buyPrice)}`,
-		`📈 Oportunidades: ${ranking.opportunities.length}`,
+		`💰 ${formatBrlCompact(SIM_CAPITAL_BRL)}  |  Base ${escapeHtml(ranking.buyLabel)} (${formatBrl(ranking.buyPrice)})`,
+		`📈 ${ranking.opportunities.length} rotas encontradas`,
+		"",
+		"<b>Ranking</b>",
 		"",
 		...rankingLines,
 		"",
-		`🏆 <b>Melhor rota</b>: ${escapeHtml(ranking.buyLabel)} → ${escapeHtml(best.sellLabel)} (${formatPct(best.spreadPct, 2)})`,
-		`   Lucro estimado: ${formatBrlCompact(best.profitBrl)}`,
+		`🏆 <b>Melhor rota</b>: ${escapeHtml(ranking.buyLabel)} → ${escapeHtml(best.sellLabel)}`,
+		`Spread ${formatPct(best.spreadPct, 2)} · Lucro ${formatBrlCompact(best.profitBrl)}`,
 		"",
 		`📊 <b>Media</b>: ${formatBrl(summary.avg)} | <b>Faixa</b>: ${formatBrl(summary.min)} — ${formatBrl(summary.max)}`,
 	].join("\n");
