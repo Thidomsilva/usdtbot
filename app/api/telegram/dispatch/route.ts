@@ -242,20 +242,31 @@ export async function GET(request: NextRequest) {
 			const shouldRecoverByMode = effectiveSettings.autoSignalsMode !== "off";
 			const shouldRecoverByHistory = hasHistoricalMonitoringEvidence(effectiveSettings);
 			const shouldRecoverFreshDefault = isLikelyFreshDefaultSettings(effectiveSettings);
+			const shouldRecoverInconsistentDisabled =
+				effectiveSettings.pausedUntil === null &&
+				(effectiveSettings.alertTracks.a ||
+					effectiveSettings.alertTracks.b ||
+					effectiveSettings.alertTracks.c);
 			const shouldRecoverByHeal =
 				healMode &&
 				effectiveSettings.autoSignalsMode === "off" &&
 				!shouldRecoverByHistory;
-			if (shouldRecoverByMode || shouldRecoverByHistory || shouldRecoverFreshDefault || shouldRecoverByHeal) {
+			if (
+				shouldRecoverByMode ||
+				shouldRecoverByHistory ||
+				shouldRecoverFreshDefault ||
+				shouldRecoverInconsistentDisabled ||
+				shouldRecoverByHeal
+			) {
 				const syncedTracks = shouldRecoverByMode
 					? tracksByAutoMode(effectiveSettings.autoSignalsMode)
-					: shouldRecoverFreshDefault || shouldRecoverByHeal
+					: shouldRecoverFreshDefault || shouldRecoverInconsistentDisabled || shouldRecoverByHeal
 						? tracksByAutoMode("all")
 						: effectiveSettings.alertTracks;
 				effectiveSettings = await setTelegramUserSettings(chatId, {
 					alertsEnabled: true,
 					autoSignalsMode:
-						(shouldRecoverFreshDefault || shouldRecoverByHeal) &&
+						(shouldRecoverFreshDefault || shouldRecoverInconsistentDisabled || shouldRecoverByHeal) &&
 						effectiveSettings.autoSignalsMode === "off"
 							? "all"
 							: effectiveSettings.autoSignalsMode,

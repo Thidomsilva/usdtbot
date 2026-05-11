@@ -721,7 +721,7 @@ export async function POST(request: NextRequest) {
 			const enabling = callbackData === "alerts:on";
 			const updated = await setTelegramUserSettings(effectiveChatId, {
 				alertsEnabled: enabling,
-				pausedUntil: enabling ? null : current.pausedUntil,
+				pausedUntil: enabling ? null : PAUSE_FOREVER,
 				pendingSpreadTrack: null,
 			});
 			const extra = enabling && !current.alertsEnabled
