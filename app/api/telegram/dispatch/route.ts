@@ -4,7 +4,6 @@ import {
 	buildAlertUsdtDefiMessage,
 	buildAlertUsdtMessage,
 	buildPauseConfirmMessage,
-	buildTelegramSignalMarkup,
 	isAllowedTelegramChat,
 	sendTelegramMessage,
 } from "@/lib/telegram";
@@ -159,11 +158,7 @@ async function dispatchAlert(
 		}
 
 		if (!messageText) return { status: "skipped", reason: "message_empty", settings: nextSettings };
-
-		const signalType = track === "a" ? "usdt" : track === "c" ? "usdt_defi" : "scanner";
-		await sendTelegramMessage(chatId, messageText, {
-			reply_markup: buildTelegramSignalMarkup(signalType),
-		});
+		await sendTelegramMessage(chatId, messageText);
 
 		return { status: "sent", settings: nextSettings };
 	} catch (err) {
