@@ -212,6 +212,7 @@ function formatTimestamp(value: string): string {
 }
 
 async function fetchJson<T>(url: URL): Promise<T> {
+	let targetUrl = url;
 	const headers: Record<string, string> = {
 		accept: "application/json",
 		"user-agent": "usdtbot-telegram/1.0",
@@ -220,6 +221,11 @@ async function fetchJson<T>(url: URL): Promise<T> {
 	// Internal API calls can run without user cookies (ex.: cron dispatcher).
 	// When CRON_SECRET exists, propagate it to avoid auth middleware returning 401.
 	if (url.pathname.startsWith("/api/")) {
+		const productionHost = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+		if (productionHost && url.host !== productionHost) {
+			targetUrl = new URL(`${url.pathname}${url.search}`, `https://${productionHost}`);
+		}
+
 		const secret = process.env.CRON_SECRET?.trim();
 		if (secret) {
 			headers.authorization = `Bearer ${secret}`;
@@ -232,21 +238,21 @@ async function fetchJson<T>(url: URL): Promise<T> {
 		headers,
 	};
 
-	let response = await fetch(url, requestInit);
+	let response = await fetch(targetUrl, requestInit);
 
 	// Some deployment/proxy setups may reject custom Authorization on internal API calls.
 	// If that happens, retry once without Authorization before failing.
 	if (response.status === 401 && headers.authorization) {
 		const retryHeaders = { ...headers };
 		delete retryHeaders.authorization;
-		response = await fetch(url, {
+		response = await fetch(targetUrl, {
 			...requestInit,
 			headers: retryHeaders,
 		});
 	}
 
 	if (!response.ok) {
-		throw new Error(`HTTP ${response.status}`);
+		throw new Error(`HTTP ${response.status} (${targetUrl.pathname})`);
 	}
 
 	return (await response.json()) as T;
