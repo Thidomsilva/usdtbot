@@ -18,6 +18,7 @@ const DEFI_BRLA_TOTAL_DISCOUNT = 0.005;
 const DEFI_BRLA_CACHE_TTL_MS = 15_000;
 const DEFI_BRLA_TIMEOUT_MS = 3_000;
 const SIM_CAPITAL_BRL = 1000;
+const MAX_CEX_ROUTES_IN_MESSAGE = 5;
 
 type TelegramAction = "menu" | "settings" | "usdt" | "usdt_defi" | "scanner" | "help" | "status";
 
@@ -95,6 +96,16 @@ function formatBrlCompact(value: number): string {
 
 function formatPct(value: number, digits = 3): string {
 	return `${value.toFixed(digits)}%`;
+}
+
+function formatSignedPct(value: number, digits = 2): string {
+	const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+	return `${sign}${Math.abs(value).toFixed(digits)}%`;
+}
+
+function formatSignedBrlCompact(value: number): string {
+	const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+	return `${sign}${formatBrlCompact(Math.abs(value))}`;
 }
 
 function qualityBadge(quality: "inviavel" | "apertada" | "executavel"): string {
@@ -851,7 +862,9 @@ export async function buildAlertUsdtMessage(
 	if (!ranking) return null;
 
 	const { time } = buildDateAndTime(prices.timestamp);
-	const opportunitiesLines = ranking.opportunities.map((opportunity, index) =>
+	const displayedOpportunities = ranking.opportunities.slice(0, MAX_CEX_ROUTES_IN_MESSAGE);
+	const hiddenCount = Math.max(0, ranking.opportunities.length - displayedOpportunities.length);
+	const opportunitiesLines = displayedOpportunities.map((opportunity, index) =>
 		formatCexOpportunityEntry({
 			index: index + 1,
 			buyLabel: ranking.buyLabel,
@@ -859,19 +872,21 @@ export async function buildAlertUsdtMessage(
 			opportunity,
 		})
 	);
+	const best = ranking.opportunities[0];
 
 	return [
-		"🔔 <b>CEX→CEX · Oportunidades</b>",
+		"🔔 <b>A) CEX→CEX</b>",
 		"",
-		`⏱ ${time}  |  💰 ${formatBrlCompact(capital)}`,
-		`Base: ${escapeHtml(ranking.buyLabel)} (${formatBrl(ranking.buyPrice)})`,
-		`Filtro: ≥ ${formatPct(minSpreadPct, 2)}  |  ${ranking.opportunities.length} rotas`,
+		`⏱ ${time} · 💰 ${formatBrlCompact(capital)}`,
+		`Base: ${escapeHtml(ranking.buyLabel)} (${formatBrl(ranking.buyPrice)}) · Filtro ≥ ${formatPct(minSpreadPct, 2)}`,
 		"",
-		"<b>Ranking</b>",
+		`🏆 <b>Melhor rota:</b> ${escapeHtml(ranking.buyLabel)} → ${escapeHtml(best.sellLabel)}`,
+		`Spread ${formatPct(best.spreadPct, 2)} · Lucro ${formatBrlCompact(best.profitBrl)}`,
+		"",
+		`<b>Top ${displayedOpportunities.length} de ${ranking.opportunities.length} rotas</b>`,
 		"",
 		...opportunitiesLines,
-		"",
-		"✅ Ordenado por spread liquido.",
+		...(hiddenCount > 0 ? ["", `… e mais ${hiddenCount} rota(s).`] : []),
 	].join("\n");
 }
 
@@ -924,31 +939,55 @@ export async function buildAlertUsdtDefiMessage(baseUrl: string, settings: Teleg
 	);
 
 	if (entries.length < 1) return null;
-
-	const buy = entries.slice().sort((a, b) => (a.price_brl ?? 0) - (b.price_brl ?? 0))[0];
-	const buyPrice = buy.price_brl ?? 0;
 	const defi = await fetchDefiBrlaPrice();
 
-	if (!defi || buyPrice <= 0) return null;
+	if (!defi) return null;
 
 	const sellDefi = defi.sellNetBrlPerUsdt;
-	const spreadPct = ((sellDefi - buyPrice) / buyPrice) * 100;
-
-	if (spreadPct < settings.minSpreadC) return null;
-
 	const capital = settings.simCapital;
-	const usdtQty = capital / buyPrice;
-	const profit = usdtQty * sellDefi - capital;
+	const opportunities = entries
+		.map((entry) => {
+			const buyPrice = entry.price_brl ?? 0;
+			const spreadPct = ((sellDefi - buyPrice) / buyPrice) * 100;
+			const usdtQty = capital / buyPrice;
+			const profit = usdtQty * sellDefi - capital;
+			return {
+				label: entry.label,
+				buyPrice,
+				spreadPct,
+				profit,
+			};
+		})
+		.sort((a, b) => b.profit - a.profit);
+
+	const best = opportunities[0];
+	if (!best || best.spreadPct < settings.minSpreadC) return null;
+
+	const displayed = opportunities.slice(0, 6);
 	const { time } = buildDateAndTime(prices.timestamp);
+	const rows = displayed.map((opportunity) => {
+		const icon = opportunity.profit >= 0 ? "🟢" : "🔴";
+		const trend = opportunity.spreadPct >= 0 ? "🔷" : "🔶";
+		return `${icon} ${escapeHtml(opportunity.label)}: ${formatSignedBrlCompact(opportunity.profit)} ${trend} ${formatSignedPct(opportunity.spreadPct, 2)}`;
+	});
 
 	return [
-		"🔔 <b>ALERTA CEX→DeFi</b>",
+		"🔔 <b>Cotacao de Arbitragem</b>",
+		"━━━━━━━━━━━━━━━━━━━━",
 		"",
-		`⬇️ Compra: ${escapeHtml(buy.label)} ${formatBrl(buyPrice)}`,
-		`⬆️ Venda: DeFi BRLA ${formatBrl(Number(sellDefi.toFixed(4)))}`,
-		`📈 Spread: ${formatPct(spreadPct, 2)} liquido`,
-		`💰 ${formatBrlCompact(capital)} → lucro estimado ${formatBrlCompact(profit)}`,
-		"⚠️ Taxa DeFi estimada 0.50% ja descontada",
+		"🪙 Corretora de compra: Todas",
+		"💱 Corretora de venda: DeFiLlama",
+		"🪙 Token de compra: USDT",
+		"💱 Moeda de venda: BRLA",
+		`💰 Valor de operacao: ${formatBrlCompact(capital)}`,
+		`🔔 Notificar quando spread ≥ ${formatPct(settings.minSpreadC, 2)}`,
+		"━━━━━━━━━━━━━━━━━━━━",
+		"",
+		...rows,
+		"",
+		`🏆 Melhor rota: ${escapeHtml(best.label)} → DeFi BRLA`,
+		`Spread ${formatSignedPct(best.spreadPct, 2)} · Lucro ${formatSignedBrlCompact(best.profit)}`,
+		`⚠️ Taxa DeFi estimada ${(DEFI_BRLA_TOTAL_DISCOUNT * 100).toFixed(2)}% ja descontada`,
 		"",
 		`⏱ ${time}`,
 	].join("\n");
@@ -983,7 +1022,9 @@ export async function buildUsdtSignalMessage(
 			"⚠️ Nao foi possivel montar oportunidades CEX→CEX agora.",
 		].join("\n");
 	}
-	const rankingLines = ranking.opportunities.map((opportunity, index) =>
+	const displayedOpportunities = ranking.opportunities.slice(0, MAX_CEX_ROUTES_IN_MESSAGE);
+	const hiddenCount = Math.max(0, ranking.opportunities.length - displayedOpportunities.length);
+	const rankingLines = displayedOpportunities.map((opportunity, index) =>
 		formatCexOpportunityEntry({
 			index: index + 1,
 			buyLabel: ranking.buyLabel,
@@ -998,15 +1039,16 @@ export async function buildUsdtSignalMessage(
 		"",
 		"<b>A) USDT entre CEXs</b>",
 		"",
-		`💰 ${formatBrlCompact(SIM_CAPITAL_BRL)}  |  Base ${escapeHtml(ranking.buyLabel)} (${formatBrl(ranking.buyPrice)})`,
-		`📈 ${ranking.opportunities.length} rotas encontradas`,
-		"",
-		"<b>Ranking</b>",
-		"",
-		...rankingLines,
+		`💰 ${formatBrlCompact(SIM_CAPITAL_BRL)} · Base ${escapeHtml(ranking.buyLabel)} (${formatBrl(ranking.buyPrice)})`,
+		`🎯 Filtro tecnico: mostrando melhores rotas`,
 		"",
 		`🏆 <b>Melhor rota</b>: ${escapeHtml(ranking.buyLabel)} → ${escapeHtml(best.sellLabel)}`,
 		`Spread ${formatPct(best.spreadPct, 2)} · Lucro ${formatBrlCompact(best.profitBrl)}`,
+		"",
+		`<b>Top ${displayedOpportunities.length} de ${ranking.opportunities.length} rotas</b>`,
+		"",
+		...rankingLines,
+		...(hiddenCount > 0 ? ["", `… e mais ${hiddenCount} rota(s).`] : []),
 		"",
 		`📊 <b>Media</b>: ${formatBrl(summary.avg)} | <b>Faixa</b>: ${formatBrl(summary.min)} — ${formatBrl(summary.max)}`,
 	].join("\n");
@@ -1029,40 +1071,61 @@ export async function buildUsdtDefiSignalMessage(baseUrl: string): Promise<strin
 		].join("\n");
 	}
 
-	const buy = entries.slice().sort((a, b) => (a.price_brl ?? 0) - (b.price_brl ?? 0))[0];
-	const buyPrice = buy.price_brl ?? 0;
 	const defi = await fetchDefiBrlaPrice();
 
-	if (!defi || buyPrice <= 0) {
+	if (!defi) {
 		return [
 			`<b>💵 USDT/BRL · ${date} · ${time}</b>`,
 			"",
 			"<b>C) USDT -> DeFiLlama (BRLA)</b>",
 			"",
-			`⬇️ Compra CEX: ${escapeHtml(buy.label)} a ${formatBrl(buyPrice)}`,
 			"⚠️ DeFiLlama indisponivel no momento (timeout/falha).",
 		].join("\n");
 	}
 
 	const sellDefi = Number(defi.sellNetBrlPerUsdt.toFixed(4));
-	const spreadPct = ((sellDefi - buyPrice) / buyPrice) * 100;
-	const usdtQty = SIM_CAPITAL_BRL / buyPrice;
-	const profit = usdtQty * sellDefi - SIM_CAPITAL_BRL;
+	const opportunities = entries
+		.map((entry) => {
+			const buyPrice = entry.price_brl ?? 0;
+			const spreadPct = ((sellDefi - buyPrice) / buyPrice) * 100;
+			const usdtQty = SIM_CAPITAL_BRL / buyPrice;
+			const profit = usdtQty * sellDefi - SIM_CAPITAL_BRL;
+			return {
+				label: entry.label,
+				buyPrice,
+				spreadPct,
+				profit,
+			};
+		})
+		.sort((a, b) => b.profit - a.profit);
+
+	const best = opportunities[0];
+	const displayed = opportunities.slice(0, 6);
+	const rows = displayed.map((opportunity) => {
+		const icon = opportunity.profit >= 0 ? "🟢" : "🔴";
+		const trend = opportunity.spreadPct >= 0 ? "🔷" : "🔶";
+		return `${icon} ${escapeHtml(opportunity.label)}: ${formatSignedBrlCompact(opportunity.profit)} ${trend} ${formatSignedPct(opportunity.spreadPct, 2)}`;
+	});
 
 	return [
-		`<b>💵 USDT/BRL · ${date} · ${time}</b>`,
+		"📊 <b>Cotacao de Arbitragem</b>",
+		"━━━━━━━━━━━━━━━━━━━━",
 		"",
-		"<b>C) USDT -> DeFiLlama (BRLA)</b>",
+		"🪙 Corretora de compra: Todas",
+		"💱 Corretora de venda: DeFiLlama",
+		"🪙 Token de compra: USDT",
+		"💱 Moeda de venda: BRLA",
+		`💰 Valor de operacao: ${formatBrlCompact(SIM_CAPITAL_BRL)}`,
+		"🔔 Notificar quando lucro ≥ R$ 0,00",
+		"━━━━━━━━━━━━━━━━━━━━",
 		"",
-		"⬇️ <b>COMPRA em CEX</b>",
-		`   ${escapeHtml(buy.label)}: ${formatBrl(buyPrice)}`,
+		...rows,
 		"",
-		"⬆️ <b>VENDA no DeFi</b>",
-		`   🔗 DeFi BRLA: ${formatBrl(sellDefi)}  ${formatPct(spreadPct, 2)}`,
+		`🏆 Melhor rota: ${escapeHtml(best.label)} → DeFi BRLA`,
+		`Spread ${formatSignedPct(best.spreadPct, 2)} · Lucro ${formatSignedBrlCompact(best.profit)}`,
+		`⚠️ DeFi BRLA inclui taxa estimada de ${(DEFI_BRLA_TOTAL_DISCOUNT * 100).toFixed(2)}%.`,
 		"",
-		`💰 <b>Melhor rota</b>: ${escapeHtml(buy.label)} -> 🔗 DeFi BRLA`,
-		`   Capital ${formatBrlCompact(SIM_CAPITAL_BRL)} -> lucro estimado ${formatBrlCompact(profit)}`,
-		"⚠️ DeFi BRLA inclui taxa estimada de 0.50%.",
+		`⏱ ${date} · ${time}`,
 	].join("\n");
 }
 
