@@ -154,10 +154,12 @@ export async function GET(request: NextRequest) {
 	let skippedUnlinkedUser = 0;
 	let skippedMonitoringDisabled = 0;
 	let skippedNoTrackEnabled = 0;
+	let autoEnabledMissingSettings = 0;
 	const skippedByReason: Record<string, number> = {};
 
 	for (const chatId of dispatchChatIds) {
-		const settings = settingsByChatId.get(chatId) ?? (await getTelegramUserSettings(chatId));
+		const persistedSettings = settingsByChatId.get(chatId);
+		const settings = persistedSettings ?? (await getTelegramUserSettings(chatId));
 
 		const linkedUser = await getUserByTelegramChatId(chatId);
 		if (!linkedUser) {
@@ -173,6 +175,16 @@ export async function GET(request: NextRequest) {
 		}
 
 		let effectiveSettings = settings;
+
+		if (!persistedSettings) {
+			effectiveSettings = await setTelegramUserSettings(chatId, {
+				autoSignalsMode: "all",
+				alertsEnabled: true,
+				alertTracks: tracksByAutoMode("all"),
+				pausedUntil: null,
+			});
+			autoEnabledMissingSettings++;
+		}
 
 		if (!settings.alertsEnabled && settings.autoSignalsMode !== "off") {
 			const syncedTracks = tracksByAutoMode(settings.autoSignalsMode);
@@ -232,6 +244,7 @@ export async function GET(request: NextRequest) {
 			skipped_unlinked_user: skippedUnlinkedUser,
 			skipped_monitoring_disabled: skippedMonitoringDisabled,
 			skipped_no_track_enabled: skippedNoTrackEnabled,
+			auto_enabled_missing_settings: autoEnabledMissingSettings,
 			skipped_by_reason: skippedByReason,
 		},
 	});
