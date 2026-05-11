@@ -42,24 +42,6 @@ function tracksByAutoMode(mode: "off" | "usdt" | "scanner" | "usdt_defi" | "all"
 	return { a: false, b: false, c: false };
 }
 
-function isLikelyFreshDefaultSettings(
-	settings: Awaited<ReturnType<typeof getTelegramUserSettings>>
-): boolean {
-	return (
-		settings.autoSignalsMode === "off" &&
-		settings.alertsEnabled === false &&
-		settings.alertTracks.a &&
-		settings.alertTracks.b &&
-		settings.alertTracks.c &&
-		settings.minSpreadA === 0.5 &&
-		settings.minSpreadB === 2 &&
-		settings.minSpreadC === 0.1 &&
-		settings.simCapital === 1000 &&
-		settings.silentNight === false &&
-		settings.pausedUntil === null
-	);
-}
-
 function buildDispatchTrackPatch(
 	track: "a" | "b" | "c",
 	status: DispatchTrackStatus,
@@ -236,43 +218,6 @@ export async function GET(request: NextRequest) {
 		}
 
 		let effectiveSettings = settings;
-
-		if (!effectiveSettings.alertsEnabled) {
-			const explicitlyDisabled =
-				effectiveSettings.autoSignalsMode === "off" &&
-				effectiveSettings.pausedUntil === PAUSE_FOREVER &&
-				!effectiveSettings.alertTracks.a &&
-				!effectiveSettings.alertTracks.b &&
-				!effectiveSettings.alertTracks.c;
-			const shouldRecoverByMode = effectiveSettings.autoSignalsMode !== "off";
-			const shouldRecoverFreshDefault = isLikelyFreshDefaultSettings(effectiveSettings);
-			const shouldRecoverInconsistentDisabled =
-				effectiveSettings.pausedUntil === null &&
-				(effectiveSettings.alertTracks.a ||
-					effectiveSettings.alertTracks.b ||
-					effectiveSettings.alertTracks.c);
-			if (
-				!explicitlyDisabled &&
-				(shouldRecoverByMode || shouldRecoverFreshDefault || shouldRecoverInconsistentDisabled)
-			) {
-				const syncedTracks = shouldRecoverByMode
-					? tracksByAutoMode(effectiveSettings.autoSignalsMode)
-					: shouldRecoverFreshDefault || shouldRecoverInconsistentDisabled
-						? tracksByAutoMode("all")
-						: effectiveSettings.alertTracks;
-				effectiveSettings = await setTelegramUserSettings(chatId, {
-					alertsEnabled: true,
-					autoSignalsMode:
-						(shouldRecoverFreshDefault || shouldRecoverInconsistentDisabled) &&
-						effectiveSettings.autoSignalsMode === "off"
-							? "all"
-							: effectiveSettings.autoSignalsMode,
-					alertTracks: syncedTracks,
-					pausedUntil: null,
-				});
-				autoEnabledMissingSettings++;
-			}
-		}
 
 		if (!effectiveSettings.alertsEnabled) {
 			skipped++;
