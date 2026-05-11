@@ -579,7 +579,6 @@ export async function POST(request: NextRequest) {
 				return NextResponse.json({ ok: true });
 			}
 
-			await sendTelegramMessage(
 			await setTelegramUserSettings(effectiveChatId, { suppressDispatchUntilAuth: false });
 			await sendTelegramMessage(
 				effectiveChatId,
