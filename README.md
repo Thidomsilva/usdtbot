@@ -143,6 +143,11 @@ TELEGRAM_WEBHOOK_SECRET="um_segredo_longo"
 TELEGRAM_CHAT_ID="5214189267"
 ```
 
+Aliases aceitos para compatibilidade:
+
+- Token: `TELEGRAM_TOKEN` ou `BOT_TOKEN`
+- Webhook secret: `TELEGRAM_SECRET` ou `WEBHOOK_SECRET`
+
 Se quiser restringir para mais de um chat, use `TELEGRAM_ALLOWED_CHAT_IDS` com uma lista separada por virgulas.
 
 ### Webhook

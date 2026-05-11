@@ -42,6 +42,12 @@ export async function GET(request: NextRequest) {
       has_SESSION_SECRET: !!process.env.SESSION_SECRET,
       has_ADMIN_EMAIL: !!process.env.ADMIN_EMAIL,
       has_ADMIN_PASSWORD: !!process.env.ADMIN_PASSWORD,
+      has_TELEGRAM_BOT_TOKEN: !!process.env.TELEGRAM_BOT_TOKEN,
+      has_TELEGRAM_TOKEN: !!process.env.TELEGRAM_TOKEN,
+      has_BOT_TOKEN: !!process.env.BOT_TOKEN,
+      has_TELEGRAM_WEBHOOK_SECRET: !!process.env.TELEGRAM_WEBHOOK_SECRET,
+      has_TELEGRAM_SECRET: !!process.env.TELEGRAM_SECRET,
+      has_WEBHOOK_SECRET: !!process.env.WEBHOOK_SECRET,
       allow_ephemeral_user_storage: process.env.ALLOW_EPHEMERAL_USER_STORAGE === 'true',
     },
     auth_config: {
@@ -94,6 +100,29 @@ export async function GET(request: NextRequest) {
   debug.storage_detection.effective_storage_safe = !(
     debug.storage_detection.durable_storage_required && debug.storage_detection.will_use_file
   )
+
+  debug.telegram_config = {
+    token_env_detected: !!(
+      process.env.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_TOKEN || process.env.BOT_TOKEN
+    ),
+    token_env_source: process.env.TELEGRAM_BOT_TOKEN
+      ? 'TELEGRAM_BOT_TOKEN'
+      : process.env.TELEGRAM_TOKEN
+        ? 'TELEGRAM_TOKEN'
+        : process.env.BOT_TOKEN
+          ? 'BOT_TOKEN'
+          : 'none',
+    webhook_secret_env_detected: !!(
+      process.env.TELEGRAM_WEBHOOK_SECRET || process.env.TELEGRAM_SECRET || process.env.WEBHOOK_SECRET
+    ),
+    webhook_secret_env_source: process.env.TELEGRAM_WEBHOOK_SECRET
+      ? 'TELEGRAM_WEBHOOK_SECRET'
+      : process.env.TELEGRAM_SECRET
+        ? 'TELEGRAM_SECRET'
+        : process.env.WEBHOOK_SECRET
+          ? 'WEBHOOK_SECRET'
+          : 'none',
+  }
 
   if (!debug.storage_detection.effective_storage_safe) {
     debug.storage_detection.warning =

@@ -57,6 +57,14 @@ function trimEnv(value: string | undefined): string {
 	return value?.trim() ?? "";
 }
 
+function getFirstNonEmptyEnv(keys: string[]): string | null {
+	for (const key of keys) {
+		const value = trimEnv(process.env[key]);
+		if (value) return value;
+	}
+	return null;
+}
+
 function formatBrl(value: number): string {
 	return `R$ ${value.toFixed(4)}`;
 }
@@ -178,13 +186,19 @@ async function fetchJson<T>(url: URL): Promise<T> {
 }
 
 export function getTelegramBotToken(): string | null {
-	const token = trimEnv(process.env.TELEGRAM_BOT_TOKEN);
-	return token || null;
+	return getFirstNonEmptyEnv([
+		"TELEGRAM_BOT_TOKEN",
+		"TELEGRAM_TOKEN",
+		"BOT_TOKEN",
+	]);
 }
 
 export function getTelegramWebhookSecret(): string | null {
-	const secret = trimEnv(process.env.TELEGRAM_WEBHOOK_SECRET);
-	return secret || null;
+	return getFirstNonEmptyEnv([
+		"TELEGRAM_WEBHOOK_SECRET",
+		"TELEGRAM_SECRET",
+		"WEBHOOK_SECRET",
+	]);
 }
 
 export function getAllowedTelegramChatIds(): Set<string> | null {
