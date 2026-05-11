@@ -7,6 +7,9 @@ import {
 	buildMonitoringStatusMarkup,
 	buildMonitoringStatusMessage,
 	buildScannerSignalMessage,
+	buildAlertUsdtMessage,
+	buildAlertScannerMessage,
+	buildAlertUsdtDefiMessage,
 	buildTelegramHelpMessage,
 	buildTelegramMenuMarkup,
 	buildTelegramMenuMessage,
@@ -26,8 +29,8 @@ import {
 	sendTelegramMessage,
 } from "@/lib/telegram";
 import { getUserByTelegramChatId, linkTelegramChatToUser, registerTelegramUser, unlinkTelegramChat } from "@/lib/user-store";
-import { PAUSE_FOREVER, getTelegramUserSettings, setTelegramUserSettings, type TelegramUserSettings } from "@/lib/telegram-user-settings";
-import { temAcesso, isTrialAtivo, TRIAL_DAYS } from "@/lib/plans";
+import { PAUSE_FOREVER, checkAlertEligibility, getTelegramUserSettings, setTelegramUserSettings, type TelegramUserSettings } from "@/lib/telegram-user-settings";
+import { temAcesso, isTrialAtivo, TRIAL_DAYS, spreadMinimoEfetivo } from "@/lib/plans";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -889,6 +892,76 @@ export async function POST(request: NextRequest) {
 				buildCleanSettingsConfirmation(updated, [buildPauseConfirmMessage(pausedUntil)]),
 				updated
 			);
+			return NextResponse.json({ ok: true });
+		}
+
+		// --- dispatch:now (verificacao manual) ---
+		if (callbackData === "dispatch:now") {
+			const origin = request.nextUrl.origin;
+			let currentSettings = await getTelegramUserSettings(effectiveChatId);
+
+			if (!currentSettings.alertsEnabled) {
+				await sendTelegramMessage(effectiveChatId, "⚠️ Monitoramento desativado.");
+				return NextResponse.json({ ok: true });
+			}
+
+			const tracks: Array<"a" | "b" | "c"> = [];
+			if (currentSettings.alertTracks.a) tracks.push("a");
+			if (currentSettings.alertTracks.b) tracks.push("b");
+			if (currentSettings.alertTracks.c) tracks.push("c");
+
+			if (tracks.length === 0) {
+				await sendTelegramMessage(effectiveChatId, "⚠️ Nenhuma trilha ativa.");
+				return NextResponse.json({ ok: true });
+			}
+
+			await sendTelegramMessage(effectiveChatId, "🔄 Verificando oportunidades agora...");
+			currentSettings = await setTelegramUserSettings(effectiveChatId, { lastCronAt: Date.now() });
+
+			let anySent = false;
+			for (const track of tracks) {
+				currentSettings = await getTelegramUserSettings(effectiveChatId);
+				try {
+					let messageText: string | null = null;
+					let scannerKey: string | undefined;
+
+					if (track === "b") {
+						const alertRes = await buildAlertScannerMessage(origin, currentSettings);
+						if (!alertRes) continue;
+						scannerKey = alertRes.key;
+						const check = checkAlertEligibility(currentSettings, "b", scannerKey);
+						if (!check.allowed) continue;
+						messageText = alertRes.message;
+						currentSettings = await setTelegramUserSettings(effectiveChatId, check.updates);
+					} else if (track === "a") {
+						const check = checkAlertEligibility(currentSettings, "a");
+						if (!check.allowed) continue;
+						const planInfo = { plan: currentSettings.plan, planActive: currentSettings.planActive, planExpiresAt: currentSettings.planExpiresAt, trialUsed: currentSettings.trialUsed };
+						const effectiveMin = spreadMinimoEfetivo(planInfo, currentSettings.minSpreadA);
+						messageText = await buildAlertUsdtMessage(origin, currentSettings, effectiveMin);
+						if (!messageText) continue;
+						currentSettings = await setTelegramUserSettings(effectiveChatId, check.updates);
+					} else {
+						const check = checkAlertEligibility(currentSettings, "c");
+						if (!check.allowed) continue;
+						messageText = await buildAlertUsdtDefiMessage(origin, currentSettings);
+						if (!messageText) continue;
+						currentSettings = await setTelegramUserSettings(effectiveChatId, check.updates);
+					}
+
+					if (messageText) {
+						await sendTelegramMessage(effectiveChatId, messageText);
+						anySent = true;
+					}
+				} catch {
+					// ignora erros por trilha para nao interromper as demais
+				}
+			}
+
+			if (!anySent) {
+				await sendTelegramMessage(effectiveChatId, "ℹ️ Nenhuma oportunidade acima do minimo no momento.");
+			}
+			await sendMonitoringStatus(effectiveChatId);
 			return NextResponse.json({ ok: true });
 		}
 

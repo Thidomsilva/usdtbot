@@ -851,6 +851,9 @@ export function buildMonitoringStatusMarkup(settings: TelegramUserSettings): Rec
 	return {
 		inline_keyboard: [
 			[
+				{ text: "🔄 Checar agora", callback_data: "dispatch:now" },
+			],
+			[
 				{ text: "⚙️ Ajustar", callback_data: "settings:open" },
 				{ text: "🔕 Pausar tudo", callback_data: "pause:menu" },
 			],
