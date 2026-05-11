@@ -54,6 +54,25 @@ function hasHistoricalMonitoringEvidence(
 	);
 }
 
+function isLikelyFreshDefaultSettings(
+	settings: Awaited<ReturnType<typeof getTelegramUserSettings>>
+): boolean {
+	return (
+		settings.autoSignalsMode === "off" &&
+		settings.alertsEnabled === false &&
+		settings.alertTracks.a &&
+		settings.alertTracks.b &&
+		settings.alertTracks.c &&
+		settings.minSpreadA === 0.5 &&
+		settings.minSpreadB === 2 &&
+		settings.minSpreadC === 0.1 &&
+		settings.simCapital === 1000 &&
+		settings.silentNight === false &&
+		settings.pausedUntil === null &&
+		!hasHistoricalMonitoringEvidence(settings)
+	);
+}
+
 function buildDispatchTrackPatch(
 	track: "a" | "b" | "c",
 	status: DispatchTrackStatus,
@@ -222,20 +241,22 @@ export async function GET(request: NextRequest) {
 		if (!effectiveSettings.alertsEnabled) {
 			const shouldRecoverByMode = effectiveSettings.autoSignalsMode !== "off";
 			const shouldRecoverByHistory = hasHistoricalMonitoringEvidence(effectiveSettings);
+			const shouldRecoverFreshDefault = isLikelyFreshDefaultSettings(effectiveSettings);
 			const shouldRecoverByHeal =
 				healMode &&
 				effectiveSettings.autoSignalsMode === "off" &&
 				!shouldRecoverByHistory;
-			if (shouldRecoverByMode || shouldRecoverByHistory || shouldRecoverByHeal) {
+			if (shouldRecoverByMode || shouldRecoverByHistory || shouldRecoverFreshDefault || shouldRecoverByHeal) {
 				const syncedTracks = shouldRecoverByMode
 					? tracksByAutoMode(effectiveSettings.autoSignalsMode)
-					: shouldRecoverByHeal
+					: shouldRecoverFreshDefault || shouldRecoverByHeal
 						? tracksByAutoMode("all")
 						: effectiveSettings.alertTracks;
 				effectiveSettings = await setTelegramUserSettings(chatId, {
 					alertsEnabled: true,
 					autoSignalsMode:
-						shouldRecoverByHeal && effectiveSettings.autoSignalsMode === "off"
+						(shouldRecoverFreshDefault || shouldRecoverByHeal) &&
+						effectiveSettings.autoSignalsMode === "off"
 							? "all"
 							: effectiveSettings.autoSignalsMode,
 					alertTracks: syncedTracks,
