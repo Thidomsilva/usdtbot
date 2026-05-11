@@ -169,13 +169,24 @@ function formatTimestamp(value: string): string {
 }
 
 async function fetchJson<T>(url: URL): Promise<T> {
+	const headers: Record<string, string> = {
+		accept: "application/json",
+		"user-agent": "usdtbot-telegram/1.0",
+	};
+
+	// Internal API calls can run without user cookies (ex.: cron dispatcher).
+	// When CRON_SECRET exists, propagate it to avoid auth middleware returning 401.
+	if (url.pathname.startsWith("/api/")) {
+		const secret = process.env.CRON_SECRET?.trim();
+		if (secret) {
+			headers.authorization = `Bearer ${secret}`;
+		}
+	}
+
 	const response = await fetch(url, {
 		method: "GET",
 		cache: "no-store",
-		headers: {
-			accept: "application/json",
-			"user-agent": "usdtbot-telegram/1.0",
-		},
+		headers,
 	});
 
 	if (!response.ok) {

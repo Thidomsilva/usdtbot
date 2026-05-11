@@ -3,6 +3,12 @@ import { getSessionSecret, readSessionFromToken, SESSION_COOKIE } from './lib/se
 
 const PUBLIC_FILE_PATTERN = /\.[^/]+$/
 
+function hasValidCronAuthorization(request: NextRequest): boolean {
+  const secret = process.env.CRON_SECRET?.trim()
+  if (!secret) return false
+  return request.headers.get('authorization') === `Bearer ${secret}`
+}
+
 function isPublicPath(pathname: string): boolean {
   return pathname === '/login'
     || pathname.startsWith('/arbitragem-scanner')
@@ -19,6 +25,10 @@ function isPublicPath(pathname: string): boolean {
 
 export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl
+
+  if (pathname.startsWith('/api/') && hasValidCronAuthorization(request)) {
+    return NextResponse.next()
+  }
 
   if (isPublicPath(pathname)) {
     return NextResponse.next()
