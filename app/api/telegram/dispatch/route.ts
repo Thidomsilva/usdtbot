@@ -83,6 +83,7 @@ function buildDispatchTrackPatch(
 
 	if (track === "a") {
 		return {
+			lastCronAt: now,
 			lastDispatchAtA: now,
 			lastDispatchStatusA: status,
 			lastDispatchReasonA: normalizedReason,
@@ -91,6 +92,7 @@ function buildDispatchTrackPatch(
 
 	if (track === "b") {
 		return {
+			lastCronAt: now,
 			lastDispatchAtB: now,
 			lastDispatchStatusB: status,
 			lastDispatchReasonB: normalizedReason,
@@ -98,6 +100,7 @@ function buildDispatchTrackPatch(
 	}
 
 	return {
+		lastCronAt: now,
 		lastDispatchAtC: now,
 		lastDispatchStatusC: status,
 		lastDispatchReasonC: normalizedReason,
@@ -295,10 +298,6 @@ export async function GET(request: NextRequest) {
 		}
 
 		for (const track of tracks) {
-			// Sempre registra que o cron passou por este usuario nesta rodada.
-			if (effectiveSettings.lastCronAt === null || Date.now() - effectiveSettings.lastCronAt > 30_000) {
-				effectiveSettings = await setTelegramUserSettings(chatId, { lastCronAt: Date.now() });
-			}
 			const result = await dispatchAlert(chatId, origin, effectiveSettings, track);
 			effectiveSettings = await setTelegramUserSettings(chatId, {
 				...result.settings,
