@@ -14,7 +14,7 @@ const DEFAULT_TIME_ZONE = "America/Sao_Paulo";
 const DEFI_BRLA_ENDPOINT =
 	"https://coins.llama.fi/prices/current/polygon:0xe6a537a407488807f0bbeb0038b79004f19dddfb";
 const DEFI_BRLA_KEY = "polygon:0xe6a537a407488807f0bbeb0038b79004f19dddfb";
-const DEFI_BRLA_TOTAL_DISCOUNT = 0.005;
+const DEFAULT_DEFI_BRLA_TOTAL_DISCOUNT = 0;
 const DEFI_BRLA_CACHE_TTL_MS = 15_000;
 const DEFI_BRLA_TIMEOUT_MS = 3_000;
 const SIM_CAPITAL_BRL = 1000;
@@ -44,6 +44,7 @@ type DefiBrlaPrice = {
 	brlaUsd: number;
 	sellGrossBrlPerUsdt: number;
 	sellNetBrlPerUsdt: number;
+	totalDiscount: number;
 };
 
 type CexOpportunity = {
@@ -68,6 +69,20 @@ function formatCexOpportunityEntry(params: {
 }
 
 let defiBrlaCache: { expiresAt: number; value: DefiBrlaPrice } | null = null;
+
+function getDefiBrlaTotalDiscount(): number {
+	const raw = (process.env.DEFI_BRLA_TOTAL_DISCOUNT ?? process.env.DEFI_BRLA_FEE ?? "").trim();
+	if (!raw) return DEFAULT_DEFI_BRLA_TOTAL_DISCOUNT;
+
+	const parsed = Number(raw.replace(",", "."));
+	if (!Number.isFinite(parsed)) return DEFAULT_DEFI_BRLA_TOTAL_DISCOUNT;
+
+	// Accept either fraction (0.005) or percent (0.5).
+	const normalized = parsed > 1 ? parsed / 100 : parsed;
+	if (normalized < 0) return 0;
+	if (normalized > 0.2) return 0.2;
+	return normalized;
+}
 
 function trimEnv(value: string | undefined): string {
 	return value?.trim() ?? "";
@@ -170,8 +185,11 @@ function buildDateAndTime(value: string): { date: string; time: string } {
 
 async function fetchDefiBrlaPrice(): Promise<DefiBrlaPrice | null> {
 	const now = Date.now();
+	const totalDiscount = getDefiBrlaTotalDiscount();
 	if (defiBrlaCache && defiBrlaCache.expiresAt > now) {
-		return defiBrlaCache.value;
+		if (Math.abs(defiBrlaCache.value.totalDiscount - totalDiscount) < 1e-9) {
+			return defiBrlaCache.value;
+		}
 	}
 
 	try {
@@ -199,12 +217,13 @@ async function fetchDefiBrlaPrice(): Promise<DefiBrlaPrice | null> {
 		}
 
 		const sellGrossBrlPerUsdt = 1 / brlaUsd;
-		const sellNetBrlPerUsdt = sellGrossBrlPerUsdt * (1 - DEFI_BRLA_TOTAL_DISCOUNT);
+		const sellNetBrlPerUsdt = sellGrossBrlPerUsdt * (1 - totalDiscount);
 
 		const value: DefiBrlaPrice = {
 			brlaUsd,
 			sellGrossBrlPerUsdt,
 			sellNetBrlPerUsdt,
+			totalDiscount,
 		};
 
 		defiBrlaCache = {
@@ -987,7 +1006,7 @@ export async function buildAlertUsdtDefiMessage(baseUrl: string, settings: Teleg
 		"",
 		`🏆 Melhor rota: ${escapeHtml(best.label)} → DeFi BRLA`,
 		`Spread ${formatSignedPct(best.spreadPct, 2)} · Lucro ${formatSignedBrlCompact(best.profit)}`,
-		`⚠️ Taxa DeFi estimada ${(DEFI_BRLA_TOTAL_DISCOUNT * 100).toFixed(2)}% ja descontada`,
+		`⚠️ Taxa DeFi estimada ${(defi.totalDiscount * 100).toFixed(2)}% ja descontada`,
 		"",
 		`⏱ ${time}`,
 	].join("\n");
@@ -1123,7 +1142,7 @@ export async function buildUsdtDefiSignalMessage(baseUrl: string): Promise<strin
 		"",
 		`🏆 Melhor rota: ${escapeHtml(best.label)} → DeFi BRLA`,
 		`Spread ${formatSignedPct(best.spreadPct, 2)} · Lucro ${formatSignedBrlCompact(best.profit)}`,
-		`⚠️ DeFi BRLA inclui taxa estimada de ${(DEFI_BRLA_TOTAL_DISCOUNT * 100).toFixed(2)}%.`,
+		`⚠️ DeFi BRLA inclui taxa estimada de ${(defi.totalDiscount * 100).toFixed(2)}%.`,
 		"",
 		`⏱ ${date} · ${time}`,
 	].join("\n");
