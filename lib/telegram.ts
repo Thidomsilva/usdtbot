@@ -45,10 +45,11 @@ type DefiBrlaPrice = {
 	sellNetBrlPerUsdt: number;
 };
 
-type SellCandidate = {
-	label: string;
-	priceBrl: number;
-	isDefi: boolean;
+type CexOpportunity = {
+	sellLabel: string;
+	sellPrice: number;
+	spreadPct: number;
+	profitBrl: number;
 };
 
 let defiBrlaCache: { expiresAt: number; value: DefiBrlaPrice } | null = null;
@@ -86,6 +87,48 @@ function qualityBadge(quality: "inviavel" | "apertada" | "executavel"): string {
 	if (quality === "executavel") return "✅ Executavel";
 	if (quality === "apertada") return "🟡 Apertada";
 	return "🔴 Inviavel";
+}
+
+function buildCexOpportunityRanking(
+	entries: Array<{ label: string; price_brl?: number }>,
+	capitalBrl: number,
+	minSpreadPct: number
+): { buyLabel: string; buyPrice: number; opportunities: CexOpportunity[] } | null {
+	const sorted = entries
+		.filter((entry) => typeof entry.price_brl === "number" && (entry.price_brl ?? 0) > 0)
+		.slice()
+		.sort((a, b) => (a.price_brl ?? 0) - (b.price_brl ?? 0));
+
+	if (sorted.length < 2) return null;
+
+	const buy = sorted[0];
+	const buyPrice = buy.price_brl ?? 0;
+	if (buyPrice <= 0) return null;
+
+	const opportunities: CexOpportunity[] = sorted
+		.slice(1)
+		.map((sell) => {
+			const sellPrice = sell.price_brl ?? 0;
+			const spreadPct = ((sellPrice - buyPrice) / buyPrice) * 100;
+			const usdtQty = capitalBrl / buyPrice;
+			const profitBrl = usdtQty * sellPrice - capitalBrl;
+			return {
+				sellLabel: sell.label,
+				sellPrice,
+				spreadPct,
+				profitBrl,
+			};
+		})
+		.filter((opportunity) => opportunity.sellPrice > buyPrice && opportunity.spreadPct >= minSpreadPct)
+		.sort((a, b) => b.spreadPct - a.spreadPct);
+
+	if (opportunities.length === 0) return null;
+
+	return {
+		buyLabel: buy.label,
+		buyPrice,
+		opportunities,
+	};
 }
 
 function buildDateAndTime(value: string): { date: string; time: string } {
@@ -783,31 +826,28 @@ export async function buildAlertUsdtMessage(
 
 	if (entries.length < 2) return null;
 
-	const sorted = entries.slice().sort((a, b) => (a.price_brl ?? 0) - (b.price_brl ?? 0));
-	const buy = sorted[0];
-	const sell = sorted[sorted.length - 1];
-	const buyPrice = buy.price_brl ?? 0;
-	const sellPrice = sell.price_brl ?? 0;
-	if (buyPrice <= 0 || sellPrice <= 0) return null;
-	const spreadPct = ((sellPrice - buyPrice) / buyPrice) * 100;
-
-	if (spreadPct < minSpreadPct) return null;
-
 	const capital = settings.simCapital;
-	const usdtQty = capital / buyPrice;
-	const profit = usdtQty * sellPrice - capital;
+	const ranking = buildCexOpportunityRanking(entries, capital, minSpreadPct);
+	if (!ranking) return null;
 
 	const { time } = buildDateAndTime(prices.timestamp);
+	const opportunitiesLines = ranking.opportunities.map((opportunity, index) => [
+		`${index + 1}. <b>${escapeHtml(ranking.buyLabel)} → ${escapeHtml(opportunity.sellLabel)}</b>`,
+		`   Compra: ${formatBrl(ranking.buyPrice)} | Venda: ${formatBrl(opportunity.sellPrice)}`,
+		`   Lucro: ${formatBrlCompact(opportunity.profitBrl)} (${formatPct(opportunity.spreadPct, 2)})`,
+	].join("\n"));
 
 	return [
 		"🔔 <b>ALERTA CEX→CEX</b>",
 		"",
-		`⬇️ Compra: ${escapeHtml(buy.label)} ${formatBrl(buyPrice)}`,
-		`⬆️ Venda: ${escapeHtml(sell.label)} ${formatBrl(sellPrice)}`,
-		`📈 Spread: ${formatPct(spreadPct, 2)} liquido`,
-		`💰 ${formatBrlCompact(capital)} → lucro estimado ${formatBrlCompact(profit)}`,
+		`⏱ Atualizacao: ${time}`,
+		`💰 Simulacao: ${formatBrlCompact(capital)}`,
+		`⬇️ Compra base: ${escapeHtml(ranking.buyLabel)} ${formatBrl(ranking.buyPrice)}`,
+		`📈 Acima de ${formatPct(minSpreadPct, 2)}: ${ranking.opportunities.length} oportunidades`,
 		"",
-		`⏱ ${time}`,
+		...opportunitiesLines,
+		"",
+		"✅ Rotas CEX→CEX ranqueadas por spread.",
 	].join("\n");
 }
 
@@ -911,57 +951,34 @@ export async function buildUsdtSignalMessage(
 		].join("\n");
 	}
 
-	const sorted = entries.slice().sort((a, b) => (a.price_brl ?? 0) - (b.price_brl ?? 0));
-	const buy = sorted[0];
-	const buyPrice = buy.price_brl ?? 0;
-
-	const sellCandidates: SellCandidate[] = entries
-		.map((exchange) => ({
-			label: exchange.label,
-			priceBrl: exchange.price_brl ?? 0,
-			isDefi: false,
-		}))
-		.filter((candidate) => candidate.priceBrl > 0);
-
-	const rankedSells = sellCandidates
-		.slice()
-		.sort((a, b) => b.priceBrl - a.priceBrl)
-		.slice(0, 6);
-
-	const bestSell = rankedSells[0] ?? null;
-	if (!bestSell || buyPrice <= 0) {
+	const ranking = buildCexOpportunityRanking(entries, SIM_CAPITAL_BRL, 0.0001);
+	if (!ranking) {
 		return [
 			`<b>💵 USDT/BRL · ${date} · ${time}</b>`,
 			"",
-			"⚠️ Nao foi possivel montar ranking de venda agora.",
+			"⚠️ Nao foi possivel montar oportunidades CEX→CEX agora.",
 		].join("\n");
 	}
-
-	const usdtQty = SIM_CAPITAL_BRL / buyPrice;
-	const bestReturnBrl = usdtQty * bestSell.priceBrl;
-	const bestProfitBrl = bestReturnBrl - SIM_CAPITAL_BRL;
-
-	const rankingLines = rankedSells.map((candidate) => {
-		const spreadPct = ((candidate.priceBrl - buyPrice) / buyPrice) * 100;
-		const trend = spreadPct >= 0 ? "🟢" : "🔴";
-		const winner = candidate.label === bestSell.label ? " 🏆" : "";
-		const label = candidate.isDefi ? "🔗 DeFi BRLA" : candidate.label;
-		return `   ${trend} ${label}: ${formatBrl(candidate.priceBrl)}  ${formatPct(spreadPct, 2)}${winner}`;
-	});
+	const rankingLines = ranking.opportunities.map((opportunity, index) => [
+		`${index + 1}. <b>${escapeHtml(ranking.buyLabel)} → ${escapeHtml(opportunity.sellLabel)}</b>`,
+		`   Compra: ${formatBrl(ranking.buyPrice)} | Venda: ${formatBrl(opportunity.sellPrice)}`,
+		`   Lucro: ${formatBrlCompact(opportunity.profitBrl)} (${formatPct(opportunity.spreadPct, 2)})`,
+	].join("\n"));
+	const best = ranking.opportunities[0];
 
 	return [
 		`<b>💵 USDT/BRL · ${date} · ${time}</b>`,
 		"",
 		"<b>A) USDT entre CEXs</b>",
 		"",
-		"⬇️ <b>COMPRA mais barata</b>",
-		`   ${escapeHtml(buy.label)}: ${formatBrl(buyPrice)}`,
+		`💰 Simulacao: ${formatBrlCompact(SIM_CAPITAL_BRL)}`,
+		`⬇️ Compra base: ${escapeHtml(ranking.buyLabel)} ${formatBrl(ranking.buyPrice)}`,
+		`📈 Oportunidades: ${ranking.opportunities.length}`,
 		"",
-		"⬆️ <b>VENDA — ranking</b>",
 		...rankingLines,
 		"",
-		`💰 <b>Melhor rota</b>: ${escapeHtml(buy.label)} -> ${escapeHtml(bestSell.label)}`,
-		`   Capital ${formatBrlCompact(SIM_CAPITAL_BRL)} -> lucro estimado ${formatBrlCompact(bestProfitBrl)}`,
+		`🏆 <b>Melhor rota</b>: ${escapeHtml(ranking.buyLabel)} → ${escapeHtml(best.sellLabel)} (${formatPct(best.spreadPct, 2)})`,
+		`   Lucro estimado: ${formatBrlCompact(best.profitBrl)}`,
 		"",
 		`📊 <b>Media</b>: ${formatBrl(summary.avg)} | <b>Faixa</b>: ${formatBrl(summary.min)} — ${formatBrl(summary.max)}`,
 	].join("\n");
