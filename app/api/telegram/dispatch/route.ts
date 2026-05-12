@@ -170,123 +170,141 @@ export async function GET(request: NextRequest) {
 		return NextResponse.json({ error: "Nao autorizado" }, { status: 401 });
 	}
 
-	const users = await listUsers();
-	const origin = request.nextUrl.origin;
+	try {
+		const users = await listUsers();
+		const origin = request.nextUrl.origin;
 
-	const dispatchChatIds = new Set<string>();
-	for (const user of users) {
-		if (!user.active) continue;
-		if (!user.telegramChatId) continue;
-		dispatchChatIds.add(user.telegramChatId);
-	}
-
-	let sent = 0;
-	let skipped = 0;
-	let failed = 0;
-	let allowlistMismatches = 0;
-	let skippedUnlinkedUser = 0;
-	let skippedMonitoringDisabled = 0;
-	let skippedNoTrackEnabled = 0;
-	let autoEnabledMissingSettings = 0;
-	const skippedByReason: Record<string, number> = {};
-
-	for (const chatId of dispatchChatIds) {
-		let settings = await getTelegramUserSettings(chatId);
-		const linkedUser = await getUserByTelegramChatId(chatId);
-
-		// Auto-heal stale auth flags: if chat is linked and active, dispatch should not stay blocked forever.
-		if (linkedUser && settings.suppressDispatchUntilAuth) {
-			settings = await setTelegramUserSettings(chatId, { suppressDispatchUntilAuth: false });
+		const dispatchChatIds = new Set<string>();
+		for (const user of users) {
+			if (!user.active) continue;
+			if (!user.telegramChatId) continue;
+			dispatchChatIds.add(user.telegramChatId);
 		}
 
-		if (linkedUser && settings.pendingAuthStep) {
-			settings = await setTelegramUserSettings(chatId, {
-				pendingAuthStep: null,
-				pendingAuthUsername: null,
-			});
-		}
+		let sent = 0;
+		let skipped = 0;
+		let failed = 0;
+		let processedChats = 0;
+		let allowlistMismatches = 0;
+		let skippedUnlinkedUser = 0;
+		let skippedMonitoringDisabled = 0;
+		let skippedNoTrackEnabled = 0;
+		let autoEnabledMissingSettings = 0;
+		const skippedByReason: Record<string, number> = {};
 
-		if (settings.suppressDispatchUntilAuth) {
-			skipped++;
-			skippedByReason["logged_out_waiting_auth"] = (skippedByReason["logged_out_waiting_auth"] ?? 0) + 1;
-			continue;
-		}
-		if (settings.pendingAuthStep) {
-			skipped++;
-			skippedByReason[`auth_in_progress_${settings.pendingAuthStep}`] =
-				(skippedByReason[`auth_in_progress_${settings.pendingAuthStep}`] ?? 0) + 1;
-			continue;
-		}
+		for (const chatId of dispatchChatIds) {
+			try {
+				processedChats++;
+				let settings = await getTelegramUserSettings(chatId);
+				const linkedUser = await getUserByTelegramChatId(chatId);
 
-		if (!linkedUser) {
-			skipped++;
-			skippedUnlinkedUser++;
-			continue;
-		}
+				// Auto-heal stale auth flags: if chat is linked and active, dispatch should not stay blocked forever.
+				if (linkedUser && settings.suppressDispatchUntilAuth) {
+					settings = await setTelegramUserSettings(chatId, { suppressDispatchUntilAuth: false });
+				}
 
-		// Do not block automatic dispatch for authenticated and linked users.
-		// Allowlist remains enforced in webhook handling, but dispatch should not silently drop legit users.
-		if (!isAllowedTelegramChat(chatId)) {
-			allowlistMismatches++;
-		}
+				if (linkedUser && settings.pendingAuthStep) {
+					settings = await setTelegramUserSettings(chatId, {
+						pendingAuthStep: null,
+						pendingAuthUsername: null,
+					});
+				}
 
-		let effectiveSettings = settings;
+				if (settings.suppressDispatchUntilAuth) {
+					skipped++;
+					skippedByReason["logged_out_waiting_auth"] = (skippedByReason["logged_out_waiting_auth"] ?? 0) + 1;
+					continue;
+				}
+				if (settings.pendingAuthStep) {
+					skipped++;
+					skippedByReason[`auth_in_progress_${settings.pendingAuthStep}`] =
+						(skippedByReason[`auth_in_progress_${settings.pendingAuthStep}`] ?? 0) + 1;
+					continue;
+				}
 
-		if (!effectiveSettings.alertsEnabled) {
-			skipped++;
-			skippedMonitoringDisabled++;
-			continue;
-		}
+				if (!linkedUser) {
+					skipped++;
+					skippedUnlinkedUser++;
+					continue;
+				}
 
-		const tracks: Array<"a" | "b" | "c"> = [];
-		if (effectiveSettings.alertTracks.a) tracks.push("a");
-		if (effectiveSettings.alertTracks.b) tracks.push("b");
-		if (effectiveSettings.alertTracks.c) tracks.push("c");
+				// Do not block automatic dispatch for authenticated and linked users.
+				// Allowlist remains enforced in webhook handling, but dispatch should not silently drop legit users.
+				if (!isAllowedTelegramChat(chatId)) {
+					allowlistMismatches++;
+				}
 
-		if (tracks.length === 0) {
-			skipped++;
-			skippedNoTrackEnabled++;
-			continue;
-		}
+				let effectiveSettings = settings;
 
-		for (const track of tracks) {
-			const result = await dispatchAlert(chatId, origin, effectiveSettings, track);
-			effectiveSettings = await setTelegramUserSettings(chatId, {
-				...result.settings,
-				...buildDispatchTrackPatch(track, result.status, result.reason),
-			});
-			if (result.status === "sent") {
-				sent++;
-				continue;
-			}
+				if (!effectiveSettings.alertsEnabled) {
+					skipped++;
+					skippedMonitoringDisabled++;
+					continue;
+				}
 
-			if (result.status === "failed") {
+				const tracks: Array<"a" | "b" | "c"> = [];
+				if (effectiveSettings.alertTracks.a) tracks.push("a");
+				if (effectiveSettings.alertTracks.b) tracks.push("b");
+				if (effectiveSettings.alertTracks.c) tracks.push("c");
+
+				if (tracks.length === 0) {
+					skipped++;
+					skippedNoTrackEnabled++;
+					continue;
+				}
+
+				for (const track of tracks) {
+					const result = await dispatchAlert(chatId, origin, effectiveSettings, track);
+					effectiveSettings = await setTelegramUserSettings(chatId, {
+						...result.settings,
+						...buildDispatchTrackPatch(track, result.status, result.reason),
+					});
+					if (result.status === "sent") {
+						sent++;
+						continue;
+					}
+
+					if (result.status === "failed") {
+						failed++;
+					} else {
+						skipped++;
+					}
+
+					if (result.reason) {
+						skippedByReason[result.reason] = (skippedByReason[result.reason] ?? 0) + 1;
+					}
+				}
+			} catch (error) {
 				failed++;
-			} else {
-				skipped++;
-			}
-
-			if (result.reason) {
-				skippedByReason[result.reason] = (skippedByReason[result.reason] ?? 0) + 1;
+				const message = error instanceof Error ? error.message : String(error ?? "unknown error");
+				const compact = message.replace(/\s+/g, " ").slice(0, 180);
+				skippedByReason[`dispatch_loop_exception:${compact}`] =
+					(skippedByReason[`dispatch_loop_exception:${compact}`] ?? 0) + 1;
+				console.error(`[DISPATCH] chat loop error chatId=${chatId}:`, error);
 			}
 		}
-	}
 
-	return NextResponse.json({
-		ok: true,
-		total_users: users.length,
-		total_settings: dispatchChatIds.size,
-		total_dispatch_chats: dispatchChatIds.size,
-		sent,
-		skipped,
-		failed,
-		diagnostics: {
-			allowlist_mismatches: allowlistMismatches,
-			skipped_unlinked_user: skippedUnlinkedUser,
-			skipped_monitoring_disabled: skippedMonitoringDisabled,
-			skipped_no_track_enabled: skippedNoTrackEnabled,
-			auto_enabled_missing_settings: autoEnabledMissingSettings,
-			skipped_by_reason: skippedByReason,
-		},
-	});
+		return NextResponse.json({
+			ok: true,
+			total_users: users.length,
+			total_settings: dispatchChatIds.size,
+			total_dispatch_chats: dispatchChatIds.size,
+			processed_chats: processedChats,
+			sent,
+			skipped,
+			failed,
+			diagnostics: {
+				allowlist_mismatches: allowlistMismatches,
+				skipped_unlinked_user: skippedUnlinkedUser,
+				skipped_monitoring_disabled: skippedMonitoringDisabled,
+				skipped_no_track_enabled: skippedNoTrackEnabled,
+				auto_enabled_missing_settings: autoEnabledMissingSettings,
+				skipped_by_reason: skippedByReason,
+			},
+		});
+	} catch (error) {
+		console.error("[DISPATCH] fatal error:", error);
+		const message = error instanceof Error ? error.message : "Falha inesperada no dispatcher";
+		return NextResponse.json({ error: message }, { status: 503 });
+	}
 }

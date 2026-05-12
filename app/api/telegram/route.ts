@@ -987,7 +987,6 @@ export async function POST(request: NextRequest) {
 			}
 
 			await sendTelegramMessage(effectiveChatId, "🔄 Verificando oportunidades agora...");
-			currentSettings = await setTelegramUserSettings(effectiveChatId, { lastCronAt: Date.now() });
 
 			let anySent = false;
 			for (const track of tracks) {
