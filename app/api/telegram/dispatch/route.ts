@@ -45,15 +45,13 @@ function tracksByAutoMode(mode: "off" | "usdt" | "scanner" | "usdt_defi" | "all"
 function buildDispatchTrackPatch(
 	track: "a" | "b" | "c",
 	status: DispatchTrackStatus,
-	reason?: string,
-	source: "cron" | "manual" = "cron"
+	reason?: string
 ) {
 	const now = Date.now();
 	const normalizedReason = reason ?? null;
 
 	if (track === "a") {
 		return {
-			...(source === "cron" ? { lastCronAt: now } : {}),
 			lastDispatchAtA: now,
 			lastDispatchStatusA: status,
 			lastDispatchReasonA: normalizedReason,
@@ -62,7 +60,6 @@ function buildDispatchTrackPatch(
 
 	if (track === "b") {
 		return {
-			...(source === "cron" ? { lastCronAt: now } : {}),
 			lastDispatchAtB: now,
 			lastDispatchStatusB: status,
 			lastDispatchReasonB: normalizedReason,
@@ -70,7 +67,6 @@ function buildDispatchTrackPatch(
 	}
 
 	return {
-		...(source === "cron" ? { lastCronAt: now } : {}),
 		lastDispatchAtC: now,
 		lastDispatchStatusC: status,
 		lastDispatchReasonC: normalizedReason,
@@ -206,6 +202,10 @@ export async function GET(request: NextRequest) {
 				let settings = await getTelegramUserSettings(chatId);
 				const linkedUser = await getUserByTelegramChatId(chatId);
 
+				if (source === "cron") {
+					settings = await setTelegramUserSettings(chatId, { lastCronAt: Date.now() });
+				}
+
 				// Auto-heal stale auth flags: if chat is linked and active, dispatch should not stay blocked forever.
 				if (linkedUser && settings.suppressDispatchUntilAuth) {
 					settings = await setTelegramUserSettings(chatId, { suppressDispatchUntilAuth: false });
@@ -265,7 +265,7 @@ export async function GET(request: NextRequest) {
 					const result = await dispatchAlert(chatId, origin, effectiveSettings, track);
 					effectiveSettings = await setTelegramUserSettings(chatId, {
 						...result.settings,
-						...buildDispatchTrackPatch(track, result.status, result.reason, source),
+						...buildDispatchTrackPatch(track, result.status, result.reason),
 					});
 					if (result.status === "sent") {
 						sent++;

@@ -1003,9 +1003,21 @@ export async function POST(request: NextRequest) {
 				return NextResponse.json({ ok: true });
 			}
 
-			const payload = await dispatchResponse.json().catch(() => null) as { sent?: number } | null;
+			const payload = await dispatchResponse.json().catch(() => null) as {
+				sent?: number;
+				failed?: number;
+				diagnostics?: { skipped_by_reason?: Record<string, number> };
+			} | null;
 			if (!payload || !payload.sent || payload.sent <= 0) {
-				await sendTelegramMessage(effectiveChatId, "ℹ️ Nenhuma oportunidade acima do minimo no momento.");
+				const failed = payload?.failed ?? 0;
+				if (failed > 0) {
+					const reasons = payload?.diagnostics?.skipped_by_reason ?? {};
+					const [topReason] = Object.entries(reasons).sort((a, b) => b[1] - a[1])[0] ?? [];
+					const extra = topReason ? `\nMotivo principal: ${topReason}` : "";
+					await sendTelegramMessage(effectiveChatId, `⚠️ Verificacao executada com falha interna.${extra}`);
+				} else {
+					await sendTelegramMessage(effectiveChatId, "ℹ️ Nenhuma oportunidade acima do minimo no momento.");
+				}
 			}
 			await sendMonitoringStatus(effectiveChatId);
 			return NextResponse.json({ ok: true });
