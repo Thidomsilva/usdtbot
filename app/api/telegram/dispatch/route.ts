@@ -162,6 +162,27 @@ async function dispatchAlert(
 	}
 }
 
+async function markTracksSkippedBeforeDispatch(
+	chatId: string,
+	settings: Awaited<ReturnType<typeof getTelegramUserSettings>>,
+	reason: string
+): Promise<Awaited<ReturnType<typeof getTelegramUserSettings>>> {
+	let nextSettings = settings;
+	const tracks: Array<"a" | "b" | "c"> = [];
+	if (settings.alertTracks.a) tracks.push("a");
+	if (settings.alertTracks.b) tracks.push("b");
+	if (settings.alertTracks.c) tracks.push("c");
+
+	for (const track of tracks) {
+		nextSettings = await setTelegramUserSettings(chatId, {
+			...nextSettings,
+			...buildDispatchTrackPatch(track, "skipped", reason),
+		});
+	}
+
+	return nextSettings;
+}
+
 export async function GET(request: NextRequest) {
 	if (!isAuthorized(request)) {
 		return NextResponse.json({ error: "Nao autorizado" }, { status: 401 });
@@ -219,11 +240,13 @@ export async function GET(request: NextRequest) {
 				}
 
 				if (settings.suppressDispatchUntilAuth) {
+					settings = await markTracksSkippedBeforeDispatch(chatId, settings, "logged_out_waiting_auth");
 					skipped++;
 					skippedByReason["logged_out_waiting_auth"] = (skippedByReason["logged_out_waiting_auth"] ?? 0) + 1;
 					continue;
 				}
 				if (settings.pendingAuthStep) {
+					settings = await markTracksSkippedBeforeDispatch(chatId, settings, `auth_in_progress_${settings.pendingAuthStep}`);
 					skipped++;
 					skippedByReason[`auth_in_progress_${settings.pendingAuthStep}`] =
 						(skippedByReason[`auth_in_progress_${settings.pendingAuthStep}`] ?? 0) + 1;
@@ -231,6 +254,7 @@ export async function GET(request: NextRequest) {
 				}
 
 				if (!linkedUser) {
+					settings = await markTracksSkippedBeforeDispatch(chatId, settings, "unlinked_user");
 					skipped++;
 					skippedUnlinkedUser++;
 					continue;
@@ -245,6 +269,7 @@ export async function GET(request: NextRequest) {
 				let effectiveSettings = settings;
 
 				if (!effectiveSettings.alertsEnabled) {
+					effectiveSettings = await markTracksSkippedBeforeDispatch(chatId, effectiveSettings, "monitoring_disabled");
 					skipped++;
 					skippedMonitoringDisabled++;
 					continue;
