@@ -98,7 +98,8 @@ async function dispatchAlert(
 			const check = checkAlertEligibility(nextSettings, "b", scannerKey);
 			if (!check.allowed) return { status: "skipped", reason: `track_b_${check.reason}`, settings: nextSettings };
 			messageText = result.message;
-			nextSettings = await setTelegramUserSettings(chatId, check.updates);
+			// Garante que alertsEnabled nunca volte para false após auto-heal manual
+			nextSettings = await setTelegramUserSettings(chatId, { ...check.updates, alertsEnabled: true });
 			if (check.autoSpamPause) {
 				const pausedUntil = Date.now() + PAUSE_SPAM_MS;
 				nextSettings = await setTelegramUserSettings(chatId, { pausedUntil });
@@ -121,7 +122,7 @@ async function dispatchAlert(
 			messageText = await buildAlertUsdtMessage(origin, nextSettings, effectiveMinSpreadA);
 			if (!messageText) return { status: "skipped", reason: "track_a_no_spread_or_data", settings: nextSettings };
 
-			nextSettings = await setTelegramUserSettings(chatId, check.updates);
+			nextSettings = await setTelegramUserSettings(chatId, { ...check.updates, alertsEnabled: true });
 			if (check.autoSpamPause) {
 				const pausedUntil = Date.now() + PAUSE_SPAM_MS;
 				nextSettings = await setTelegramUserSettings(chatId, { pausedUntil });
@@ -138,7 +139,7 @@ async function dispatchAlert(
 			messageText = await buildAlertUsdtDefiMessage(origin, nextSettings);
 			if (!messageText) return { status: "skipped", reason: "track_c_no_spread_or_data", settings: nextSettings }; // returns null when spread <= 0
 
-			nextSettings = await setTelegramUserSettings(chatId, check.updates);
+			nextSettings = await setTelegramUserSettings(chatId, { ...check.updates, alertsEnabled: true });
 			if (check.autoSpamPause) {
 				const pausedUntil = Date.now() + PAUSE_SPAM_MS;
 				nextSettings = await setTelegramUserSettings(chatId, { pausedUntil });
