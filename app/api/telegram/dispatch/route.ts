@@ -45,14 +45,15 @@ function tracksByAutoMode(mode: "off" | "usdt" | "scanner" | "usdt_defi" | "all"
 function buildDispatchTrackPatch(
 	track: "a" | "b" | "c",
 	status: DispatchTrackStatus,
-	reason?: string
+	reason?: string,
+	source: "cron" | "manual" = "cron"
 ) {
 	const now = Date.now();
 	const normalizedReason = reason ?? null;
 
 	if (track === "a") {
 		return {
-			lastCronAt: now,
+			...(source === "cron" ? { lastCronAt: now } : {}),
 			lastDispatchAtA: now,
 			lastDispatchStatusA: status,
 			lastDispatchReasonA: normalizedReason,
@@ -61,7 +62,7 @@ function buildDispatchTrackPatch(
 
 	if (track === "b") {
 		return {
-			lastCronAt: now,
+			...(source === "cron" ? { lastCronAt: now } : {}),
 			lastDispatchAtB: now,
 			lastDispatchStatusB: status,
 			lastDispatchReasonB: normalizedReason,
@@ -69,7 +70,7 @@ function buildDispatchTrackPatch(
 	}
 
 	return {
-		lastCronAt: now,
+		...(source === "cron" ? { lastCronAt: now } : {}),
 		lastDispatchAtC: now,
 		lastDispatchStatusC: status,
 		lastDispatchReasonC: normalizedReason,
@@ -173,12 +174,19 @@ export async function GET(request: NextRequest) {
 	try {
 		const users = await listUsers();
 		const origin = request.nextUrl.origin;
+		const sourceParam = request.nextUrl.searchParams.get("source");
+		const source: "cron" | "manual" = sourceParam === "manual" ? "manual" : "cron";
+		const targetChatId = request.nextUrl.searchParams.get("chat_id")?.trim() ?? "";
 
 		const dispatchChatIds = new Set<string>();
-		for (const user of users) {
-			if (!user.active) continue;
-			if (!user.telegramChatId) continue;
-			dispatchChatIds.add(user.telegramChatId);
+		if (targetChatId) {
+			dispatchChatIds.add(targetChatId);
+		} else {
+			for (const user of users) {
+				if (!user.active) continue;
+				if (!user.telegramChatId) continue;
+				dispatchChatIds.add(user.telegramChatId);
+			}
 		}
 
 		let sent = 0;
@@ -257,7 +265,7 @@ export async function GET(request: NextRequest) {
 					const result = await dispatchAlert(chatId, origin, effectiveSettings, track);
 					effectiveSettings = await setTelegramUserSettings(chatId, {
 						...result.settings,
-						...buildDispatchTrackPatch(track, result.status, result.reason),
+						...buildDispatchTrackPatch(track, result.status, result.reason, source),
 					});
 					if (result.status === "sent") {
 						sent++;
