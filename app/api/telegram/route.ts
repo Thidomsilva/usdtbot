@@ -143,6 +143,20 @@ async function saveSpreadWithAutoMonitoring(
 	});
 }
 
+async function restoreMonitoringAfterAuth(chatId: number | string): Promise<void> {
+	const current = await getTelegramUserSettings(chatId);
+	const nextMode = current.autoSignalsMode === "off" ? "all" : current.autoSignalsMode;
+
+	await setTelegramUserSettings(chatId, {
+		suppressDispatchUntilAuth: false,
+		alertsEnabled: true,
+		autoSignalsMode: nextMode,
+		alertTracks: tracksByAutoMode(nextMode),
+		pausedUntil: null,
+		pendingSpreadTrack: null,
+	});
+}
+
 async function clearPreviousButtons(chatId: number | string, messageId: number | null): Promise<void> {
 	if (messageId === null) return;
 
@@ -396,7 +410,7 @@ export async function POST(request: NextRequest) {
 						password,
 						chatId: effectiveChatId,
 					});
-					await setTelegramUserSettings(effectiveChatId, { suppressDispatchUntilAuth: false });
+					await restoreMonitoringAfterAuth(effectiveChatId);
 					await sendTelegramMessage(
 						effectiveChatId,
 						[
@@ -460,7 +474,7 @@ export async function POST(request: NextRequest) {
 						].join("\n")
 					);
 				} else {
-					await setTelegramUserSettings(effectiveChatId, { suppressDispatchUntilAuth: false });
+						await restoreMonitoringAfterAuth(effectiveChatId);
 					await sendTelegramMessage(
 						effectiveChatId,
 						[
@@ -514,7 +528,7 @@ export async function POST(request: NextRequest) {
 						password: credentialsCommand.password,
 						chatId: effectiveChatId,
 					});
-					await setTelegramUserSettings(effectiveChatId, { suppressDispatchUntilAuth: false });
+					await restoreMonitoringAfterAuth(effectiveChatId);
 					await sendTelegramMessage(
 						effectiveChatId,
 						[
@@ -579,7 +593,7 @@ export async function POST(request: NextRequest) {
 				return NextResponse.json({ ok: true });
 			}
 
-			await setTelegramUserSettings(effectiveChatId, { suppressDispatchUntilAuth: false });
+			await restoreMonitoringAfterAuth(effectiveChatId);
 			await sendTelegramMessage(
 				effectiveChatId,
 				[
