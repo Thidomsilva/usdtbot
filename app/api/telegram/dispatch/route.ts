@@ -268,11 +268,20 @@ export async function GET(request: NextRequest) {
 
 				let effectiveSettings = settings;
 
+				// Auditoria: loga quando alertsEnabled está false
 				if (!effectiveSettings.alertsEnabled) {
-					effectiveSettings = await markTracksSkippedBeforeDispatch(chatId, effectiveSettings, "monitoring_disabled");
-					skipped++;
-					skippedMonitoringDisabled++;
-					continue;
+					// Auto-heal defensivo: se for dispatch manual, reativa monitoramento
+					if (source === "manual") {
+						await setTelegramUserSettings(chatId, { alertsEnabled: true, pausedUntil: null });
+						effectiveSettings = { ...effectiveSettings, alertsEnabled: true, pausedUntil: null };
+						// Opcional: envia mensagem de auditoria para admin/log
+						console.log(`[AUDITORIA] Auto-heal: reativado alertsEnabled para chatId=${chatId} via dispatch manual.`);
+					} else {
+						effectiveSettings = await markTracksSkippedBeforeDispatch(chatId, effectiveSettings, "monitoring_disabled");
+						skipped++;
+						skippedMonitoringDisabled++;
+						continue;
+					}
 				}
 
 				const tracks: Array<"a" | "b" | "c"> = [];
