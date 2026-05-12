@@ -272,10 +272,23 @@ export async function GET(request: NextRequest) {
 				if (!effectiveSettings.alertsEnabled) {
 					// Auto-heal defensivo: se for dispatch manual, reativa monitoramento
 					if (source === "manual") {
-						await setTelegramUserSettings(chatId, { alertsEnabled: true, pausedUntil: null });
-						effectiveSettings = { ...effectiveSettings, alertsEnabled: true, pausedUntil: null };
-						// Opcional: envia mensagem de auditoria para admin/log
-						console.log(`[AUDITORIA] Auto-heal: reativado alertsEnabled para chatId=${chatId} via dispatch manual.`);
+						// Limpa status das trilhas para 'aguardando primeira verificacao'
+						const patch: Partial<typeof effectiveSettings> = {
+							alertsEnabled: true,
+							pausedUntil: null,
+							lastDispatchAtA: null,
+							lastDispatchStatusA: null,
+							lastDispatchReasonA: null,
+							lastDispatchAtB: null,
+							lastDispatchStatusB: null,
+							lastDispatchReasonB: null,
+							lastDispatchAtC: null,
+							lastDispatchStatusC: null,
+							lastDispatchReasonC: null,
+						};
+						await setTelegramUserSettings(chatId, patch);
+						effectiveSettings = { ...effectiveSettings, ...patch };
+						console.log(`[AUDITORIA] Auto-heal: reativado alertsEnabled e limpou status trilhas para chatId=${chatId} via dispatch manual.`);
 					} else {
 						effectiveSettings = await markTracksSkippedBeforeDispatch(chatId, effectiveSettings, "monitoring_disabled");
 						skipped++;
