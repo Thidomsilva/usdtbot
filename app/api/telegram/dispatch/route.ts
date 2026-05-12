@@ -191,7 +191,21 @@ export async function GET(request: NextRequest) {
 	const skippedByReason: Record<string, number> = {};
 
 	for (const chatId of dispatchChatIds) {
-		const settings = await getTelegramUserSettings(chatId);
+		let settings = await getTelegramUserSettings(chatId);
+		const linkedUser = await getUserByTelegramChatId(chatId);
+
+		// Auto-heal stale auth flags: if chat is linked and active, dispatch should not stay blocked forever.
+		if (linkedUser && settings.suppressDispatchUntilAuth) {
+			settings = await setTelegramUserSettings(chatId, { suppressDispatchUntilAuth: false });
+		}
+
+		if (linkedUser && settings.pendingAuthStep) {
+			settings = await setTelegramUserSettings(chatId, {
+				pendingAuthStep: null,
+				pendingAuthUsername: null,
+			});
+		}
+
 		if (settings.suppressDispatchUntilAuth) {
 			skipped++;
 			skippedByReason["logged_out_waiting_auth"] = (skippedByReason["logged_out_waiting_auth"] ?? 0) + 1;
@@ -204,7 +218,6 @@ export async function GET(request: NextRequest) {
 			continue;
 		}
 
-		const linkedUser = await getUserByTelegramChatId(chatId);
 		if (!linkedUser) {
 			skipped++;
 			skippedUnlinkedUser++;
