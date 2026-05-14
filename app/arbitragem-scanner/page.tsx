@@ -133,7 +133,6 @@ type ScreenerRow = {
 export default function ArbitragemScannerPage() {
 	const [data, setData] = useState<FanTokensResponse | null>(null);
 	const [loading, setLoading] = useState(true);
-	const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
 	const [countdown, setCountdown] = useState(REFRESH_SECONDS);
 	const [selectedTokenId, setSelectedTokenId] = useState(ALL_TOKENS_ID);
 	const [amountBrl, setAmountBrl] = useState("1000");
@@ -170,19 +169,13 @@ export default function ArbitragemScannerPage() {
 
 	useEffect(() => {
 		load();
-	}, []);
-
-	useEffect(() => {
-		if (!autoRefreshEnabled) return;
-
 		const t1 = setInterval(load, REFRESH_SECONDS * 1000);
 		const t2 = setInterval(() => setCountdown((c) => (c > 0 ? c - 1 : 0)), 1000);
-
 		return () => {
 			clearInterval(t1);
 			clearInterval(t2);
 		};
-	}, [autoRefreshEnabled]);
+	}, []);
 
 	const tokenOptions = useMemo(() => {
 		if (!data?.tokens) return [] as FanTokenRow[];
@@ -481,47 +474,29 @@ export default function ArbitragemScannerPage() {
 							Tela dedicada para ranking de rotas compra/venda entre corretoras para os tokens da Arbitragem Geral.
 						</p>
 					</div>
-					<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-						<button
-							onClick={() => {
-								setLoading(true);
-								load();
-							}}
-							disabled={loading}
-							style={{
-								border: "1px solid var(--card-border)",
-								borderRadius: 12,
-								padding: "10px 14px",
-								background: "linear-gradient(135deg, var(--card), rgba(255,255,255,0.12))",
-								color: "var(--text)",
-								cursor: "pointer",
-							}}
-						>
-							{loading ? "Atualizando..." : "Atualizar"}
-						</button>
-						<button
-							onClick={() => setAutoRefreshEnabled((current) => !current)}
-							style={{
-								border: autoRefreshEnabled ? "1px solid rgba(255,107,107,0.65)" : "1px solid rgba(80,240,173,0.65)",
-								borderRadius: 12,
-								padding: "10px 14px",
-								background: autoRefreshEnabled
-									? "linear-gradient(135deg, rgba(78,18,18,0.85), rgba(28,12,12,0.85))"
-									: "linear-gradient(135deg, rgba(12,59,43,0.9), rgba(9,37,29,0.9))",
-								color: "#f4f7fb",
-								cursor: "pointer",
-								fontWeight: 700,
-							}}
-						>
-							{autoRefreshEnabled ? "Stop" : "Start"}
-						</button>
-					</div>
+					<button
+						onClick={() => {
+							setLoading(true);
+							load();
+						}}
+						disabled={loading}
+						style={{
+							border: "1px solid var(--card-border)",
+							borderRadius: 12,
+							padding: "10px 14px",
+							background: "linear-gradient(135deg, var(--card), rgba(255,255,255,0.12))",
+							color: "var(--text)",
+							cursor: "pointer",
+						}}
+					>
+						{loading ? "Atualizando..." : "Atualizar"}
+					</button>
 				</header>
 
 				<div style={{ marginTop: 14, color: "var(--muted)", fontSize: 13 }}>
 					{selectedToken
 						? `${selectedTokenCards.length} de ${(selectedToken.exchanges ?? []).filter((exchange) => ORDER.includes(exchange.exchange)).length} corretoras com livro para ${selectedToken.symbol}`
-						: `${tokenOptions.length} moedas monitoradas (modo todas)`} · {autoRefreshEnabled ? `proxima atualizacao em ${countdown}s` : "auto-refresh pausado"}
+						: `${tokenOptions.length} moedas monitoradas (modo todas)`} · proxima atualizacao em {countdown}s
 				</div>
 
 				<section

@@ -227,7 +227,7 @@ export default function HomePage() {
             >
               Abrir Geral
             </Link>
-            <Link
+            {/* <Link
               href="/spot-futures"
               style={{
                 border: "1px solid var(--card-border)",
@@ -241,7 +241,7 @@ export default function HomePage() {
               }}
             >
               Spot x Futuro
-            </Link>
+            </Link> */}
             <Link
               href="/arbitragem-scanner"
               style={{
