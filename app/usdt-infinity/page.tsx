@@ -7,68 +7,37 @@ import ExchangeStatusGrid, { ExchangeStatus } from "../../components/ExchangeSta
 
 import type { InfinityOpportunity } from "../../lib/usdt-infinity";
 
+
 export default function UsdtInfinityPage() {
-  const [capital, setCapital] = useState(1000);
   const [opportunities, setOpportunities] = useState<InfinityOpportunity[]>([]);
-  const [exchangeStatus, setExchangeStatus] = useState<ExchangeStatus[]>([]);
-  const [recent, setRecent] = useState<RecentOpportunity[]>([]);
   const [loading, setLoading] = useState(false);
 
-  async function fetchOpportunities(newCapital: number) {
+  async function fetchOpportunities() {
     setLoading(true);
     try {
-      const res = await fetch("/api/usdt-infinity", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ capital: newCapital })
-      });
+      // Busca oportunidades sem filtro de capital
+      const res = await fetch("/api/fan-tokens", { cache: "no-store" });
       const data = await res.json();
-      const found = data.opportunities || [];
+      // Monta oportunidades a partir do melhor spread de cada token
+      const found = (data.tokens || [])
+        .map((t: any) => t.best_arb && t.best_arb.spread_pct > 0 ? {
+          asset: t.symbol,
+          fromExchange: t.best_arb.buy_exchange_label,
+          toExchange: t.best_arb.sell_exchange_label,
+          ask: t.best_arb.buy_price_brl,
+          bid: t.best_arb.sell_price_brl,
+          network: "-",
+          fees: { buy: t.best_arb.buy_fee_pct, withdraw: 0, sell: t.best_arb.sell_fee_pct },
+          liquidity: 0,
+          profit: t.best_arb.profit_est_brl_per_100 ?? 0,
+          profitPercent: t.best_arb.net_spread_pct ?? 0,
+          playbook: [
+            `Comprar em ${t.best_arb.buy_exchange_label}`,
+            `Vender em ${t.best_arb.sell_exchange_label}`,
+          ],
+        } : null)
+        .filter(Boolean);
       setOpportunities(found);
-      // Atualiza tabela de recentes
-      setRecent((prev) => {
-        // Remove expiradas antigas (> 10 min)
-        const now = Date.now();
-        const filtered = prev.filter((opp) => now - opp.timestamp < 10 * 60 * 1000);
-        // Marca como expirada se não está mais ativa
-        const updated = filtered.map((opp) => ({ ...opp, expired: !found.some((o: any) => o.asset === opp.asset && o.fromExchange === opp.fromExchange && o.toExchange === opp.toExchange && Math.abs(o.profit - opp.profit) < 0.01) }));
-        // Adiciona novas
-        const newOnes: RecentOpportunity[] = found.map((o: any) => ({ ...o, timestamp: now, expired: false }));
-        // Evita duplicatas exatas
-        const all = [...updated];
-        for (const n of newOnes) {
-          if (!all.some((x) => x.asset === n.asset && x.fromExchange === n.fromExchange && x.toExchange === n.toExchange && Math.abs(x.profit - n.profit) < 0.01)) {
-            all.push(n);
-          }
-        }
-        // Ordena: ativas primeiro, depois por data
-        return all.sort((a, b) => (a.expired === b.expired ? b.timestamp - a.timestamp : a.expired ? 1 : -1)).slice(0, 20);
-      });
-
-      // Buscar status das exchanges globais conectadas via /api/fan-tokens
-      const fanRes = await fetch("/api/fan-tokens", { cache: "no-store" });
-      if (fanRes.ok) {
-        const fanData = await fanRes.json();
-        const EXCHANGE_LOGOS: Record<string, string> = {
-          binance: "/logos/binance.png",
-          bybit: "/logos/bybit.png",
-          okx: "/logos/okx.png",
-          kucoin: "/logos/kucoin.png",
-          bitget: "/logos/bitget.png",
-          gate: "/logos/gate.png",
-        };
-        const globais = ["binance","bybit","okx","kucoin","bitget","gate"];
-        const statusArr: ExchangeStatus[] = globais.map((id) => {
-          const ex = (fanData.tokens?.[0]?.exchanges ?? []).find((e: any) => e.exchange === id);
-          return {
-            id,
-            label: ex?.label || id.charAt(0).toUpperCase() + id.slice(1),
-            logo: EXCHANGE_LOGOS[id] || "",
-            online: !!ex && ex.status === "ok",
-          };
-        });
-        setExchangeStatus(statusArr);
-      }
     } catch (e) {
       setOpportunities([]);
     } finally {
@@ -77,9 +46,8 @@ export default function UsdtInfinityPage() {
   }
 
   React.useEffect(() => {
-    fetchOpportunities(capital);
-    // eslint-disable-next-line
-  }, [capital]);
+    fetchOpportunities();
+  }, []);
 
   return (
     <div className="max-w-5xl mx-auto py-10 px-4">
@@ -87,20 +55,7 @@ export default function UsdtInfinityPage() {
       {/* <div className="mb-8">
         <ExchangeStatusGrid exchanges={exchangeStatus} />
       </div> */}
-      <div className="flex flex-col md:flex-row md:items-end gap-4 mb-8">
-        <div className="flex-1">
-          <label className="block mb-2 font-semibold text-white">Capital disponível (USDT):</label>
-          <input
-            type="number"
-            value={capital}
-            min={1}
-            step={0.01}
-            onChange={e => setCapital(Number(e.target.value))}
-            className="border border-gray-400 bg-gray-900 text-white px-4 py-2 rounded-lg w-full max-w-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
-          />
-        </div>
-        {loading && <span className="text-blue-400 font-semibold animate-pulse">Buscando oportunidades...</span>}
-      </div>
+      {loading && <span className="text-blue-400 font-semibold animate-pulse block mb-8">Buscando oportunidades...</span>}
       <div className="mb-10">
         <RecentOpportunitiesTable rows={recent} />
       </div>
