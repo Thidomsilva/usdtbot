@@ -82,31 +82,38 @@ export default function UsdtInfinityPage() {
   }, [capital]);
 
   return (
-    <div className="container mx-auto py-8">
-      <h1 className="text-2xl font-bold mb-4">USDT Infinity – Arbitragem Cross-Exchange</h1>
-      <ExchangeStatusGrid exchanges={exchangeStatus} />
-      <RecentOpportunitiesTable rows={recent} />
-      <div className="mb-6">
-        <label className="block mb-2 font-semibold">Capital disponível (USDT):</label>
-        <input
-          type="number"
-          value={capital}
-          min={1}
-          step={0.01}
-          onChange={e => setCapital(Number(e.target.value))}
-          className="border px-3 py-2 rounded w-48"
-        />
+    <div className="max-w-5xl mx-auto py-10 px-4">
+      <h1 className="text-3xl md:text-4xl font-extrabold mb-6 text-white drop-shadow">USDT Infinity <span className='font-normal'>– Arbitragem Cross-Exchange</span></h1>
+      <div className="mb-8">
+        <ExchangeStatusGrid exchanges={exchangeStatus} />
       </div>
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {loading ? (
-          <div className="text-gray-400">Buscando oportunidades...</div>
-        ) : opportunities.length === 0 ? (
-          <div className="text-gray-500">Nenhuma oportunidade encontrada.</div>
-        ) : (
-          opportunities.map((opp, idx) => (
-            <OpportunityCard key={idx} {...opp} />
-          ))
+      <div className="flex flex-col md:flex-row md:items-end gap-4 mb-8">
+        <div className="flex-1">
+          <label className="block mb-2 font-semibold text-white">Capital disponível (USDT):</label>
+          <input
+            type="number"
+            value={capital}
+            min={1}
+            step={0.01}
+            onChange={e => setCapital(Number(e.target.value))}
+            className="border border-gray-400 bg-gray-900 text-white px-4 py-2 rounded-lg w-full max-w-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+        </div>
+        {loading && <span className="text-blue-400 font-semibold animate-pulse">Buscando oportunidades...</span>}
+      </div>
+      <div className="mb-10">
+        <RecentOpportunitiesTable rows={recent} />
+      </div>
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        {(!loading && opportunities.length === 0) && (
+          <div className="col-span-full text-center text-gray-400 bg-gray-900/70 rounded-lg p-8 shadow-inner">
+            <div className="text-2xl mb-2">😕</div>
+            <div>Nenhuma oportunidade encontrada para o capital informado.<br/>Tente outro valor ou aguarde novas oportunidades.</div>
+          </div>
         )}
+        {opportunities.map((opp, idx) => (
+          <OpportunityCard key={idx} {...opp} />
+        ))}
       </div>
     </div>
   );
