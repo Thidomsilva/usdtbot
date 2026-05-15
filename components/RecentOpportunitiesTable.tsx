@@ -27,15 +27,12 @@ export default function RecentOpportunitiesTable({ rows }: { rows: RecentOpportu
             <tr key={idx} className={opp.expired ? "opacity-60" : ""}>
               <td className="p-2 font-bold">{opp.asset}</td>
               <td className="p-2 flex items-center gap-1">
-                <img src={opp.fromLogo} alt={opp.fromExchange} className="w-5 h-5 rounded-full border" />
                 {opp.fromExchange}
               </td>
               <td className="p-2 flex items-center gap-1">
-                <img src={opp.toLogo} alt={opp.toExchange} className="w-5 h-5 rounded-full border" />
                 {opp.toExchange}
               </td>
               <td className="p-2 flex items-center gap-1">
-                <img src={opp.networkLogo} alt={opp.network} className="w-5 h-5 rounded-full border" />
                 {opp.network}
               </td>
               <td className="p-2 text-green-700 font-semibold">+{opp.profit.toFixed(2)}</td>

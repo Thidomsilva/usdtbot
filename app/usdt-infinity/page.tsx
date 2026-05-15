@@ -84,9 +84,9 @@ export default function UsdtInfinityPage() {
   return (
     <div className="max-w-5xl mx-auto py-10 px-4">
       <h1 className="text-3xl md:text-4xl font-extrabold mb-6 text-white drop-shadow">USDT Infinity <span className='font-normal'>– Arbitragem Cross-Exchange</span></h1>
-      <div className="mb-8">
+      {/* <div className="mb-8">
         <ExchangeStatusGrid exchanges={exchangeStatus} />
-      </div>
+      </div> */}
       <div className="flex flex-col md:flex-row md:items-end gap-4 mb-8">
         <div className="flex-1">
           <label className="block mb-2 font-semibold text-white">Capital disponível (USDT):</label>
