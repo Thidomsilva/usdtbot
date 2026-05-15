@@ -1,6 +1,4 @@
-
-
-// Layout moderno puro, sem imports externos
+export default function UsdtInfinityPage() {
   return (
     <div className="w-full min-h-screen flex flex-col items-center bg-gradient-to-br from-blue-900 via-gray-950 to-gray-800 py-8 px-2">
       <div className="mb-4 w-full max-w-6xl flex items-center">
