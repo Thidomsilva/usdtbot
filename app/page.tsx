@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { PricesResponse } from "@/lib/types";
+import styles from "./ModernGrid.module.css";
 
 const REFRESH_SECONDS = 5;
 const ORDER = [
@@ -368,68 +369,38 @@ export default function HomePage() {
           </section>
         )}
 
-        <section className="cards-grid" style={{ marginTop: 18, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
+        <section className={styles.modernGrid}>
           {cards.map(({ key, ex }) => {
             if (!ex) return null;
             const ok = ex.status === "ok";
             return (
-              <article
-                key={key}
-                className="exchange-card"
-                style={{
-                  background: "var(--card)",
-                  border: "1px solid var(--card-border)",
-                  borderRadius: 16,
-                  padding: 16,
-                  boxShadow: "var(--shadow)",
-                  backdropFilter: "blur(12px)",
-                }}
-              >
-                <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div className="card-brand" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <img
-                      className="exchange-logo"
-                      src={`https://www.google.com/s2/favicons?domain=${EXCHANGE_META[key]?.domain ?? ""}&sz=64`}
-                      alt={`${ex.label} logo`}
-                      width={20}
-                      height={20}
-                      style={{ borderRadius: 999, display: "block" }}
-                    />
-                    <strong className="exchange-name" style={{ fontSize: 17 }}>{ex.label}</strong>
-                  </div>
-                  <span
-                    className="status-chip"
-                    style={{
-                      fontSize: 11,
-                      color: ok ? "var(--ok)" : "var(--error)",
-                      border: `1px solid ${ok ? "var(--ok)" : "var(--error)"}`,
-                      borderRadius: 999,
-                      padding: "3px 8px",
-                    }}
-                  >
+              <article key={key} className={styles.cardModern}>
+                <div className={styles.cardHeader}>
+                  <img
+                    className={styles.cardLogo}
+                    src={`https://www.google.com/s2/favicons?domain=${EXCHANGE_META[key]?.domain ?? ""}&sz=64`}
+                    alt={`${ex.label} logo`}
+                  />
+                  <span className={styles.cardTitle}>{ex.label}</span>
+                  <span className={ok ? styles.cardStatusOnline : styles.cardStatusError + " " + styles.cardStatus}>
                     {ok ? "online" : "erro"}
                   </span>
                 </div>
                 {ok ? (
                   <>
-                    <div className="price-value" style={{ fontSize: 30, fontWeight: 800, marginTop: 8, letterSpacing: "-0.5px" }}>{money(ex.price_brl ?? 0)}</div>
+                    <div className={styles.cardPrice}>{money(ex.price_brl ?? 0)}</div>
                     {(ex.pricing_mode === "fallback" || ex.warning || ex.source_pair) && (
-                      <div
-                        className="metric-line"
-                        style={{ marginTop: 8, fontSize: 12, color: "#f4b860", lineHeight: 1.45 }}
-                      >
+                      <div className={styles.cardWarning}>
                         {ex.warning ?? `Preco estimado sem par BRL direto; fonte: ${ex.source_pair ?? "USDT/USD"}. Pode haver variacao.`}
                       </div>
                     )}
-                    <div className="metric-line" style={{ marginTop: 9, fontSize: 13, color: "var(--muted)" }}>
-                      24h: {ex.change_24h?.toFixed(4)}% · Vol: {vol(ex.volume_24h ?? 0)}
-                    </div>
-                    <div className="metric-line" style={{ marginTop: 4, fontSize: 13, color: "var(--muted)" }}>
-                      Max: {money(ex.high_24h ?? 0)} · Min: {money(ex.low_24h ?? 0)}
+                    <div className={styles.cardMetrics}>
+                      <span>24h: {ex.change_24h?.toFixed(4)}% · Vol: {vol(ex.volume_24h ?? 0)}</span>
+                      <span>Max: {money(ex.high_24h ?? 0)} · Min: {money(ex.low_24h ?? 0)}</span>
                     </div>
                   </>
                 ) : (
-                  <div style={{ marginTop: 10, color: "var(--error)", fontSize: 13 }}>{ex.error}</div>
+                  <div className={styles.cardWarning} style={{ color: "var(--error)", marginTop: 10 }}>{ex.error}</div>
                 )}
               </article>
             );
