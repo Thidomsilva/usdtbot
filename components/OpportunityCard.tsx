@@ -21,15 +21,13 @@ export default function OpportunityCard(props: OpportunityCardProps) {
   return (
     <div className="border rounded-lg p-4 shadow bg-white">
       <div className="flex items-center mb-2">
-        <img src={props.fromLogo} alt={props.fromExchange} className="w-6 h-6 mr-2" />
         <span className="font-bold">{props.fromExchange}</span>
         <span className="mx-2">→</span>
-        <img src={props.toLogo} alt={props.toExchange} className="w-6 h-6 mr-2" />
         <span className="font-bold">{props.toExchange}</span>
       </div>
       <div className="mb-2">
         <span className="font-semibold">Ativo:</span> {props.asset} <br />
-        <span className="font-semibold">Rede:</span> <img src={props.networkLogo} alt={props.network} className="inline w-5 h-5 mr-1" /> {props.network}
+        <span className="font-semibold">Rede:</span> {props.network}
       </div>
       <div className="mb-2 text-sm">
         <span className="font-semibold">Preço Ask:</span> {props.ask} | <span className="font-semibold">Preço Bid:</span> {props.bid}
