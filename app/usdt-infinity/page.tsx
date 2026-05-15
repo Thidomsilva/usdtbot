@@ -1,9 +1,13 @@
+"use client";
 import React, { useState } from "react";
 import OpportunityCard from "../../components/OpportunityCard";
 
+
+import type { InfinityOpportunity } from "../../lib/usdt-infinity";
+
 export default function UsdtInfinityPage() {
   const [capital, setCapital] = useState(1000);
-  const [opportunities, setOpportunities] = useState([]);
+  const [opportunities, setOpportunities] = useState<InfinityOpportunity[]>([]);
   const [loading, setLoading] = useState(false);
 
   async function fetchOpportunities(newCapital: number) {
