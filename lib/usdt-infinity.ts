@@ -20,7 +20,9 @@ export type InfinityOpportunity = {
 
 export async function scanUsdtInfinityOpportunities({ capital }: { capital: number }): Promise<InfinityOpportunity[]> {
   // Busca oportunidades reais aproveitando a API interna de fan-tokens (que já faz book cross-exchange em USDT)
-  const res = await fetch("http://localhost:3000/api/fan-tokens", { cache: "no-store" });
+  // Usa URL absoluta para funcionar em produção (Vercel)
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000";
+  const res = await fetch(`${baseUrl}/api/fan-tokens`, { cache: "no-store" });
   if (!res.ok) return [];
   const data = await res.json();
   const tokens = data.tokens as any[];
