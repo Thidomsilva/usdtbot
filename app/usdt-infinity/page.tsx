@@ -60,7 +60,7 @@ export default function UsdtInfinityPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto py-12 px-4 min-h-screen bg-gradient-to-br from-gray-900 via-gray-950 to-gray-800">
+    <div className="w-full min-h-screen flex flex-col items-center bg-gradient-to-br from-gray-900 via-gray-950 to-gray-800 py-8 px-2">
       <div className="mb-4">
         <a href="/" className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-200 font-semibold px-4 py-2 rounded-lg bg-gray-800/70 border border-blue-700 shadow transition-all">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
@@ -87,7 +87,7 @@ export default function UsdtInfinityPage() {
         >Simular</button>
       </form>
 
-      <div className="flex flex-col md:flex-row md:items-center gap-4 mb-10">
+      <div className="flex flex-col md:flex-row md:items-center gap-4 mb-10 w-full max-w-6xl">
         <div className="flex-1 bg-gray-900/80 rounded-xl p-4 shadow flex flex-col md:flex-row md:items-center gap-2">
           <span className="text-gray-400">Valor simulado:</span>
           <span className="text-2xl font-bold text-blue-400 font-mono">{capital} USDT</span>
@@ -95,7 +95,7 @@ export default function UsdtInfinityPage() {
         {loading && <span className="text-blue-400 font-semibold animate-pulse block">Buscando oportunidades...</span>}
       </div>
 
-      <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3 w-full max-w-6xl">
         {(!loading && opportunities.length === 0) && (
           <div className="col-span-full text-center text-gray-400 bg-gray-900/70 rounded-lg p-8 shadow-inner">
             <div className="text-3xl mb-2">😕</div>
