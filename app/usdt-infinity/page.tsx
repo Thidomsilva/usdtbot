@@ -8,17 +8,19 @@ import ExchangeStatusGrid, { ExchangeStatus } from "../../components/ExchangeSta
 import type { InfinityOpportunity } from "../../lib/usdt-infinity";
 
 
+
 export default function UsdtInfinityPage() {
   const [opportunities, setOpportunities] = useState<InfinityOpportunity[]>([]);
   const [loading, setLoading] = useState(false);
+  const [capital, setCapital] = useState(100); // valor padrão 100 dólares
+  const [inputValue, setInputValue] = useState("100");
 
-  async function fetchOpportunities() {
+  async function fetchOpportunities(cap: number) {
     setLoading(true);
     try {
-      // Busca oportunidades sem filtro de capital
-      const res = await fetch("/api/fan-tokens", { cache: "no-store" });
+      // Busca oportunidades com filtro de capital
+      const res = await fetch(`/api/fan-tokens?capital=${cap}`, { cache: "no-store" });
       const data = await res.json();
-      // Monta oportunidades a partir do melhor spread de cada token
       const found = (data.tokens || [])
         .map((t: any) => t.best_arb && t.best_arb.spread_pct > 0 ? {
           asset: t.symbol,
@@ -29,7 +31,7 @@ export default function UsdtInfinityPage() {
           network: "-",
           fees: { buy: t.best_arb.buy_fee_pct, withdraw: 0, sell: t.best_arb.sell_fee_pct },
           liquidity: 0,
-          profit: t.best_arb.profit_est_brl_per_100 ?? 0,
+          profit: t.best_arb.profit_est_brl_per_100 ? t.best_arb.profit_est_brl_per_100 * (cap / 100) : 0,
           profitPercent: t.best_arb.net_spread_pct ?? 0,
           playbook: [
             `Comprar em ${t.best_arb.buy_exchange_label}`,
@@ -46,24 +48,46 @@ export default function UsdtInfinityPage() {
   }
 
   React.useEffect(() => {
-    fetchOpportunities();
-  }, []);
+    fetchOpportunities(capital);
+  }, [capital]);
+
+  function handleSimulate(e: React.FormEvent) {
+    e.preventDefault();
+    const val = parseFloat(inputValue.replace(/[^\d.]/g, ""));
+    if (!isNaN(val) && val > 0) {
+      setCapital(val);
+    }
+  }
 
   return (
-    <div className="max-w-5xl mx-auto py-10 px-4">
-      <h1 className="text-3xl md:text-4xl font-extrabold mb-6 text-white drop-shadow">USDT Infinity <span className='font-normal'>– Arbitragem Cross-Exchange</span></h1>
-      {/* <div className="mb-8">
-        <ExchangeStatusGrid exchanges={exchangeStatus} />
-      </div> */}
+    <div className="max-w-6xl mx-auto py-12 px-4 min-h-screen bg-gradient-to-br from-gray-900 via-gray-950 to-gray-800">
+      <h1 className="text-3xl md:text-4xl font-extrabold mb-4 text-white drop-shadow">USDT Infinity <span className='font-normal'>– Arbitragem Cross-Exchange</span></h1>
+      <p className="text-gray-300 mb-8">Simule oportunidades de arbitragem entre exchanges globais. Informe o valor desejado para simular o lucro estimado.</p>
+
+      <form onSubmit={handleSimulate} className="flex flex-col md:flex-row items-center gap-4 mb-10 bg-gray-800/80 rounded-xl p-6 shadow-lg">
+        <label className="text-gray-200 font-semibold mr-2" htmlFor="capital">Valor para simulação (USDT):</label>
+        <input
+          id="capital"
+          type="number"
+          min={10}
+          step={10}
+          value={inputValue}
+          onChange={e => setInputValue(e.target.value)}
+          className="w-32 px-3 py-2 rounded-lg border border-gray-700 bg-gray-900 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg font-mono"
+        />
+        <button
+          type="submit"
+          className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-2 rounded-lg shadow transition-all"
+        >Simular</button>
+      </form>
+
       {loading && <span className="text-blue-400 font-semibold animate-pulse block mb-8">Buscando oportunidades...</span>}
-      {/* <div className="mb-10">
-        <RecentOpportunitiesTable rows={recent} />
-      </div> */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+
+      <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
         {(!loading && opportunities.length === 0) && (
           <div className="col-span-full text-center text-gray-400 bg-gray-900/70 rounded-lg p-8 shadow-inner">
-            <div className="text-2xl mb-2">😕</div>
-            <div>Nenhuma oportunidade encontrada para o capital informado.<br/>Tente outro valor ou aguarde novas oportunidades.</div>
+            <div className="text-3xl mb-2">😕</div>
+            <div>Nenhuma oportunidade encontrada para o valor informado.<br/>Tente outro valor ou aguarde novas oportunidades.</div>
           </div>
         )}
         {opportunities.map((opp, idx) => (
