@@ -56,9 +56,9 @@ export default function UsdtInfinityPage() {
         <ExchangeStatusGrid exchanges={exchangeStatus} />
       </div> */}
       {loading && <span className="text-blue-400 font-semibold animate-pulse block mb-8">Buscando oportunidades...</span>}
-      <div className="mb-10">
+      {/* <div className="mb-10">
         <RecentOpportunitiesTable rows={recent} />
-      </div>
+      </div> */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {(!loading && opportunities.length === 0) && (
           <div className="col-span-full text-center text-gray-400 bg-gray-900/70 rounded-lg p-8 shadow-inner">
