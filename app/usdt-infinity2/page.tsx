@@ -1,3 +1,4 @@
+"use client";
 import React, { useState } from "react";
 import OpportunityCard from "../../components/OpportunityCard";
 import RecentOpportunitiesTable, { RecentOpportunity } from "../../components/RecentOpportunitiesTable";
