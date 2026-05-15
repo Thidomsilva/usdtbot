@@ -227,6 +227,21 @@ export default function HomePage() {
             >
               Abrir Geral
             </Link>
+            <Link
+              href="/usdt-infinity"
+              style={{
+                border: "1px solid var(--card-border)",
+                borderRadius: 12,
+                padding: "10px 12px",
+                textDecoration: "none",
+                background: "var(--card)",
+                color: "var(--text)",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              USDT Infinity
+            </Link>
             {/* <Link
               href="/spot-futures"
               style={{
