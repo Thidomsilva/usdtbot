@@ -61,10 +61,16 @@ export default function UsdtInfinityPage() {
 
   return (
     <div className="max-w-6xl mx-auto py-12 px-4 min-h-screen bg-gradient-to-br from-gray-900 via-gray-950 to-gray-800">
-      <h1 className="text-3xl md:text-4xl font-extrabold mb-4 text-white drop-shadow">USDT Infinity <span className='font-normal'>– Arbitragem Cross-Exchange</span></h1>
-      <p className="text-gray-300 mb-8">Simule oportunidades de arbitragem entre exchanges globais. Informe o valor desejado para simular o lucro estimado.</p>
+      <div className="mb-4">
+        <a href="/" className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-200 font-semibold px-4 py-2 rounded-lg bg-gray-800/70 border border-blue-700 shadow transition-all">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+          Voltar
+        </a>
+      </div>
+      <h1 className="text-3xl md:text-4xl font-extrabold mb-2 text-white drop-shadow">USDT Infinity <span className='font-normal'>– Arbitragem Cross-Exchange</span></h1>
+      <p className="text-gray-300 mb-4">Simule oportunidades de arbitragem entre exchanges globais. Informe o valor desejado para simular o lucro estimado.</p>
 
-      <form onSubmit={handleSimulate} className="flex flex-col md:flex-row items-center gap-4 mb-10 bg-gray-800/80 rounded-xl p-6 shadow-lg">
+      <form onSubmit={handleSimulate} className="flex flex-col md:flex-row items-center gap-4 mb-6 bg-gray-800/80 rounded-xl p-6 shadow-lg">
         <label className="text-gray-200 font-semibold mr-2" htmlFor="capital">Valor para simulação (USDT):</label>
         <input
           id="capital"
@@ -81,7 +87,13 @@ export default function UsdtInfinityPage() {
         >Simular</button>
       </form>
 
-      {loading && <span className="text-blue-400 font-semibold animate-pulse block mb-8">Buscando oportunidades...</span>}
+      <div className="flex flex-col md:flex-row md:items-center gap-4 mb-10">
+        <div className="flex-1 bg-gray-900/80 rounded-xl p-4 shadow flex flex-col md:flex-row md:items-center gap-2">
+          <span className="text-gray-400">Valor simulado:</span>
+          <span className="text-2xl font-bold text-blue-400 font-mono">{capital} USDT</span>
+        </div>
+        {loading && <span className="text-blue-400 font-semibold animate-pulse block">Buscando oportunidades...</span>}
+      </div>
 
       <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
         {(!loading && opportunities.length === 0) && (
@@ -91,7 +103,7 @@ export default function UsdtInfinityPage() {
           </div>
         )}
         {opportunities.map((opp, idx) => (
-          <OpportunityCard key={idx} {...opp} />
+          <OpportunityCard key={idx} {...opp} capital={capital} />
         ))}
       </div>
     </div>
