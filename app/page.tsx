@@ -229,7 +229,7 @@ export default function HomePage() {
               Abrir Geral
             </Link>
             <Link
-              href="/usdt-infinity"
+              href="/usdt-infinity2"
               style={{
                 border: "1px solid var(--card-border)",
                 borderRadius: 12,
