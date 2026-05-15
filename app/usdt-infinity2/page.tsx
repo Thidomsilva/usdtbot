@@ -1,12 +1,6 @@
-"use client";
-import React, { useState } from "react";
-import OpportunityCard from "../../components/OpportunityCard";
-import RecentOpportunitiesTable, { RecentOpportunity } from "../../components/RecentOpportunitiesTable";
-import ExchangeStatusGrid, { ExchangeStatus } from "../../components/ExchangeStatusGrid";
 
-import type { InfinityOpportunity } from "../../lib/usdt-infinity";
 
-export default function UsdtInfinityPage() {
+// Layout moderno puro, sem imports externos
   return (
     <div className="w-full min-h-screen flex flex-col items-center bg-gradient-to-br from-blue-900 via-gray-950 to-gray-800 py-8 px-2">
       <div className="mb-4 w-full max-w-6xl flex items-center">
