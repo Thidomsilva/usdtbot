@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import OpportunityCard from "../../components/OpportunityCard";
+import ExchangeStatusGrid, { ExchangeStatus } from "../../components/ExchangeStatusGrid";
 
 
 import type { InfinityOpportunity } from "../../lib/usdt-infinity";
@@ -8,6 +9,7 @@ import type { InfinityOpportunity } from "../../lib/usdt-infinity";
 export default function UsdtInfinityPage() {
   const [capital, setCapital] = useState(1000);
   const [opportunities, setOpportunities] = useState<InfinityOpportunity[]>([]);
+  const [exchangeStatus, setExchangeStatus] = useState<ExchangeStatus[]>([]);
   const [loading, setLoading] = useState(false);
 
   async function fetchOpportunities(newCapital: number) {
@@ -20,6 +22,31 @@ export default function UsdtInfinityPage() {
       });
       const data = await res.json();
       setOpportunities(data.opportunities || []);
+
+      // Buscar status das exchanges globais conectadas via /api/fan-tokens
+      const fanRes = await fetch("/api/fan-tokens", { cache: "no-store" });
+      if (fanRes.ok) {
+        const fanData = await fanRes.json();
+        const EXCHANGE_LOGOS: Record<string, string> = {
+          binance: "/logos/binance.png",
+          bybit: "/logos/bybit.png",
+          okx: "/logos/okx.png",
+          kucoin: "/logos/kucoin.png",
+          bitget: "/logos/bitget.png",
+          gate: "/logos/gate.png",
+        };
+        const globais = ["binance","bybit","okx","kucoin","bitget","gate"];
+        const statusArr: ExchangeStatus[] = globais.map((id) => {
+          const ex = (fanData.tokens?.[0]?.exchanges ?? []).find((e: any) => e.exchange === id);
+          return {
+            id,
+            label: ex?.label || id.charAt(0).toUpperCase() + id.slice(1),
+            logo: EXCHANGE_LOGOS[id] || "",
+            online: !!ex && ex.status === "ok",
+          };
+        });
+        setExchangeStatus(statusArr);
+      }
     } catch (e) {
       setOpportunities([]);
     } finally {
@@ -35,6 +62,7 @@ export default function UsdtInfinityPage() {
   return (
     <div className="container mx-auto py-8">
       <h1 className="text-2xl font-bold mb-4">USDT Infinity – Arbitragem Cross-Exchange</h1>
+      <ExchangeStatusGrid exchanges={exchangeStatus} />
       <div className="mb-6">
         <label className="block mb-2 font-semibold">Capital disponível (USDT):</label>
         <input
