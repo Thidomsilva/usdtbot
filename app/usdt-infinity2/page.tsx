@@ -93,71 +93,7 @@ export default function USDTInfinity() {
     </>
   );
 }
-            </div>
-
-            {/* Fee breakdown */}
-            <div style={{ minWidth: 240 }}>
-              <div style={{ fontSize: "10px", color: "#3a5070", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>Breakdown de taxas</div>
-              {[
-                ["Spread bruto", `+${op.spreadPct}%`, "#22c55e"],
-                [`Taxa trade (${op.buyEx})`, `-$${(parseFloat(op.tradeFee) / 2).toFixed(4)}`, "#f87171"],
-                [`Taxa trade (${op.sellEx})`, `-$${(parseFloat(op.tradeFee) / 2).toFixed(4)}`, "#f87171"],
-                [`Rede (${op.net})`, `-$${op.netFee}`, "#fb923c"],
-              ].map(([l, v, c]) => (
-                <div key={l} style={{ display: "flex", justifyContent: "space-between", gap: 20, padding: "5px 0", borderBottom: "1px solid #111d2e" }}>
-                  <span style={{ fontSize: "11px", color: "#4a6080" }}>{l}</span>
-                  <span style={{ fontSize: "11px", color: c, fontFamily: "monospace", fontWeight: 600 }}>{v}</span>
-                </div>
-              ))}
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 20, paddingTop: 10 }}>
-                <span style={{ fontSize: "12px", fontWeight: 600, color: "#7aa0c0" }}>Lucro líquido</span>
-                <span style={{ fontSize: "13px", fontWeight: 800, color: "#4ade80", fontFamily: "monospace" }}>+{op.profit} USDT</span>
-              </div>
-            </div>
-
-            {/* Volume */}
-            <div>
-              <div style={{ fontSize: "10px", color: "#3a5070", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Volume 24h</div>
-              <div style={{ fontSize: "14px", fontWeight: 700, color: "#60a5fa", fontFamily: "monospace" }}>${(op.vol / 1e6).toFixed(1)}M</div>
-              <div style={{ fontSize: "10px", color: "#3a5070", textTransform: "uppercase", letterSpacing: "0.07em", marginTop: 12, marginBottom: 4 }}>Liquidez</div>
-              <div style={{ fontSize: "12px", fontWeight: 600, color: op.liq ? "#4ade80" : "#fb923c" }}>{op.liq ? "✓ Suficiente" : "⚠ Atenção"}</div>
-            </div>
-          </div>
-        )}
-
-        {tab === "playbook" && (
-          <div>
-            {[
-              { n: 1, title: "Prepare o capital", desc: `Tenha ${parseFloat(capital).toLocaleString("pt-BR")} USDT disponível na ${op.buyEx}.` },
-              { n: 2, title: `Compre ${op.asset} na ${op.buyEx}", desc: `Ordem de compra a ~$${op.buyPrice}. Você receberá ~${op.units} ${op.asset}.` },
-              { n: 3, title: `Transfira via ${op.net}", desc: `Rede ${op.net}. Taxa: ~$${op.netFee} USDT. Tempo: ${op.fast ? "< 30s" : "2–5 min"}.` },
-              { n: 4, title: `Venda por USDT na ${op.sellEx}", desc: `Ordem de venda a ~$${op.sellPrice}.` },
-              { n: 5, title: "Lucro confirmado", desc: `Saldo final: ${(parseFloat(capital) + parseFloat(op.profit)).toFixed(2)} USDT (+${op.profit} USDT líquido).` },
-            ].map((s, i, arr) => (
-              <div key={s.n} style={{ display: "flex", gap: 14 }}>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
-                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#0d1526", border: "1px solid #1e3050", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", fontWeight: 700, color: "#3b82f6", fontFamily: "monospace" }}>
-                    {s.n}
-                  </div>
-                  {i < arr.length - 1 && <div style={{ width: 1, height: 28, background: "#1a2a40" }} />}
-                </div>
-                <div style={{ paddingBottom: i < arr.length - 1 ? 4 : 0, paddingTop: 2 }}>
-                  <div style={{ fontSize: "12px", fontWeight: 600, color: "#93c5fd", marginBottom: 3 }}>{s.title}</div>
-                  <div style={{ fontSize: "11px", color: "#4a6080", lineHeight: 1.7 }}>{s.desc}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-export default function USDTInfinity() {
-  const [capital, setCapital] = useState("1000");
-  const [ops, setOps] = useState([]);
-  const [selId, setSelId] = useState(null);
+// ...fim do componente principal...
   const [filter, setFilter] = useState("all");
   const [scans, setScans] = useState(0);
 
