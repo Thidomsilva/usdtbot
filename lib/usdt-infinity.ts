@@ -8,12 +8,15 @@ export type InfinityOpportunity = {
   toExchange: string;
   toLogo: string;
   ask: number;
+  askCurrency?: "BRL" | "USDT";
   bid: number;
+  bidCurrency?: "BRL" | "USDT";
   network: string;
   networkLogo: string;
   fees: { buy: number; withdraw: number; sell: number };
   liquidity: number;
   profit: number;
+  profitCurrency?: "BRL" | "USDT";
   profitPercent: number;
   playbook: string[];
   buyBookTop?: Array<{
@@ -30,6 +33,8 @@ export type InfinityOpportunity = {
   }>;
   buyBookCoverageBrl?: number;
   sellBookCoverageBrl?: number;
+  buyBookCurrency?: "BRL" | "USDT";
+  sellBookCurrency?: "BRL" | "USDT";
   bookLevels?: number;
 };
 

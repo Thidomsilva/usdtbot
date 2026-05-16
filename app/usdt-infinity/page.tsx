@@ -4,17 +4,59 @@ import React, { useEffect, useState } from "react";
 import OpportunityCard from "../../components/OpportunityCard";
 import type { InfinityOpportunity } from "../../lib/usdt-infinity";
 
+type DisplayMode = "brl" | "original";
+
 export default function UsdtInfinityPage() {
   const [capital, setCapital] = useState(1000);
   const [inputValue, setInputValue] = useState("1000");
   const [opportunities, setOpportunities] = useState<InfinityOpportunity[]>([]);
   const [loading, setLoading] = useState(false);
+  const [displayMode, setDisplayMode] = useState<DisplayMode>("brl");
+
+  useEffect(() => {
+    const saved = localStorage.getItem("usdt-infinity-display-mode");
+    if (saved === "brl" || saved === "original") {
+      setDisplayMode(saved);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("usdt-infinity-display-mode", displayMode);
+  }, [displayMode]);
 
   async function fetchOpportunities(cap: number) {
     setLoading(true);
     try {
       const res = await fetch(`/api/fan-tokens?capital=${cap}`, { cache: "no-store" });
       const data = await res.json();
+      const usdBrl = Number(data?.summary?.usd_brl || 0);
+      const brlToUsd = (value: number) => (usdBrl > 0 ? value / usdBrl : value);
+      const resolveDisplayPrice = (exchange: any, fallbackBrl: number, side: "ask" | "bid") => {
+        if (displayMode === "original") {
+          const originalCurrency = exchange?.original_currency;
+          const originalPrice = Number(side === "ask" ? exchange?.original_ask_price : exchange?.original_bid_price);
+          if ((originalCurrency === "USDT" || originalCurrency === "BRL") && Number.isFinite(originalPrice) && originalPrice > 0) {
+            return { value: originalPrice, currency: originalCurrency as "BRL" | "USDT" };
+          }
+          return { value: brlToUsd(Number(fallbackBrl || 0)), currency: "USDT" as const };
+        }
+
+        return { value: Number(fallbackBrl || 0), currency: "BRL" as const };
+      };
+
+      const convertBookValue = (valueBrl: number, exchange: any) => {
+        if (displayMode === "original" && exchange?.original_currency === "USDT") {
+          return brlToUsd(valueBrl);
+        }
+        return valueBrl;
+      };
+
+      const getBookCurrency = (exchange: any): "BRL" | "USDT" => {
+        if (displayMode === "original" && exchange?.original_currency === "USDT") {
+          return "USDT";
+        }
+        return "BRL";
+      };
       const found = (data.tokens || [])
         .map((t: any) => {
           if (!t.best_arb || t.best_arb.spread_pct <= 0) return null;
@@ -22,30 +64,47 @@ export default function UsdtInfinityPage() {
           const buyExchange = (t.exchanges || []).find((ex: any) => ex.exchange === t.best_arb.buy_exchange);
           const sellExchange = (t.exchanges || []).find((ex: any) => ex.exchange === t.best_arb.sell_exchange);
 
+          const askValue = resolveDisplayPrice(buyExchange, t.best_arb.buy_price_brl, "ask");
+          const bidValue = resolveDisplayPrice(sellExchange, t.best_arb.sell_price_brl, "bid");
+
+          const buyBookCurrency = getBookCurrency(buyExchange);
+          const sellBookCurrency = getBookCurrency(sellExchange);
+
+          const profitBrl = t.best_arb.profit_est_brl_per_100 ? Number(t.best_arb.profit_est_brl_per_100 || 0) * (cap / 100) : 0;
+          const profitValue = displayMode === "original" && buyBookCurrency === "USDT" && sellBookCurrency === "USDT"
+            ? brlToUsd(profitBrl)
+            : profitBrl;
+          const profitCurrency: "BRL" | "USDT" = displayMode === "original" && buyBookCurrency === "USDT" && sellBookCurrency === "USDT"
+            ? "USDT"
+            : "BRL";
+
           const buyBookTop = (buyExchange?.orderbook?.asks || []).slice(0, 5).map((l: any) => ({
-            priceBrl: Number(l.price_brl || 0),
+            priceBrl: convertBookValue(Number(l.price_brl || 0), buyExchange),
             amount: Number(l.amount || 0),
-            notionalBrl: Number(l.notional_brl || 0),
-            cumulativeNotionalBrl: Number(l.cumulative_notional_brl || 0),
+            notionalBrl: convertBookValue(Number(l.notional_brl || 0), buyExchange),
+            cumulativeNotionalBrl: convertBookValue(Number(l.cumulative_notional_brl || 0), buyExchange),
           }));
 
           const sellBookTop = (sellExchange?.orderbook?.bids || []).slice(0, 5).map((l: any) => ({
-            priceBrl: Number(l.price_brl || 0),
+            priceBrl: convertBookValue(Number(l.price_brl || 0), sellExchange),
             amount: Number(l.amount || 0),
-            notionalBrl: Number(l.notional_brl || 0),
-            cumulativeNotionalBrl: Number(l.cumulative_notional_brl || 0),
+            notionalBrl: convertBookValue(Number(l.notional_brl || 0), sellExchange),
+            cumulativeNotionalBrl: convertBookValue(Number(l.cumulative_notional_brl || 0), sellExchange),
           }));
 
           return {
             asset: t.symbol,
             fromExchange: t.best_arb.buy_exchange_label,
             toExchange: t.best_arb.sell_exchange_label,
-            ask: t.best_arb.buy_price_brl,
-            bid: t.best_arb.sell_price_brl,
+            ask: askValue.value,
+            askCurrency: askValue.currency,
+            bid: bidValue.value,
+            bidCurrency: bidValue.currency,
             network: "-",
             fees: { buy: t.best_arb.buy_fee_pct, withdraw: 0, sell: t.best_arb.sell_fee_pct },
             liquidity: 0,
-            profit: t.best_arb.profit_est_brl_per_100 ? t.best_arb.profit_est_brl_per_100 * (cap / 100) : 0,
+            profit: profitValue,
+            profitCurrency,
             profitPercent: t.best_arb.net_spread_pct ?? 0,
             playbook: [
               `Comprar em ${t.best_arb.buy_exchange_label}`,
@@ -55,6 +114,8 @@ export default function UsdtInfinityPage() {
             sellBookTop,
             buyBookCoverageBrl: buyBookTop.length > 0 ? buyBookTop[buyBookTop.length - 1].cumulativeNotionalBrl : 0,
             sellBookCoverageBrl: sellBookTop.length > 0 ? sellBookTop[sellBookTop.length - 1].cumulativeNotionalBrl : 0,
+            buyBookCurrency,
+            sellBookCurrency,
             bookLevels: Math.max(buyBookTop.length, sellBookTop.length),
           };
         })
@@ -70,7 +131,7 @@ export default function UsdtInfinityPage() {
   useEffect(() => {
     fetchOpportunities(capital);
     // eslint-disable-next-line
-  }, [capital]);
+  }, [capital, displayMode]);
 
   function handleSimulate(e: React.FormEvent) {
     e.preventDefault();
@@ -93,6 +154,37 @@ export default function UsdtInfinityPage() {
             <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 15 }}>
               Oportunidades de arbitragem cross-exchange com base na mesma malha de dados da Arbitragem Geral.
             </p>
+          </div>
+          <div style={{ display: "flex", border: "1px solid var(--card-border)", borderRadius: 12, overflow: "hidden", background: "var(--card)" }}>
+            <button
+              onClick={() => setDisplayMode("brl")}
+              style={{
+                border: "none",
+                padding: "10px 12px",
+                background: displayMode === "brl" ? "rgba(255,255,255,0.08)" : "transparent",
+                color: "var(--text)",
+                cursor: "pointer",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              Exibir em BRL
+            </button>
+            <button
+              onClick={() => setDisplayMode("original")}
+              style={{
+                border: "none",
+                borderLeft: "1px solid var(--card-border)",
+                padding: "10px 12px",
+                background: displayMode === "original" ? "rgba(255,255,255,0.08)" : "transparent",
+                color: "var(--text)",
+                cursor: "pointer",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              Exibir em moeda original
+            </button>
           </div>
         </header>
 
