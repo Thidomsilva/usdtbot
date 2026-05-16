@@ -4,15 +4,15 @@
 export type InfinityOpportunity = {
   asset: string;
   fromExchange: string;
-  fromLogo: string;
+  fromLogo?: string;
   toExchange: string;
-  toLogo: string;
+  toLogo?: string;
   ask: number;
   askCurrency?: "BRL" | "USDT";
   bid: number;
   bidCurrency?: "BRL" | "USDT";
   network: string;
-  networkLogo: string;
+  networkLogo?: string;
   fees: { buy: number; withdraw: number; sell: number };
   liquidity: number;
   profit: number;
@@ -36,6 +36,25 @@ export type InfinityOpportunity = {
   buyBookCurrency?: "BRL" | "USDT";
   sellBookCurrency?: "BRL" | "USDT";
   bookLevels?: number;
+  allExchangesBooks?: Array<{
+    exchange: string;
+    label: string;
+    asks: Array<{
+      priceBrl: number;
+      amount: number;
+      notionalBrl: number;
+      cumulativeNotionalBrl: number;
+    }>;
+    bids: Array<{
+      priceBrl: number;
+      amount: number;
+      notionalBrl: number;
+      cumulativeNotionalBrl: number;
+    }>;
+    currency: "BRL" | "USDT";
+    asksCoverage: number;
+    bidsCoverage: number;
+  }>;
 };
 
 export async function scanUsdtInfinityOpportunities({ capital }: { capital: number }): Promise<InfinityOpportunity[]> {

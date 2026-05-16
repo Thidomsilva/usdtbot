@@ -320,8 +320,20 @@ async function fxBinance(symbol: string): Promise<RawQuote | null> {
 }
 
 async function fxCoinbase(symbol: string): Promise<RawQuote | null> {
-  const d = await fetchJson(`https://api.coinbase.com/api/v3/brokerage/products/${symbol}-USDT`);
+  const [d, book] = await Promise.all([
+    fetchJson(`https://api.coinbase.com/api/v3/brokerage/products/${symbol}-USDT`),
+    fetchJson(`https://api.exchange.coinbase.com/products/${symbol}-USDT/book?level=2`).catch(() => ({ bids: [], asks: [] })),
+  ]);
   if (!d.price) return null;
+
+  const orderbookData = book && book.bids && book.asks
+    ? {
+        quote_currency: "USDT" as const,
+        bids: parseBookSide(book.bids, ORDERBOOK_LEVELS),
+        asks: parseBookSide(book.asks, ORDERBOOK_LEVELS),
+      }
+    : undefined;
+
   return {
     price_usdt: safeNumber(d.price),
     bid_usdt: safeNumber(d.best_bid),
@@ -330,11 +342,15 @@ async function fxCoinbase(symbol: string): Promise<RawQuote | null> {
     change_24h: safeNumber(d.price_percentage_change_24h),
     high: 0,
     low: 0,
+    orderbook: orderbookData,
   };
 }
 
 async function fxKraken(symbol: string): Promise<RawQuote | null> {
-  const d = await fetchJson(`https://api.kraken.com/0/public/Ticker?pair=${symbol}USDT`);
+  const [d, depth] = await Promise.all([
+    fetchJson(`https://api.kraken.com/0/public/Ticker?pair=${symbol}USDT`),
+    fetchJson(`https://api.kraken.com/0/public/Depth?pair=${symbol}USDT&count=20`).catch(() => ({ result: {} })),
+  ]);
   if ((d.error && d.error.length) || !d.result) return null;
   const key = Object.keys(d.result)[0];
   if (!key) return null;
@@ -342,6 +358,17 @@ async function fxKraken(symbol: string): Promise<RawQuote | null> {
   const last = safeNumber(Array.isArray(t.c) ? t.c[0] : 0);
   if (last <= 0) return null;
   const open = safeNumber(t.o);
+
+  const depthKey = depth?.result ? Object.keys(depth.result)[0] : "";
+  const depthBook = depthKey ? depth.result?.[depthKey] ?? {} : {};
+  const orderbookData = depthBook && depthBook.bids && depthBook.asks
+    ? {
+        quote_currency: "USDT" as const,
+        bids: parseBookSide(depthBook.bids, ORDERBOOK_LEVELS),
+        asks: parseBookSide(depthBook.asks, ORDERBOOK_LEVELS),
+      }
+    : undefined;
+
   return {
     price_usdt: last,
     bid_usdt: safeNumber(Array.isArray(t.b) ? t.b[0] : 0),
@@ -350,14 +377,30 @@ async function fxKraken(symbol: string): Promise<RawQuote | null> {
     change_24h: open > 0 ? ((last - open) / open) * 100 : 0,
     high: safeNumber(Array.isArray(t.h) ? t.h[1] : 0),
     low: safeNumber(Array.isArray(t.l) ? t.l[1] : 0),
+    orderbook: orderbookData,
   };
 }
 
 async function fxBybit(symbol: string): Promise<RawQuote | null> {
-  const d = await fetchJson(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}USDT`);
+  const [d, depth] = await Promise.all([
+    fetchJson(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}USDT`),
+    fetchJson(`https://api.bybit.com/v5/market/orderbook?category=spot&symbol=${symbol}USDT&limit=20`).catch(
+      () => ({ result: {} } as Record<string, any>)
+    ),
+  ]);
   const items = Array.isArray(d.result?.list) ? d.result.list : [];
   const t = items[0] ?? {};
   if (!t.lastPrice) return null;
+
+  const depthData = depth?.result ?? {};
+  const orderbookData = depthData.b && depthData.a
+    ? {
+        quote_currency: "USDT" as const,
+        bids: parseBookSide(depthData.b, ORDERBOOK_LEVELS),
+        asks: parseBookSide(depthData.a, ORDERBOOK_LEVELS),
+      }
+    : undefined;
+
   return {
     price_usdt: safeNumber(t.lastPrice),
     bid_usdt: safeNumber(t.bid1Price),
@@ -366,6 +409,7 @@ async function fxBybit(symbol: string): Promise<RawQuote | null> {
     change_24h: safeNumber(t.price24hPcnt) * 100,
     high: safeNumber(t.highPrice24h),
     low: safeNumber(t.lowPrice24h),
+    orderbook: orderbookData,
   };
 }
 
@@ -425,11 +469,24 @@ async function fxMercadoBitcoin(symbol: string, usdBrl: number): Promise<RawQuot
 }
 
 async function fxOkx(symbol: string): Promise<RawQuote | null> {
-  const d = await fetchJson(`https://www.okx.com/api/v5/market/ticker?instId=${symbol}-USDT`);
+  const [d, depth] = await Promise.all([
+    fetchJson(`https://www.okx.com/api/v5/market/ticker?instId=${symbol}-USDT`),
+    fetchJson(`https://www.okx.com/api/v5/market/books?instId=${symbol}-USDT&sz=20`).catch(() => ({ data: [] })),
+  ]);
   const t = Array.isArray(d.data) ? d.data[0] ?? {} : {};
   if (!t.last) return null;
   const last = safeNumber(t.last);
   const open = safeNumber(t.open24h) || last;
+
+  const book = Array.isArray(depth.data) ? depth.data[0] ?? {} : {};
+  const orderbookData = book.bids && book.asks
+    ? {
+        quote_currency: "USDT" as const,
+        bids: parseBookSide(book.bids, ORDERBOOK_LEVELS),
+        asks: parseBookSide(book.asks, ORDERBOOK_LEVELS),
+      }
+    : undefined;
+
   return {
     price_usdt: last,
     bid_usdt: safeNumber(t.bidPx),
@@ -438,6 +495,7 @@ async function fxOkx(symbol: string): Promise<RawQuote | null> {
     change_24h: open > 0 ? ((last - open) / open) * 100 : 0,
     high: safeNumber(t.high24h),
     low: safeNumber(t.low24h),
+    orderbook: orderbookData,
   };
 }
 
@@ -475,9 +533,24 @@ async function fxKucoin(symbol: string): Promise<RawQuote | null> {
 }
 
 async function fxBitget(symbol: string): Promise<RawQuote | null> {
-  const d = await fetchJson(`https://api.bitget.com/api/v2/spot/market/tickers?symbol=${symbol}USDT`);
+  const [d, depth] = await Promise.all([
+    fetchJson(`https://api.bitget.com/api/v2/spot/market/tickers?symbol=${symbol}USDT`),
+    fetchJson(`https://api.bitget.com/api/v2/spot/market/orderbook?symbol=${symbol}USDT&limit=20&type=step0`).catch(
+      () => ({ data: {} } as Record<string, any>)
+    ),
+  ]);
   const t = Array.isArray(d.data) ? d.data[0] ?? {} : {};
   if (!t.lastPr) return null;
+
+  const depthData = depth.data ?? {};
+  const orderbookData = depthData.bids && depthData.asks
+    ? {
+        quote_currency: "USDT" as const,
+        bids: parseBookSide(depthData.bids, ORDERBOOK_LEVELS),
+        asks: parseBookSide(depthData.asks, ORDERBOOK_LEVELS),
+      }
+    : undefined;
+
   return {
     price_usdt: safeNumber(t.lastPr),
     bid_usdt: safeNumber(t.bidPr),
@@ -486,6 +559,7 @@ async function fxBitget(symbol: string): Promise<RawQuote | null> {
     change_24h: safeNumber(t.change24h) * 100,
     high: safeNumber(t.high24h),
     low: safeNumber(t.low24h),
+    orderbook: orderbookData,
   };
 }
 
@@ -509,12 +583,26 @@ async function fxNovadax(symbol: string, usdBrl: number): Promise<RawQuote | nul
 }
 
 async function fxGate(symbol: string): Promise<RawQuote | null> {
-  const d = await fetchJson(`https://api.gateio.ws/api/v4/spot/tickers?currency_pair=${symbol}_USDT`);
+  const [d, depth] = await Promise.all([
+    fetchJson(`https://api.gateio.ws/api/v4/spot/tickers?currency_pair=${symbol}_USDT`),
+    fetchJson(`https://api.gateio.ws/api/v4/spot/order_book?currency_pair=${symbol}_USDT&limit=20`).catch(
+      () => ({ bids: [], asks: [] } as Record<string, any>)
+    ),
+  ]);
   if (!Array.isArray(d) || d.length === 0) return null;
   const t = d[0] ?? {};
   const last = safeNumber(t.last);
   if (last <= 0) return null;
   const open = safeNumber(t.open_24h) || last;
+
+  const orderbookData = depth && depth.bids && depth.asks
+    ? {
+        quote_currency: "USDT" as const,
+        bids: parseBookSide(depth.bids, ORDERBOOK_LEVELS),
+        asks: parseBookSide(depth.asks, ORDERBOOK_LEVELS),
+      }
+    : undefined;
+
   return {
     price_usdt: last,
     bid_usdt: safeNumber(t.highest_bid),
@@ -523,6 +611,7 @@ async function fxGate(symbol: string): Promise<RawQuote | null> {
     change_24h: open > 0 ? ((last - open) / open) * 100 : 0,
     high: safeNumber(t.high_24h),
     low: safeNumber(t.low_24h),
+    orderbook: orderbookData,
   };
 }
 

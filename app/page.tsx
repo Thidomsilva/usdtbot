@@ -146,6 +146,26 @@ export default function HomePage() {
     [cards]
   );
 
+  const arbSelectionError = useMemo(() => {
+    if (!data) return null;
+
+    if (arbBuyEx) {
+      const buy = data.exchanges[arbBuyEx];
+      if (!buy || buy.status !== "ok" || !buy.price_brl || buy.price_brl <= 0) {
+        return `Exchange de compra indisponivel no momento: ${buy?.label ?? arbBuyEx}`;
+      }
+    }
+
+    if (arbSellEx) {
+      const sell = data.exchanges[arbSellEx];
+      if (!sell || sell.status !== "ok" || !sell.price_brl || sell.price_brl <= 0) {
+        return `Exchange de venda indisponivel no momento: ${sell?.label ?? arbSellEx}`;
+      }
+    }
+
+    return null;
+  }, [data, arbBuyEx, arbSellEx]);
+
   const arbResult = useMemo(():
     | null
     | { sameExchange: true }
@@ -446,9 +466,14 @@ export default function HomePage() {
                 style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "9px 11px", background: "var(--card)", color: "var(--text)", fontSize: 14, width: "100%" }}
               >
                 <option value="">Auto (mais barata)</option>
-                {okCards.map(({ key, ex }) => (
-                  <option key={key} value={key}>{ex.label}</option>
-                ))}
+                {cards.map(({ key, ex }) => {
+                  const unavailable = ex.status !== "ok" || !ex.price_brl || ex.price_brl <= 0;
+                  return (
+                    <option key={key} value={key} disabled={unavailable}>
+                      {ex.label}{unavailable ? " (indisponivel)" : ""}
+                    </option>
+                  );
+                })}
               </select>
             </div>
             <div>
@@ -459,12 +484,23 @@ export default function HomePage() {
                 style={{ border: "1px solid var(--card-border)", borderRadius: 10, padding: "9px 11px", background: "var(--card)", color: "var(--text)", fontSize: 14, width: "100%" }}
               >
                 <option value="">Auto (mais cara)</option>
-                {okCards.map(({ key, ex }) => (
-                  <option key={key} value={key}>{ex.label}</option>
-                ))}
+                {cards.map(({ key, ex }) => {
+                  const unavailable = ex.status !== "ok" || !ex.price_brl || ex.price_brl <= 0;
+                  return (
+                    <option key={key} value={key} disabled={unavailable}>
+                      {ex.label}{unavailable ? " (indisponivel)" : ""}
+                    </option>
+                  );
+                })}
               </select>
             </div>
           </div>
+
+          {arbSelectionError && (
+            <div style={{ marginTop: 12, padding: "10px 12px", border: "1px solid #d97706", borderRadius: 10, color: "#b45309", fontSize: 13 }}>
+              {arbSelectionError}
+            </div>
+          )}
 
           {/* Resultado */}
           {arbResult && (
