@@ -36,6 +36,8 @@ export type InfinityOpportunity = {
   buyBookCurrency?: "BRL" | "USDT";
   sellBookCurrency?: "BRL" | "USDT";
   bookLevels?: number;
+  fromExchangeId?: string;
+  toExchangeId?: string;
   allExchangesBooks?: Array<{
     exchange: string;
     label: string;

@@ -7,6 +7,22 @@ import type { InfinityOpportunity } from "../../lib/usdt-infinity";
 type DisplayMode = "brl" | "original";
 const REFRESH_SECONDS = 10;
 
+const EXCHANGES_LIST = [
+  { id: "binance", label: "Binance" },
+  { id: "bybit", label: "Bybit" },
+  { id: "okx", label: "OKX" },
+  { id: "kucoin", label: "KuCoin" },
+  { id: "bitget", label: "Bitget" },
+  { id: "gate", label: "Gate.io" },
+  { id: "kraken", label: "Kraken" },
+  { id: "bingx", label: "BingX" },
+  { id: "coinbase", label: "Coinbase" },
+  { id: "mercadobitcoin", label: "Mercado Bitcoin" },
+  { id: "novadax", label: "Novadax" },
+];
+
+const ALL_EXCHANGE_IDS = EXCHANGES_LIST.map((e) => e.id);
+
 export default function UsdtInfinityPage() {
   const [capital, setCapital] = useState(1000);
   const [inputValue, setInputValue] = useState("1000");
@@ -14,6 +30,7 @@ export default function UsdtInfinityPage() {
   const [loading, setLoading] = useState(false);
   const [displayMode, setDisplayMode] = useState<DisplayMode>("brl");
   const [countdown, setCountdown] = useState(REFRESH_SECONDS);
+  const [selectedExchanges, setSelectedExchanges] = useState<Set<string>>(new Set(ALL_EXCHANGE_IDS));
 
   useEffect(() => {
     const saved = localStorage.getItem("usdt-infinity-display-mode");
@@ -25,6 +42,37 @@ export default function UsdtInfinityPage() {
   useEffect(() => {
     localStorage.setItem("usdt-infinity-display-mode", displayMode);
   }, [displayMode]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("usdt-infinity-exchanges");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as string[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setSelectedExchanges(new Set(parsed));
+        }
+      } catch {}
+    }
+  }, []);
+
+  function toggleExchange(id: string) {
+    setSelectedExchanges((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        if (next.size === 1) return prev; // pelo menos 1 sempre selecionada
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      localStorage.setItem("usdt-infinity-exchanges", JSON.stringify(Array.from(next)));
+      return next;
+    });
+  }
+
+  function selectAllExchanges() {
+    setSelectedExchanges(new Set(ALL_EXCHANGE_IDS));
+    localStorage.setItem("usdt-infinity-exchanges", JSON.stringify(ALL_EXCHANGE_IDS));
+  }
 
   async function fetchOpportunities(cap: number) {
     setLoading(true);
@@ -97,8 +145,8 @@ export default function UsdtInfinityPage() {
             cumulativeNotionalBrl: convertBookValue(Number(l.cumulative_notional_brl || 0), sellExchange),
           }));
 
-          // Orderbooks de todas as exchanges
-          const allExchangesBooks = (t.exchanges || []).map((ex: any) => {
+          // Orderbooks de todas as exchanges (somente as selecionadas)
+          const allExchangesBooks = (t.exchanges || []).filter((ex: any) => selectedExchanges.has(ex.exchange)).map((ex: any) => {
             const exCurrency = getBookCurrency(ex);
             const asks = (ex?.orderbook?.asks || []).slice(0, 5).map((l: any) => ({
               priceBrl: convertBookValue(Number(l.price_brl || 0), ex),
@@ -149,11 +197,19 @@ export default function UsdtInfinityPage() {
             sellBookCurrency,
             bookLevels: Math.max(buyBookTop.length, sellBookTop.length),
             allExchangesBooks,
+            fromExchangeId: t.best_arb.buy_exchange,
+            toExchangeId: t.best_arb.sell_exchange,
           };
         })
         .filter(Boolean) as InfinityOpportunity[];
 
-      const sortedFound = found.slice().sort((a, b) => {
+      const filteredFound = found.filter(
+        (opp) =>
+          selectedExchanges.has(opp.fromExchangeId ?? "") &&
+          selectedExchanges.has(opp.toExchangeId ?? "")
+      );
+
+      const sortedFound = filteredFound.slice().sort((a, b) => {
         const spreadDelta = (b.profitPercent ?? 0) - (a.profitPercent ?? 0);
         if (spreadDelta !== 0) return spreadDelta;
         return (b.profit ?? 0) - (a.profit ?? 0);
@@ -196,7 +252,7 @@ export default function UsdtInfinityPage() {
   return (
     <main className="page-shell" style={{ minHeight: "100vh", padding: 24 }}>
       <div className="page-container" style={{ maxWidth: 1160, margin: "0 auto" }}>
-        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
           <div>
             <div style={{ fontSize: 13, marginBottom: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
               <Link href="/" style={{ textDecoration: "none", color: "var(--muted)" }}>Voltar para USDT/BRL</Link>
@@ -242,7 +298,62 @@ export default function UsdtInfinityPage() {
 
         <section
           style={{
-            marginTop: 18,
+            marginTop: 16,
+            background: "var(--card)",
+            border: "1px solid var(--card-border)",
+            borderRadius: 16,
+            boxShadow: "var(--shadow)",
+            padding: 14,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1 }}>
+              Exchanges monitoradas
+            </span>
+            <button
+              onClick={selectAllExchanges}
+              style={{
+                border: "1px solid var(--card-border)",
+                borderRadius: 8,
+                padding: "3px 10px",
+                background: "transparent",
+                color: "var(--muted)",
+                fontSize: 11,
+                cursor: "pointer",
+              }}
+            >
+              Selecionar todas
+            </button>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+            {EXCHANGES_LIST.map((ex) => {
+              const active = selectedExchanges.has(ex.id);
+              return (
+                <button
+                  key={ex.id}
+                  onClick={() => toggleExchange(ex.id)}
+                  style={{
+                    border: `1px solid ${active ? "var(--accent)" : "var(--card-border)"}`,
+                    borderRadius: 999,
+                    padding: "4px 12px",
+                    background: active ? "rgba(0,200,150,0.12)" : "transparent",
+                    color: active ? "var(--accent)" : "var(--muted)",
+                    fontSize: 12,
+                    fontWeight: active ? 700 : 400,
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {ex.label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section
+          style={{
+            marginTop: 10,
             marginBottom: 18,
             background: "var(--card)",
             border: "1px solid var(--card-border)",
