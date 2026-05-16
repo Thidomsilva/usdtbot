@@ -35,6 +35,25 @@ interface OpportunityCardProps {
   sellBookCoverageBrl?: number;
   buyBookCurrency?: "BRL" | "USDT";
   sellBookCurrency?: "BRL" | "USDT";
+  allExchangesBooks?: Array<{
+    exchange: string;
+    label: string;
+    asks: Array<{
+      priceBrl: number;
+      amount: number;
+      notionalBrl: number;
+      cumulativeNotionalBrl: number;
+    }>;
+    bids: Array<{
+      priceBrl: number;
+      amount: number;
+      notionalBrl: number;
+      cumulativeNotionalBrl: number;
+    }>;
+    currency: "BRL" | "USDT";
+    asksCoverage: number;
+    bidsCoverage: number;
+  }>;
 }
 
 export default function OpportunityCard(props: OpportunityCardProps) {
@@ -216,6 +235,79 @@ export default function OpportunityCard(props: OpportunityCardProps) {
             <div style={{ marginTop: 6 }}>
               Cobertura acumulada: {formatCompactWithCurrency(props.sellBookCoverageBrl ?? 0, sellBookCurrency)}
             </div>
+          </div>
+        )}
+
+        {(props.allExchangesBooks?.length || 0) > 0 && (
+          <div
+            style={{
+              border: "1px solid var(--card-border)",
+              borderRadius: 10,
+              padding: "10px",
+              marginTop: 8,
+            }}
+          >
+            <div style={{ marginBottom: 10 }}>
+              <strong style={{ color: "var(--text)", fontSize: 12 }}>Orderbook completo por Exchange</strong>
+            </div>
+            {(props.allExchangesBooks || []).map((book, exchangeIdx) => (
+              <div key={`exchange-${exchangeIdx}`} style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text)", marginBottom: 5 }}>
+                  {book.label}
+                </div>
+
+                {book.asks.length > 0 && (
+                  <div
+                    style={{
+                      border: "1px solid var(--card-border)",
+                      borderRadius: 6,
+                      padding: "6px 8px",
+                      marginBottom: 5,
+                      fontSize: 11,
+                    }}
+                  >
+                    <div style={{ marginBottom: 3, fontWeight: 600, color: "var(--text)" }}>
+                      Book de compra (Asks)
+                    </div>
+                    {book.asks.map((level, idx) => (
+                      <div key={`${book.exchange}-ask-${idx}`} style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr", gap: 6, marginBottom: 2, fontSize: 10, color: "var(--muted)" }}>
+                        <span>#{idx + 1}</span>
+                        <span>{formatPrice(level.priceBrl, book.currency)}</span>
+                        <span>{formatCompact(level.amount)}</span>
+                      </div>
+                    ))}
+                    <div style={{ marginTop: 3, fontSize: 10, color: "var(--muted)" }}>
+                      Cobertura: {formatCompactWithCurrency(book.asksCoverage, book.currency)}
+                    </div>
+                  </div>
+                )}
+
+                {book.bids.length > 0 && (
+                  <div
+                    style={{
+                      border: "1px solid var(--card-border)",
+                      borderRadius: 6,
+                      padding: "6px 8px",
+                      fontSize: 11,
+                    }}
+                  >
+                    <div style={{ marginBottom: 3, fontWeight: 600, color: "var(--text)" }}>
+                      Book de venda (Bids)
+                    </div>
+                    {book.bids.map((level, idx) => (
+                      <div key={`${book.exchange}-bid-${idx}`} style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr", gap: 6, marginBottom: 2, fontSize: 10, color: "var(--muted)" }}>
+                        <span>#{idx + 1}</span>
+                        <span>{formatPrice(level.priceBrl, book.currency)}</span>
+                        <span>{formatCompact(level.amount)}</span>
+                      </div>
+                    ))}
+                    <div style={{ marginTop: 3, fontSize: 10, color: "var(--muted)" }}>
+                      Cobertura: {formatCompactWithCurrency(book.bidsCoverage, book.currency)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>

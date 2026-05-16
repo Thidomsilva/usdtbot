@@ -97,6 +97,32 @@ export default function UsdtInfinityPage() {
             cumulativeNotionalBrl: convertBookValue(Number(l.cumulative_notional_brl || 0), sellExchange),
           }));
 
+          // Orderbooks de todas as exchanges
+          const allExchangesBooks = (t.exchanges || []).map((ex: any) => {
+            const exCurrency = getBookCurrency(ex);
+            const asks = (ex?.orderbook?.asks || []).slice(0, 5).map((l: any) => ({
+              priceBrl: convertBookValue(Number(l.price_brl || 0), ex),
+              amount: Number(l.amount || 0),
+              notionalBrl: convertBookValue(Number(l.notional_brl || 0), ex),
+              cumulativeNotionalBrl: convertBookValue(Number(l.cumulative_notional_brl || 0), ex),
+            }));
+            const bids = (ex?.orderbook?.bids || []).slice(0, 5).map((l: any) => ({
+              priceBrl: convertBookValue(Number(l.price_brl || 0), ex),
+              amount: Number(l.amount || 0),
+              notionalBrl: convertBookValue(Number(l.notional_brl || 0), ex),
+              cumulativeNotionalBrl: convertBookValue(Number(l.cumulative_notional_brl || 0), ex),
+            }));
+            return {
+              exchange: ex.exchange,
+              label: ex.label || ex.exchange,
+              asks,
+              bids,
+              currency: exCurrency,
+              asksCoverage: asks.length > 0 ? asks[asks.length - 1].cumulativeNotionalBrl : 0,
+              bidsCoverage: bids.length > 0 ? bids[bids.length - 1].cumulativeNotionalBrl : 0,
+            };
+          });
+
           return {
             asset: t.symbol,
             fromExchange: t.best_arb.buy_exchange_label,
@@ -122,6 +148,7 @@ export default function UsdtInfinityPage() {
             buyBookCurrency,
             sellBookCurrency,
             bookLevels: Math.max(buyBookTop.length, sellBookTop.length),
+            allExchangesBooks,
           };
         })
         .filter(Boolean);
