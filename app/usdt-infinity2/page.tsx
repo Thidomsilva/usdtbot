@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import React, { useState, useEffect } from "react";
 import OpportunityCard from "../../components/OpportunityCard";
 import type { InfinityOpportunity } from "../../lib/usdt-infinity";
@@ -56,56 +57,99 @@ export default function USDTInfinity() {
   }
 
   return (
-    <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #060d1a; color: #c0d4e8; font-family: 'Inter', sans-serif; }
-        ::-webkit-scrollbar { width: 3px; }
-        ::-webkit-scrollbar-thumb { background: #1e3050; border-radius: 2px; }
-      `}</style>
-
-      {/* Header */}
-      <div style={{ background: "#060d1a", borderBottom: "1px solid #0d1828", padding: "0 24px" }}>
-        <div style={{ display: "flex", alignItems: "center", height: 52, gap: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: "18px", color: "#2563eb" }}>∞</span>
-            <span style={{ fontSize: "14px", fontWeight: 800, color: "#e2f0ff", letterSpacing: "-0.02em" }}>USDT Infinity</span>
+    <main className="page-shell" style={{ minHeight: "100vh", padding: 24 }}>
+      <div className="page-container" style={{ maxWidth: 1160, margin: "0 auto" }}>
+        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: 13, marginBottom: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <Link href="/" style={{ textDecoration: "none", color: "var(--muted)" }}>Voltar para USDT/BRL</Link>
+              <Link href="/fan-tokens" style={{ textDecoration: "none", color: "var(--muted)" }}>Abrir Arbitragem Geral</Link>
+            </div>
+            <h1 style={{ margin: 0, fontSize: 34, letterSpacing: "-0.8px", fontWeight: 800 }}>USDT Infinity</h1>
+            <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 15 }}>
+              Oportunidades de arbitragem cross-exchange com base na mesma malha de dados da Arbitragem Geral.
+            </p>
           </div>
-        </div>
+        </header>
+
+        <section
+          style={{
+            marginTop: 18,
+            marginBottom: 18,
+            background: "var(--card)",
+            border: "1px solid var(--card-border)",
+            borderRadius: 16,
+            boxShadow: "var(--shadow)",
+            padding: 16,
+          }}
+        >
+          <form onSubmit={handleSimulate} style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <label htmlFor="capital" style={{ fontSize: 13, color: "var(--muted)", fontWeight: 600 }}>
+              Valor para simulacao (USDT):
+            </label>
+            <input
+              id="capital"
+              type="number"
+              min={10}
+              step={10}
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              style={{
+                width: 140,
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid var(--card-border)",
+                background: "transparent",
+                color: "var(--text)",
+                fontSize: 16,
+                fontWeight: 700,
+                outline: "none",
+              }}
+            />
+            <button
+              type="submit"
+              style={{
+                border: "1px solid transparent",
+                borderRadius: 10,
+                padding: "10px 14px",
+                background: "var(--accent)",
+                color: "#03212f",
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Simular
+            </button>
+            <span style={{ marginLeft: "auto", color: "var(--muted)", fontSize: 13 }}>
+              Capital atual: <strong style={{ color: "var(--text)" }}>{capital} USDT</strong>
+            </span>
+          </form>
+          {loading && <p style={{ margin: "12px 0 0", color: "var(--accent)", fontSize: 13 }}>Buscando oportunidades...</p>}
+        </section>
+
+        {ops.length === 0 && !loading && (
+          <section
+            style={{
+              background: "var(--card)",
+              border: "1px solid var(--card-border)",
+              borderRadius: 16,
+              boxShadow: "var(--shadow)",
+              padding: 24,
+              textAlign: "center",
+              color: "var(--muted)",
+            }}
+          >
+            Nenhuma oportunidade encontrada agora.
+          </section>
+        )}
+
+        <section style={{ display: "grid", gap: 14 }}>
+          {ops.map((op, idx) => (
+            <OpportunityCard key={idx} {...op} capital={capital} />
+          ))}
+        </section>
       </div>
-
-      {/* Toolbar */}
-      <form onSubmit={handleSimulate} style={{ background: "#060d1a", borderBottom: "1px solid #0d1828", padding: "10px 24px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <input type="number" value={inputValue} onChange={e => setInputValue(e.target.value)} className="cinput" />
-          <span style={{ fontSize: "12px", fontWeight: 700, color: "#2a4060", fontFamily: "monospace" }}>USDT</span>
-        </div>
-        <button type="submit" className="fbtn on">Simular</button>
-        {loading && <span style={{ color: "#60a5fa", fontSize: 12, marginLeft: 12 }}>Buscando oportunidades...</span>}
-      </form>
-
-      {/* Table header */}
-      <div style={{ display: "flex", alignItems: "center", padding: "8px 24px", borderBottom: "1px solid #0d1828", background: "#060d1a" }}>
-        {[{ l: "Par", w: 130 }, { l: "De", w: 120 }, { l: "Para", w: 120 }, { l: "Rede", w: 120 }, { l: "Lucro líquido", w: 140, right: true }, { l: "", w: 20 }].map((col, i) => (
-          <div key={i} style={{ fontSize: "10px", color: "#2a4060", textTransform: "uppercase", letterSpacing: "0.07em", width: col.w, textAlign: col.right ? "right" : "left", flexShrink: 0 }}>
-            {col.l}
-          </div>
-        ))}
-      </div>
-
-      {/* Rows */}
-      {ops.length === 0 && !loading && (
-        <div style={{ padding: "60px 24px", textAlign: "center", color: "#1e3050", fontSize: "13px" }}>
-          Nenhuma oportunidade encontrada.
-        </div>
-      )}
-
-      {ops.map((op, idx) => (
-        <div key={idx} style={{ borderBottom: "1px solid #0d1828", padding: "13px 24px" }}>
-          <OpportunityCard {...op} capital={capital} />
-        </div>
-      ))}
-    </>
+    </main>
   );
 }
