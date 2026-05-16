@@ -38,6 +38,9 @@ export default function UsdtInfinityPage() {
           if ((originalCurrency === "USDT" || originalCurrency === "BRL") && Number.isFinite(originalPrice) && originalPrice > 0) {
             return { value: originalPrice, currency: originalCurrency as "BRL" | "USDT" };
           }
+          if (originalCurrency === "BRL") {
+            return { value: Number(fallbackBrl || 0), currency: "BRL" as const };
+          }
           return { value: brlToUsd(Number(fallbackBrl || 0)), currency: "USDT" as const };
         }
 
