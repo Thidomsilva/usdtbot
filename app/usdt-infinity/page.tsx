@@ -5,6 +5,7 @@ import OpportunityCard from "../../components/OpportunityCard";
 import type { InfinityOpportunity } from "../../lib/usdt-infinity";
 
 type DisplayMode = "brl" | "original";
+const REFRESH_SECONDS = 10;
 
 export default function UsdtInfinityPage() {
   const [capital, setCapital] = useState(1000);
@@ -12,6 +13,7 @@ export default function UsdtInfinityPage() {
   const [opportunities, setOpportunities] = useState<InfinityOpportunity[]>([]);
   const [loading, setLoading] = useState(false);
   const [displayMode, setDisplayMode] = useState<DisplayMode>("brl");
+  const [countdown, setCountdown] = useState(REFRESH_SECONDS);
 
   useEffect(() => {
     const saved = localStorage.getItem("usdt-infinity-display-mode");
@@ -128,11 +130,24 @@ export default function UsdtInfinityPage() {
       setOpportunities([]);
     } finally {
       setLoading(false);
+      setCountdown(REFRESH_SECONDS);
     }
   }
 
   useEffect(() => {
     fetchOpportunities(capital);
+    const refreshTimer = setInterval(() => {
+      fetchOpportunities(capital);
+    }, REFRESH_SECONDS * 1000);
+
+    const countdownTimer = setInterval(() => {
+      setCountdown((c) => (c > 0 ? c - 1 : 0));
+    }, 1000);
+
+    return () => {
+      clearInterval(refreshTimer);
+      clearInterval(countdownTimer);
+    };
     // eslint-disable-next-line
   }, [capital, displayMode]);
 
@@ -244,6 +259,9 @@ export default function UsdtInfinityPage() {
               Capital atual: <strong style={{ color: "var(--text)" }}>{capital} USDT</strong>
             </span>
           </form>
+          <div style={{ marginTop: 10, color: "var(--muted)", fontSize: 13 }}>
+            Proxima atualizacao automatica em {countdown}s
+          </div>
           {loading && <p style={{ margin: "12px 0 0", color: "var(--accent)", fontSize: 13 }}>Buscando oportunidades...</p>}
         </section>
 
