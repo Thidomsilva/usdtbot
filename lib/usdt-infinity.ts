@@ -16,6 +16,21 @@ export type InfinityOpportunity = {
   profit: number;
   profitPercent: number;
   playbook: string[];
+  buyBookTop?: Array<{
+    priceBrl: number;
+    amount: number;
+    notionalBrl: number;
+    cumulativeNotionalBrl: number;
+  }>;
+  sellBookTop?: Array<{
+    priceBrl: number;
+    amount: number;
+    notionalBrl: number;
+    cumulativeNotionalBrl: number;
+  }>;
+  buyBookCoverageBrl?: number;
+  sellBookCoverageBrl?: number;
+  bookLevels?: number;
 };
 
 export async function scanUsdtInfinityOpportunities({ capital }: { capital: number }): Promise<InfinityOpportunity[]> {

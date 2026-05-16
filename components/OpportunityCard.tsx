@@ -16,6 +16,20 @@ interface OpportunityCardProps {
   profitPercent: number;
   playbook: string[];
   capital?: number;
+  buyBookTop?: Array<{
+    priceBrl: number;
+    amount: number;
+    notionalBrl: number;
+    cumulativeNotionalBrl: number;
+  }>;
+  sellBookTop?: Array<{
+    priceBrl: number;
+    amount: number;
+    notionalBrl: number;
+    cumulativeNotionalBrl: number;
+  }>;
+  buyBookCoverageBrl?: number;
+  sellBookCoverageBrl?: number;
 }
 
 export default function OpportunityCard(props: OpportunityCardProps) {
@@ -26,6 +40,11 @@ export default function OpportunityCard(props: OpportunityCardProps) {
     if (value < 0.01) return value.toFixed(6);
     if (value < 1) return value.toFixed(4);
     return value.toFixed(2);
+  };
+
+  const formatCompact = (value: number) => {
+    if (!Number.isFinite(value)) return "-";
+    return value.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
   };
 
   return (
@@ -129,6 +148,60 @@ export default function OpportunityCard(props: OpportunityCardProps) {
         <div style={{ fontSize: 12, color: "var(--muted)" }}>
           <strong style={{ color: "var(--text)" }}>Estrategia:</strong> {props.playbook.join(" · ")}
         </div>
+
+        {(props.buyBookTop?.length || 0) > 0 && (
+          <div
+            style={{
+              border: "1px solid var(--card-border)",
+              borderRadius: 10,
+              padding: "10px",
+              fontSize: 12,
+              color: "var(--muted)",
+            }}
+          >
+            <div style={{ marginBottom: 6 }}>
+              <strong style={{ color: "var(--text)" }}>Book de compra ({props.fromExchange})</strong>
+              <span> · top {props.buyBookTop?.length} asks</span>
+            </div>
+            {(props.buyBookTop || []).map((level, idx) => (
+              <div key={`buy-${idx}`} style={{ display: "grid", gridTemplateColumns: "70px 1fr 1fr", gap: 8, marginBottom: 3 }}>
+                <span>#{idx + 1}</span>
+                <span>preco {formatPrice(level.priceBrl)}</span>
+                <span>qtd {formatCompact(level.amount)}</span>
+              </div>
+            ))}
+            <div style={{ marginTop: 6 }}>
+              Cobertura acumulada: {formatCompact(props.buyBookCoverageBrl ?? 0)} BRL
+            </div>
+          </div>
+        )}
+
+        {(props.sellBookTop?.length || 0) > 0 && (
+          <div
+            style={{
+              border: "1px solid var(--card-border)",
+              borderRadius: 10,
+              padding: "10px",
+              fontSize: 12,
+              color: "var(--muted)",
+            }}
+          >
+            <div style={{ marginBottom: 6 }}>
+              <strong style={{ color: "var(--text)" }}>Book de venda ({props.toExchange})</strong>
+              <span> · top {props.sellBookTop?.length} bids</span>
+            </div>
+            {(props.sellBookTop || []).map((level, idx) => (
+              <div key={`sell-${idx}`} style={{ display: "grid", gridTemplateColumns: "70px 1fr 1fr", gap: 8, marginBottom: 3 }}>
+                <span>#{idx + 1}</span>
+                <span>preco {formatPrice(level.priceBrl)}</span>
+                <span>qtd {formatCompact(level.amount)}</span>
+              </div>
+            ))}
+            <div style={{ marginTop: 6 }}>
+              Cobertura acumulada: {formatCompact(props.sellBookCoverageBrl ?? 0)} BRL
+            </div>
+          </div>
+        )}
       </div>
     </article>
   );

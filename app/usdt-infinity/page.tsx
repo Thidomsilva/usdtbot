@@ -16,24 +16,48 @@ export default function UsdtInfinityPage() {
       const res = await fetch(`/api/fan-tokens?capital=${cap}`, { cache: "no-store" });
       const data = await res.json();
       const found = (data.tokens || [])
-        .map((t: any) => (t.best_arb && t.best_arb.spread_pct > 0
-          ? {
-              asset: t.symbol,
-              fromExchange: t.best_arb.buy_exchange_label,
-              toExchange: t.best_arb.sell_exchange_label,
-              ask: t.best_arb.buy_price_brl,
-              bid: t.best_arb.sell_price_brl,
-              network: "-",
-              fees: { buy: t.best_arb.buy_fee_pct, withdraw: 0, sell: t.best_arb.sell_fee_pct },
-              liquidity: 0,
-              profit: t.best_arb.profit_est_brl_per_100 ? t.best_arb.profit_est_brl_per_100 * (cap / 100) : 0,
-              profitPercent: t.best_arb.net_spread_pct ?? 0,
-              playbook: [
-                `Comprar em ${t.best_arb.buy_exchange_label}`,
-                `Vender em ${t.best_arb.sell_exchange_label}`,
-              ],
-            }
-          : null))
+        .map((t: any) => {
+          if (!t.best_arb || t.best_arb.spread_pct <= 0) return null;
+
+          const buyExchange = (t.exchanges || []).find((ex: any) => ex.exchange === t.best_arb.buy_exchange);
+          const sellExchange = (t.exchanges || []).find((ex: any) => ex.exchange === t.best_arb.sell_exchange);
+
+          const buyBookTop = (buyExchange?.orderbook?.asks || []).slice(0, 5).map((l: any) => ({
+            priceBrl: Number(l.price_brl || 0),
+            amount: Number(l.amount || 0),
+            notionalBrl: Number(l.notional_brl || 0),
+            cumulativeNotionalBrl: Number(l.cumulative_notional_brl || 0),
+          }));
+
+          const sellBookTop = (sellExchange?.orderbook?.bids || []).slice(0, 5).map((l: any) => ({
+            priceBrl: Number(l.price_brl || 0),
+            amount: Number(l.amount || 0),
+            notionalBrl: Number(l.notional_brl || 0),
+            cumulativeNotionalBrl: Number(l.cumulative_notional_brl || 0),
+          }));
+
+          return {
+            asset: t.symbol,
+            fromExchange: t.best_arb.buy_exchange_label,
+            toExchange: t.best_arb.sell_exchange_label,
+            ask: t.best_arb.buy_price_brl,
+            bid: t.best_arb.sell_price_brl,
+            network: "-",
+            fees: { buy: t.best_arb.buy_fee_pct, withdraw: 0, sell: t.best_arb.sell_fee_pct },
+            liquidity: 0,
+            profit: t.best_arb.profit_est_brl_per_100 ? t.best_arb.profit_est_brl_per_100 * (cap / 100) : 0,
+            profitPercent: t.best_arb.net_spread_pct ?? 0,
+            playbook: [
+              `Comprar em ${t.best_arb.buy_exchange_label}`,
+              `Vender em ${t.best_arb.sell_exchange_label}`,
+            ],
+            buyBookTop,
+            sellBookTop,
+            buyBookCoverageBrl: buyBookTop.length > 0 ? buyBookTop[buyBookTop.length - 1].cumulativeNotionalBrl : 0,
+            sellBookCoverageBrl: sellBookTop.length > 0 ? sellBookTop[sellBookTop.length - 1].cumulativeNotionalBrl : 0,
+            bookLevels: Math.max(buyBookTop.length, sellBookTop.length),
+          };
+        })
         .filter(Boolean);
       setOpportunities(found);
     } catch (e) {

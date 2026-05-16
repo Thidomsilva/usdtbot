@@ -45,6 +45,21 @@ type ExchangeQuote = {
   change_24h?: number;
   high_24h_brl?: number;
   low_24h_brl?: number;
+  orderbook?: {
+    bids: Array<{
+      price_brl: number;
+      amount: number;
+      notional_brl: number;
+      cumulative_notional_brl: number;
+    }>;
+    asks: Array<{
+      price_brl: number;
+      amount: number;
+      notional_brl: number;
+      cumulative_notional_brl: number;
+    }>;
+    levels: number;
+  };
 };
 
 type Arb = {
@@ -183,7 +198,14 @@ type RawQuote = {
   ask_usdt?: number;
   bid_brl_direct?: number;
   ask_brl_direct?: number;
+  orderbook?: {
+    quote_currency: "BRL" | "USDT";
+    bids: Array<{ price: number; amount: number }>;
+    asks: Array<{ price: number; amount: number }>;
+  };
 };
+
+const ORDERBOOK_LEVELS = 8;
 
 type Fetcher = (symbol: string, usdBrl: number) => Promise<RawQuote | null>;
 
@@ -213,6 +235,53 @@ function normalizeError(err: unknown): string {
   if (msg.includes("HTTP 403")) return "Bloqueado para esta regiao";
   if (msg.toLowerCase().includes("timeout")) return "Timeout na consulta";
   return msg;
+}
+
+function parseBookSide(side: any, levels: number): Array<{ price: number; amount: number }> {
+  if (!Array.isArray(side)) return [];
+  const parsed: Array<{ price: number; amount: number }> = [];
+  for (const row of side.slice(0, levels)) {
+    if (!Array.isArray(row)) continue;
+    const price = safeNumber(row[0]);
+    const amount = safeNumber(row[1]);
+    if (price > 0 && amount > 0) {
+      parsed.push({ price, amount });
+    }
+  }
+  return parsed;
+}
+
+function normalizeOrderbookToBrl(
+  orderbook: RawQuote["orderbook"] | undefined,
+  usdBrl: number
+): ExchangeQuote["orderbook"] | undefined {
+  if (!orderbook) return undefined;
+  const multiplier = orderbook.quote_currency === "BRL" ? 1 : usdBrl;
+
+  const mapSide = (side: Array<{ price: number; amount: number }>) => {
+    let cumulative = 0;
+    return side.map((level) => {
+      const priceBrl = level.price * multiplier;
+      const notional = priceBrl * level.amount;
+      cumulative += notional;
+      return {
+        price_brl: Number(priceBrl.toFixed(8)),
+        amount: Number(level.amount.toFixed(8)),
+        notional_brl: Number(notional.toFixed(2)),
+        cumulative_notional_brl: Number(cumulative.toFixed(2)),
+      };
+    });
+  };
+
+  const bids = mapSide(orderbook.bids);
+  const asks = mapSide(orderbook.asks);
+
+  if (bids.length === 0 && asks.length === 0) return undefined;
+  return {
+    bids,
+    asks,
+    levels: Math.max(bids.length, asks.length),
+  };
 }
 
 async function fetchUsdBrlRate(): Promise<number> {
@@ -311,12 +380,20 @@ async function fxBingx(symbol: string): Promise<RawQuote | null> {
 }
 
 async function fxMercadoBitcoin(symbol: string, usdBrl: number): Promise<RawQuote | null> {
-  const d = await fetchJson(`https://www.mercadobitcoin.net/api/${symbol}/ticker/`);
+  const [d, orderbookRes] = await Promise.all([
+    fetchJson(`https://www.mercadobitcoin.net/api/${symbol}/ticker/`),
+    fetchJson(`https://www.mercadobitcoin.net/api/${symbol}/orderbook/`).catch(() => ({}) as Record<string, any>),
+  ]);
   const t = d.ticker ?? {};
   const priceBrl = safeNumber(t.last);
   if (priceBrl <= 0) return null;
   const open = safeNumber(t.open) || priceBrl;
   const change = open > 0 ? ((priceBrl - open) / open) * 100 : 0;
+  const book = {
+    quote_currency: "BRL" as const,
+    bids: parseBookSide(orderbookRes.bids, ORDERBOOK_LEVELS),
+    asks: parseBookSide(orderbookRes.asks, ORDERBOOK_LEVELS),
+  };
   return {
     price_usdt: priceBrl / usdBrl,
     price_brl_direct: priceBrl,
@@ -326,6 +403,7 @@ async function fxMercadoBitcoin(symbol: string, usdBrl: number): Promise<RawQuot
     change_24h: change,
     high: safeNumber(t.high),
     low: safeNumber(t.low),
+    orderbook: book,
   };
 }
 
@@ -458,6 +536,7 @@ async function fetchTokenOnExchange(tokenSymbol: string, exchange: ExchangeMeta,
     const highBrl = raw.high > 0 ? raw.high * (raw.price_brl_direct ? 1 : usdBrl) : priceBrl;
     const lowBrl = raw.low > 0 ? raw.low * (raw.price_brl_direct ? 1 : usdBrl) : priceBrl;
     const volumeBrl = raw.price_brl_direct ? raw.volume : raw.volume * usdBrl;
+    const orderbook = normalizeOrderbookToBrl(raw.orderbook, usdBrl);
 
     return {
       exchange: exchange.id,
@@ -477,6 +556,7 @@ async function fetchTokenOnExchange(tokenSymbol: string, exchange: ExchangeMeta,
       change_24h: Number(raw.change_24h.toFixed(4)),
       high_24h_brl: Number(highBrl.toFixed(8)),
       low_24h_brl: Number(lowBrl.toFixed(8)),
+      orderbook,
     };
   } catch (err) {
     return {
