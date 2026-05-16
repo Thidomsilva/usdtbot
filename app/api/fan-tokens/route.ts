@@ -4,7 +4,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const TIMEOUT_MS = 8000;
-const CACHE_TTL_MS = 20_000;
+const CACHE_TTL_MS = 8_000; // Reduced from 20s to ensure fresh orderbook data per token
 
 let cache: { expiresAt: number; payload: any } | null = null;
 
@@ -292,11 +292,21 @@ async function fetchUsdBrlRate(): Promise<number> {
 }
 
 async function fxBinance(symbol: string): Promise<RawQuote | null> {
-  const [d, book] = await Promise.all([
+  const [d, book, orderbook] = await Promise.all([
     fetchJson(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}USDT`),
     fetchJson(`https://api.binance.com/api/v3/ticker/bookTicker?symbol=${symbol}USDT`),
+    fetchJson(`https://api.binance.com/api/v3/depth?symbol=${symbol}USDT&limit=20`).catch(() => ({ bids: [], asks: [] })),
   ]);
   if (!d.lastPrice) return null;
+  
+  const orderbookData = orderbook && orderbook.bids && orderbook.asks 
+    ? {
+        quote_currency: "USDT" as const,
+        bids: parseBookSide(orderbook.bids, ORDERBOOK_LEVELS),
+        asks: parseBookSide(orderbook.asks, ORDERBOOK_LEVELS),
+      }
+    : undefined;
+  
   return {
     price_usdt: safeNumber(d.lastPrice),
     bid_usdt: safeNumber(book.bidPrice),
@@ -305,6 +315,7 @@ async function fxBinance(symbol: string): Promise<RawQuote | null> {
     change_24h: safeNumber(d.priceChangePercent),
     high: safeNumber(d.highPrice),
     low: safeNumber(d.lowPrice),
+    orderbook: orderbookData,
   };
 }
 
@@ -382,18 +393,24 @@ async function fxBingx(symbol: string): Promise<RawQuote | null> {
 async function fxMercadoBitcoin(symbol: string, usdBrl: number): Promise<RawQuote | null> {
   const [d, orderbookRes] = await Promise.all([
     fetchJson(`https://www.mercadobitcoin.net/api/${symbol}/ticker/`),
-    fetchJson(`https://www.mercadobitcoin.net/api/${symbol}/orderbook/`).catch(() => ({}) as Record<string, any>),
+    fetchJson(`https://www.mercadobitcoin.net/api/${symbol}/orderbook/`).catch(() => null),
   ]);
   const t = d.ticker ?? {};
   const priceBrl = safeNumber(t.last);
   if (priceBrl <= 0) return null;
   const open = safeNumber(t.open) || priceBrl;
   const change = open > 0 ? ((priceBrl - open) / open) * 100 : 0;
-  const book = {
-    quote_currency: "BRL" as const,
-    bids: parseBookSide(orderbookRes.bids, ORDERBOOK_LEVELS),
-    asks: parseBookSide(orderbookRes.asks, ORDERBOOK_LEVELS),
-  };
+  
+  let book: RawQuote["orderbook"] | undefined;
+  // Only use orderbook if we got valid data (not null from catch)
+  if (orderbookRes && orderbookRes.bids && orderbookRes.asks && (orderbookRes.bids.length > 0 || orderbookRes.asks.length > 0)) {
+    book = {
+      quote_currency: "BRL" as const,
+      bids: parseBookSide(orderbookRes.bids, ORDERBOOK_LEVELS),
+      asks: parseBookSide(orderbookRes.asks, ORDERBOOK_LEVELS),
+    };
+  }
+  
   return {
     price_usdt: priceBrl / usdBrl,
     price_brl_direct: priceBrl,
@@ -425,15 +442,26 @@ async function fxOkx(symbol: string): Promise<RawQuote | null> {
 }
 
 async function fxKucoin(symbol: string): Promise<RawQuote | null> {
-  const [d, level1] = await Promise.all([
+  const [d, level1, depth] = await Promise.all([
     fetchJson(`https://api.kucoin.com/api/v1/market/stats?symbol=${symbol}-USDT`),
     fetchJson(`https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${symbol}-USDT`),
+    fetchJson(`https://api.kucoin.com/api/v1/market/orderbook/level2?symbol=${symbol}-USDT`).catch(() => ({ data: { bids: [], asks: [] } })),
   ]);
   const t = d.data ?? {};
   const book = level1.data ?? {};
   if (!t.last) return null;
   const last = safeNumber(t.last);
   const open = safeNumber(t.open) || last;
+  
+  const depthData = depth.data || {};
+  const orderbookData = depthData.bids && depthData.asks
+    ? {
+        quote_currency: "USDT" as const,
+        bids: parseBookSide(depthData.bids, ORDERBOOK_LEVELS),
+        asks: parseBookSide(depthData.asks, ORDERBOOK_LEVELS),
+      }
+    : undefined;
+  
   return {
     price_usdt: safeNumber(book.price) || last,
     bid_usdt: safeNumber(book.bestBid) || safeNumber(t.buy),
@@ -442,6 +470,7 @@ async function fxKucoin(symbol: string): Promise<RawQuote | null> {
     change_24h: open > 0 ? ((last - open) / open) * 100 : 0,
     high: safeNumber(t.high),
     low: safeNumber(t.low),
+    orderbook: orderbookData,
   };
 }
 
