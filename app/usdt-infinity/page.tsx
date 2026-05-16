@@ -151,8 +151,15 @@ export default function UsdtInfinityPage() {
             allExchangesBooks,
           };
         })
-        .filter(Boolean);
-      setOpportunities(found);
+        .filter(Boolean) as InfinityOpportunity[];
+
+      const sortedFound = found.slice().sort((a, b) => {
+        const spreadDelta = (b.profitPercent ?? 0) - (a.profitPercent ?? 0);
+        if (spreadDelta !== 0) return spreadDelta;
+        return (b.profit ?? 0) - (a.profit ?? 0);
+      });
+
+      setOpportunities(sortedFound);
     } catch (e) {
       setOpportunities([]);
     } finally {
