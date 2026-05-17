@@ -92,6 +92,10 @@ export async function scanUsdtInfinityOpportunities({ capital }: { capital: numb
     bingx: "/logos/bingx.png",
     mexc: "/logos/mexc.png",
     bitmart: "/logos/bitmart.png",
+    bitso: "/logos/bitso.png",
+    foxbit: "/logos/foxbit.png",
+    coinex: "/logos/coinex.png",
+    "crypto.com": "/logos/crypto-com.png",
   };
 
   // Para cada token, busca melhores oportunidades
@@ -99,7 +103,7 @@ export async function scanUsdtInfinityOpportunities({ capital }: { capital: numb
   for (const token of tokens) {
     if (!token.exchanges || !Array.isArray(token.exchanges)) continue;
     // Filtra exchanges globais
-    const globais = token.exchanges.filter((ex: any) => ["binance","bybit","okx","kucoin","bitget","gate","mexc","bitmart"].includes(ex.exchange) && ex.status === "ok" && ex.ask_price_brl && ex.bid_price_brl);
+    const globais = token.exchanges.filter((ex: any) => ["binance","bybit","okx","kucoin","bitget","gate","mexc","bitmart","bitso","foxbit","coinex","crypto.com"].includes(ex.exchange) && ex.status === "ok" && ex.ask_price_brl && ex.bid_price_brl);
     for (const from of globais) {
       for (const to of globais) {
         if (from.exchange === to.exchange) continue;

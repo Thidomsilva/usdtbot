@@ -19,6 +19,10 @@ const EXCHANGES_LIST = [
   { id: "coinbase", label: "Coinbase" },
   { id: "mexc", label: "MEXC" },
   { id: "bitmart", label: "BitMart" },
+  { id: "bitso", label: "Bitso" },
+  { id: "foxbit", label: "Foxbit" },
+  { id: "coinex", label: "Coinex" },
+  { id: "crypto.com", label: "Crypto.com" },
   { id: "mercadobitcoin", label: "Mercado Bitcoin" },
   { id: "novadax", label: "Novadax" },
 ];
