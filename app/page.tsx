@@ -321,6 +321,21 @@ export default function HomePage() {
               Scanner
             </Link>
             <Link
+              href="/depeg"
+              style={{
+                border: "1px solid var(--card-border)",
+                borderRadius: 12,
+                padding: "10px 12px",
+                textDecoration: "none",
+                background: "var(--card)",
+                color: "var(--text)",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              De-peg
+            </Link>
+            <Link
               href="/admin"
               style={{
                 border: "1px solid var(--card-border)",
