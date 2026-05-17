@@ -20,15 +20,16 @@ type DepegRow = {
   id: string;
   label: string;
   symbol: string;
+  status: "ok" | "unavailable";
   analyzed_on: string;
   peg_reference: string;
-  market_price: number;
-  bid_price: number;
-  ask_price: number;
-  orderbook_spread_pct: number;
-  ideal_price: number;
-  depeg_pct: number;
-  asymmetry_pct: number;
+  market_price: number | null;
+  bid_price: number | null;
+  ask_price: number | null;
+  orderbook_spread_pct: number | null;
+  ideal_price: number | null;
+  depeg_pct: number | null;
+  asymmetry_pct: number | null;
   direction: "above_peg" | "below_peg";
   severity: "low" | "medium" | "high";
   signal: "watch" | "opportunity" | "stress";
@@ -188,18 +189,37 @@ export async function GET(request: NextRequest) {
 
     const rawRows = await Promise.all(
       PAIRS.map(async (pair) => {
+        const pegReference = pair.idealType === "usd_peg" ? "USD (1:1)" : `${pair.fxBase}/USD via Frankfurter`;
+        const idealPrice =
+          pair.idealType === "usd_peg"
+            ? 1
+            : pair.fxBase
+              ? toNum(fxMap.get(pair.fxBase))
+              : 0;
+
         try {
           const ticker = await fetchTicker(pair.symbol);
-          if (!ticker) return null;
-
-          const idealPrice =
-            pair.idealType === "usd_peg"
-              ? 1
-              : pair.fxBase
-                ? toNum(fxMap.get(pair.fxBase))
-                : 0;
-
-          if (idealPrice <= 0) return null;
+          if (!ticker || idealPrice <= 0) {
+            return {
+              id: pair.id,
+              label: pair.label,
+              symbol: pair.symbol,
+              status: "unavailable",
+              analyzed_on: "Binance Spot BookTicker",
+              peg_reference: pegReference,
+              market_price: null,
+              bid_price: null,
+              ask_price: null,
+              orderbook_spread_pct: null,
+              ideal_price: idealPrice > 0 ? Number(idealPrice.toFixed(6)) : null,
+              depeg_pct: null,
+              asymmetry_pct: null,
+              direction: "below_peg",
+              severity: "low",
+              signal: "watch",
+              notes: "Par monitorado, mas sem cotacao disponivel neste ciclo.",
+            } as DepegRow;
+          }
 
           const depegPct = ((ticker.mid - idealPrice) / idealPrice) * 100;
           const asymmetryPct = Math.abs(depegPct);
@@ -216,8 +236,9 @@ export async function GET(request: NextRequest) {
             id: pair.id,
             label: pair.label,
             symbol: pair.symbol,
+            status: "ok",
             analyzed_on: "Binance Spot BookTicker",
-            peg_reference: pair.idealType === "usd_peg" ? "USD (1:1)" : `${pair.fxBase}/USD via Frankfurter`,
+            peg_reference: pegReference,
             market_price: Number(ticker.mid.toFixed(6)),
             bid_price: Number(ticker.bid.toFixed(6)),
             ask_price: Number(ticker.ask.toFixed(6)),
@@ -231,17 +252,39 @@ export async function GET(request: NextRequest) {
             notes,
           } as DepegRow;
         } catch {
-          return null;
+          return {
+            id: pair.id,
+            label: pair.label,
+            symbol: pair.symbol,
+            status: "unavailable",
+            analyzed_on: "Binance Spot BookTicker",
+            peg_reference: pegReference,
+            market_price: null,
+            bid_price: null,
+            ask_price: null,
+            orderbook_spread_pct: null,
+            ideal_price: idealPrice > 0 ? Number(idealPrice.toFixed(6)) : null,
+            depeg_pct: null,
+            asymmetry_pct: null,
+            direction: "below_peg",
+            severity: "low",
+            signal: "watch",
+            notes: "Par monitorado, mas a consulta da cotacao falhou neste ciclo.",
+          } as DepegRow;
         }
       })
     );
 
     const opportunities = rawRows
       .filter((row): row is DepegRow => row !== null)
-      .sort((a, b) => b.asymmetry_pct - a.asymmetry_pct);
+      .sort((a, b) => {
+        const aVal = a.asymmetry_pct ?? Number.NEGATIVE_INFINITY;
+        const bVal = b.asymmetry_pct ?? Number.NEGATIVE_INFINITY;
+        return bVal - aVal;
+      });
 
     const aboveThreshold = opportunities
-      .filter((row) => row.asymmetry_pct >= thresholdPct)
+      .filter((row) => row.status === "ok" && row.asymmetry_pct !== null && row.asymmetry_pct >= thresholdPct)
       .sort((a, b) => b.asymmetry_pct - a.asymmetry_pct);
 
     const best = aboveThreshold[0] ?? null;
@@ -253,7 +296,7 @@ export async function GET(request: NextRequest) {
       monitored_rows: opportunities,
       opportunities: aboveThreshold,
       summary: {
-        monitored_pairs: opportunities.length,
+        monitored_pairs: PAIRS.length,
         above_threshold: aboveThreshold.length,
         max_asymmetry_pct: Number((best?.asymmetry_pct ?? 0).toFixed(4)),
         best_opportunity: best

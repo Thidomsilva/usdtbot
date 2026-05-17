@@ -7,15 +7,16 @@ type DepegRow = {
   id: string;
   label: string;
   symbol: string;
+  status: "ok" | "unavailable";
   analyzed_on: string;
   peg_reference: string;
-  market_price: number;
-  bid_price: number;
-  ask_price: number;
-  orderbook_spread_pct: number;
-  ideal_price: number;
-  depeg_pct: number;
-  asymmetry_pct: number;
+  market_price: number | null;
+  bid_price: number | null;
+  ask_price: number | null;
+  orderbook_spread_pct: number | null;
+  ideal_price: number | null;
+  depeg_pct: number | null;
+  asymmetry_pct: number | null;
   direction: "above_peg" | "below_peg";
   severity: "low" | "medium" | "high";
   signal: "watch" | "opportunity" | "stress";
@@ -47,11 +48,13 @@ type DepegResponse = {
 
 const REFRESH_SECONDS = 20;
 
-function pct(value: number): string {
+function pct(value: number | null): string {
+  if (value === null) return "--";
   return `${value >= 0 ? "+" : ""}${value.toFixed(4)}%`;
 }
 
-function price(value: number): string {
+function price(value: number | null): string {
+  if (value === null) return "--";
   return `USDT ${value.toFixed(6)}`;
 }
 
@@ -190,6 +193,7 @@ export default function DepegArbitragePage() {
             <thead>
               <tr style={{ textAlign: "left", borderBottom: "1px solid var(--card-border)", color: "var(--muted)", fontSize: 12 }}>
                 <th style={{ padding: "10px 8px" }}>Par</th>
+                <th style={{ padding: "10px 8px" }}>Status</th>
                 <th style={{ padding: "10px 8px" }}>Onde analisado</th>
                 <th style={{ padding: "10px 8px" }}>Mercado (mid)</th>
                 <th style={{ padding: "10px 8px" }}>Paridade ideal</th>
@@ -206,7 +210,10 @@ export default function DepegArbitragePage() {
                   style={{
                     borderBottom: "1px solid var(--card-border)",
                     fontSize: 13,
-                    background: row.asymmetry_pct >= data.threshold_pct ? "rgba(245, 158, 11, 0.07)" : "transparent",
+                    background:
+                      row.status === "ok" && row.asymmetry_pct !== null && row.asymmetry_pct >= data.threshold_pct
+                        ? "rgba(245, 158, 11, 0.07)"
+                        : "transparent",
                   }}
                 >
                   <td style={{ padding: "10px 8px" }}>
@@ -214,37 +221,69 @@ export default function DepegArbitragePage() {
                     <div style={{ fontSize: 11, color: "var(--muted)" }}>{row.symbol}</div>
                   </td>
                   <td style={{ padding: "10px 8px" }}>
-                    <div>{row.analyzed_on}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{row.peg_reference}</div>
-                  </td>
-                  <td style={{ padding: "10px 8px" }}>{price(row.market_price)}</td>
-                  <td style={{ padding: "10px 8px" }}>{price(row.ideal_price)}</td>
-                  <td style={{ padding: "10px 8px", color: row.depeg_pct >= 0 ? "#22c55e" : "#ef4444", fontWeight: 700 }}>
-                    {pct(row.depeg_pct)}
-                  </td>
-                  <td style={{ padding: "10px 8px", color: severityColor(row.severity), fontWeight: 700 }}>
-                    {row.asymmetry_pct.toFixed(4)}%
-                  </td>
-                  <td style={{ padding: "10px 8px", color: "var(--muted)" }}>{row.orderbook_spread_pct.toFixed(4)}%</td>
-                  <td style={{ padding: "10px 8px" }}>
                     <span
                       style={{
-                        border: `1px solid ${severityColor(row.severity)}`,
-                        color: severityColor(row.severity),
+                        border: `1px solid ${row.status === "ok" ? "#22c55e" : "#ef4444"}`,
+                        color: row.status === "ok" ? "#22c55e" : "#ef4444",
                         borderRadius: 999,
                         padding: "2px 10px",
                         fontSize: 11,
                         fontWeight: 700,
                       }}
                     >
-                      {row.signal.toUpperCase()}
+                      {row.status === "ok" ? "ATIVO" : "INDISPONIVEL"}
                     </span>
+                  </td>
+                  <td style={{ padding: "10px 8px" }}>
+                    <div>{row.analyzed_on}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{row.peg_reference}</div>
+                  </td>
+                  <td style={{ padding: "10px 8px" }}>{price(row.market_price)}</td>
+                  <td style={{ padding: "10px 8px" }}>{price(row.ideal_price)}</td>
+                  <td
+                    style={{
+                      padding: "10px 8px",
+                      color: row.depeg_pct === null ? "var(--muted)" : row.depeg_pct >= 0 ? "#22c55e" : "#ef4444",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {pct(row.depeg_pct)}
+                  </td>
+                  <td
+                    style={{
+                      padding: "10px 8px",
+                      color: row.asymmetry_pct === null ? "var(--muted)" : severityColor(row.severity),
+                      fontWeight: 700,
+                    }}
+                  >
+                    {row.asymmetry_pct === null ? "--" : `${row.asymmetry_pct.toFixed(4)}%`}
+                  </td>
+                  <td style={{ padding: "10px 8px", color: "var(--muted)" }}>
+                    {row.orderbook_spread_pct === null ? "--" : `${row.orderbook_spread_pct.toFixed(4)}%`}
+                  </td>
+                  <td style={{ padding: "10px 8px" }}>
+                    {row.status === "ok" ? (
+                      <span
+                        style={{
+                          border: `1px solid ${severityColor(row.severity)}`,
+                          color: severityColor(row.severity),
+                          borderRadius: 999,
+                          padding: "2px 10px",
+                          fontSize: 11,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {row.signal.toUpperCase()}
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 11, color: "var(--muted)" }}>Sem cotacao</span>
+                    )}
                   </td>
                 </tr>
               ))}
               {(!data || data.monitored_rows.length === 0) && (
                 <tr>
-                  <td colSpan={8} style={{ padding: "14px 8px", color: "var(--muted)", fontSize: 13 }}>
+                  <td colSpan={9} style={{ padding: "14px 8px", color: "var(--muted)", fontSize: 13 }}>
                     Nenhum par disponivel neste momento.
                   </td>
                 </tr>
