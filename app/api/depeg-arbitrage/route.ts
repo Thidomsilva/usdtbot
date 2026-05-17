@@ -93,7 +93,39 @@ const PAIRS: PairConfig[] = [
     idealType: "fx",
     fxBase: "BRL",
   },
+  {
+    id: "brl1-usdt",
+    label: "BRL1 x USDT",
+    symbol: "BRL1USDT",
+    idealType: "fx",
+    fxBase: "BRL",
+  },
 ];
+
+function fallbackRows(reason: string): DepegRow[] {
+  return PAIRS.map((pair) => {
+    const isUsdPeg = pair.idealType === "usd_peg";
+    return {
+      id: pair.id,
+      label: pair.label,
+      symbol: pair.symbol,
+      status: "unavailable",
+      analyzed_on: "Binance Spot BookTicker",
+      peg_reference: isUsdPeg ? "USD (1:1)" : `${pair.fxBase}/USD via Frankfurter`,
+      market_price: null,
+      bid_price: null,
+      ask_price: null,
+      orderbook_spread_pct: null,
+      ideal_price: isUsdPeg ? 1 : null,
+      depeg_pct: null,
+      asymmetry_pct: null,
+      direction: "below_peg",
+      severity: "low",
+      signal: "watch",
+      notes: reason,
+    };
+  });
+}
 
 function toNum(value: unknown): number {
   const parsed = Number(value);
@@ -178,14 +210,19 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const fxEntries = await Promise.all(
+    const fxResults = await Promise.allSettled(
       [...fxNeeds].map(async (base) => {
         const value = await fetchFxToUsd(base);
         return [base, value] as const;
       })
     );
 
-    const fxMap = new Map<FxBase, number>(fxEntries);
+    const fxMap = new Map<FxBase, number>();
+    for (const result of fxResults) {
+      if (result.status === "fulfilled") {
+        fxMap.set(result.value[0], result.value[1]);
+      }
+    }
 
     const rawRows = await Promise.all(
       PAIRS.map(async (pair) => {
@@ -327,7 +364,7 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString(),
       source: "binance-bookticker + frankfurter-fx",
       threshold_pct: Number(thresholdPct.toFixed(4)),
-      monitored_rows: [],
+      monitored_rows: fallbackRows("Par monitorado, mas a atualizacao geral da API falhou neste ciclo."),
       opportunities: [],
       summary: {
         monitored_pairs: PAIRS.length,
