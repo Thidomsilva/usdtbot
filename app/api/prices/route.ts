@@ -478,17 +478,22 @@ function parseFoxbitBookLevel(level: any): number {
 }
 
 async function fetchFoxbit() {
-  const [quotePayload, bookPayload] = await Promise.all([
-    fetchJson("https://api.foxbit.com.br/rest/v3/markets/quotes?side=buy&market_symbol=usdtbrl&base_amount=1"),
+  const [quoteResult, bookResult] = await Promise.allSettled([
+    fetchJson(
+      "https://api.foxbit.com.br/rest/v3/markets/quotes?side=buy&base_currency=usdt&quote_currency=brl&quantity=1"
+    ),
     fetchJson("https://api.foxbit.com.br/rest/v3/markets/usdtbrl/orderbook"),
   ]);
 
-  const quotedPrice = safeNumber(quotePayload.price);
-  const quoteAmount = safeNumber(quotePayload.quote_amount);
+  const quotePayload = quoteResult.status === "fulfilled" ? quoteResult.value : {};
+  const bookPayload = bookResult.status === "fulfilled" ? bookResult.value : {};
+
+  const quotedPrice = safeNumber(quotePayload?.price);
+  const quoteAmount = safeNumber(quotePayload?.quote_amount);
   const price = quotedPrice > 0 ? quotedPrice : quoteAmount;
 
-  const asks = Array.isArray(bookPayload.asks) ? bookPayload.asks : [];
-  const bids = Array.isArray(bookPayload.bids) ? bookPayload.bids : [];
+  const asks = Array.isArray(bookPayload?.asks) ? bookPayload.asks : [];
+  const bids = Array.isArray(bookPayload?.bids) ? bookPayload.bids : [];
   const bestAsk = asks.length > 0 ? parseFoxbitBookLevel(asks[0]) : 0;
   const bestBid = bids.length > 0 ? parseFoxbitBookLevel(bids[0]) : 0;
 
