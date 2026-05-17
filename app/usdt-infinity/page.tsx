@@ -17,6 +17,8 @@ const EXCHANGES_LIST = [
   { id: "kraken", label: "Kraken" },
   { id: "bingx", label: "BingX" },
   { id: "coinbase", label: "Coinbase" },
+  { id: "mexc", label: "MEXC" },
+  { id: "bitmart", label: "BitMart" },
   { id: "mercadobitcoin", label: "Mercado Bitcoin" },
   { id: "novadax", label: "Novadax" },
 ];
@@ -145,8 +147,8 @@ export default function UsdtInfinityPage() {
             cumulativeNotionalBrl: convertBookValue(Number(l.cumulative_notional_brl || 0), sellExchange),
           }));
 
-          // Orderbooks de todas as exchanges (somente as selecionadas)
-          const allExchangesBooks = (t.exchanges || []).filter((ex: any) => selectedExchanges.has(ex.exchange)).map((ex: any) => {
+          // Orderbooks de todas as exchanges (filtro aplicado no render)
+          const allExchangesBooks = (t.exchanges || []).map((ex: any) => {
             const exCurrency = getBookCurrency(ex);
             const asks = (ex?.orderbook?.asks || []).slice(0, 5).map((l: any) => ({
               priceBrl: convertBookValue(Number(l.price_brl || 0), ex),
@@ -203,13 +205,7 @@ export default function UsdtInfinityPage() {
         })
         .filter(Boolean) as InfinityOpportunity[];
 
-      const filteredFound = found.filter(
-        (opp) =>
-          selectedExchanges.has(opp.fromExchangeId ?? "") &&
-          selectedExchanges.has(opp.toExchangeId ?? "")
-      );
-
-      const sortedFound = filteredFound.slice().sort((a, b) => {
+      const sortedFound = found.slice().sort((a, b) => {
         const spreadDelta = (b.profitPercent ?? 0) - (a.profitPercent ?? 0);
         if (spreadDelta !== 0) return spreadDelta;
         return (b.profit ?? 0) - (a.profit ?? 0);
@@ -410,27 +406,46 @@ export default function UsdtInfinityPage() {
           {loading && <p style={{ margin: "12px 0 0", color: "var(--accent)", fontSize: 13 }}>Buscando oportunidades...</p>}
         </section>
 
-        {opportunities.length === 0 && !loading && (
-          <section
-            style={{
-              background: "var(--card)",
-              border: "1px solid var(--card-border)",
-              borderRadius: 16,
-              boxShadow: "var(--shadow)",
-              padding: 24,
-              textAlign: "center",
-              color: "var(--muted)",
-            }}
-          >
-            Nenhuma oportunidade encontrada agora.
-          </section>
-        )}
+        {(() => {
+          const visibleOpps = opportunities
+            .filter(
+              (opp) =>
+                selectedExchanges.has(opp.fromExchangeId ?? "") &&
+                selectedExchanges.has(opp.toExchangeId ?? "")
+            )
+            .map((opp) => ({
+              ...opp,
+              allExchangesBooks: (opp.allExchangesBooks ?? []).filter((b) =>
+                selectedExchanges.has(b.exchange)
+              ),
+            }));
 
-        <section style={{ display: "grid", gap: 14 }}>
-          {opportunities.map((opp, idx) => (
-            <OpportunityCard key={idx} {...opp} capital={capital} />
-          ))}
-        </section>
+          if (visibleOpps.length === 0 && !loading) {
+            return (
+              <section
+                style={{
+                  background: "var(--card)",
+                  border: "1px solid var(--card-border)",
+                  borderRadius: 16,
+                  boxShadow: "var(--shadow)",
+                  padding: 24,
+                  textAlign: "center",
+                  color: "var(--muted)",
+                }}
+              >
+                Nenhuma oportunidade encontrada com as exchanges selecionadas.
+              </section>
+            );
+          }
+
+          return (
+            <section style={{ display: "grid", gap: 14 }}>
+              {visibleOpps.map((opp, idx) => (
+                <OpportunityCard key={idx} {...opp} capital={capital} />
+              ))}
+            </section>
+          );
+        })()}
       </div>
     </main>
   );
