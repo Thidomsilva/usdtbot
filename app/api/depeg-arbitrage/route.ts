@@ -16,6 +16,10 @@ type PairConfig = {
   kucoinSymbol: string;
   okxInstId: string;
   coinexMarket: string;
+  bybitSymbol: string;
+  htxSymbol: string;
+  krakenSymbol: string;
+  coinbaseSymbol: string;
   idealType: "usd_peg" | "fx";
   fxBase?: FxBase;
 };
@@ -82,6 +86,10 @@ const PAIRS: PairConfig[] = [
     kucoinSymbol: "FDUSD-USDT",
     okxInstId: "FDUSD-USDT",
     coinexMarket: "FDUSDUSDT",
+    bybitSymbol: "FDUSDUSDT",
+    htxSymbol: "fdusdusdt",
+    krakenSymbol: "FDUSDUSDT",
+    coinbaseSymbol: "FDUSD-USD",
     idealType: "usd_peg",
   },
   {
@@ -92,6 +100,10 @@ const PAIRS: PairConfig[] = [
     kucoinSymbol: "TUSD-USDT",
     okxInstId: "TUSD-USDT",
     coinexMarket: "TUSDUSDT",
+    bybitSymbol: "TUSDUSDT",
+    htxSymbol: "tusdusdt",
+    krakenSymbol: "TUSDUSDT",
+    coinbaseSymbol: "TUSD-USD",
     idealType: "usd_peg",
   },
   {
@@ -102,6 +114,10 @@ const PAIRS: PairConfig[] = [
     kucoinSymbol: "DAI-USDT",
     okxInstId: "DAI-USDT",
     coinexMarket: "DAIUSDT",
+    bybitSymbol: "DAIUSDT",
+    htxSymbol: "daiusdt",
+    krakenSymbol: "DAIUSDT",
+    coinbaseSymbol: "DAI-USD",
     idealType: "usd_peg",
   },
   {
@@ -112,6 +128,10 @@ const PAIRS: PairConfig[] = [
     kucoinSymbol: "EURC-USDT",
     okxInstId: "EURC-USDT",
     coinexMarket: "EURCUSDT",
+    bybitSymbol: "EURCUSDT",
+    htxSymbol: "eurcusdt",
+    krakenSymbol: "EURCUSDT",
+    coinbaseSymbol: "EURC-USD",
     idealType: "fx",
     fxBase: "EUR",
   },
@@ -123,6 +143,10 @@ const PAIRS: PairConfig[] = [
     kucoinSymbol: "EURS-USDT",
     okxInstId: "EURS-USDT",
     coinexMarket: "EURSUSDT",
+    bybitSymbol: "EURSUSDT",
+    htxSymbol: "eursusdt",
+    krakenSymbol: "EURSUSDT",
+    coinbaseSymbol: "EURS-USD",
     idealType: "fx",
     fxBase: "EUR",
   },
@@ -134,6 +158,10 @@ const PAIRS: PairConfig[] = [
     kucoinSymbol: "BRZ-USDT",
     okxInstId: "BRZ-USDT",
     coinexMarket: "BRZUSDT",
+    bybitSymbol: "BRZUSDT",
+    htxSymbol: "brzusdt",
+    krakenSymbol: "BRZUSDT",
+    coinbaseSymbol: "BRZ-USD",
     idealType: "fx",
     fxBase: "BRL",
   },
@@ -145,6 +173,10 @@ const PAIRS: PairConfig[] = [
     kucoinSymbol: "BRZ-BRLA",
     okxInstId: "BRZ-BRLA",
     coinexMarket: "BRZBRLA",
+    bybitSymbol: "BRZBRLA",
+    htxSymbol: "brzbrla",
+    krakenSymbol: "BRZBRLA",
+    coinbaseSymbol: "BRZ-BRLA",
     idealType: "usd_peg",
   },
   {
@@ -155,6 +187,10 @@ const PAIRS: PairConfig[] = [
     kucoinSymbol: "BRL1-USDT",
     okxInstId: "BRL1-USDT",
     coinexMarket: "BRL1USDT",
+    bybitSymbol: "BRL1USDT",
+    htxSymbol: "brl1usdt",
+    krakenSymbol: "BRL1USDT",
+    coinbaseSymbol: "BRL1-USD",
     idealType: "fx",
     fxBase: "BRL",
   },
@@ -315,6 +351,74 @@ async function fetchTickerCoinex(market: string): Promise<TickerResult | null> {
   return { bid, ask, mid, source: "CoinEx Spot Ticker" };
 }
 
+async function fetchTickerBybit(symbol: string): Promise<TickerResult | null> {
+  const data = await fetchJson(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}`);
+  const first = Array.isArray(data?.result?.list) ? data.result.list[0] : null;
+  const bid = toNum(first?.bid1Price);
+  const ask = toNum(first?.ask1Price);
+  const mid = bid > 0 && ask > 0 ? (bid + ask) / 2 : 0;
+
+  if (bid <= 0 || ask <= 0 || mid <= 0) {
+    return null;
+  }
+
+  return { bid, ask, mid, source: "Bybit Spot Ticker" };
+}
+
+async function fetchTickerHtx(symbol: string): Promise<TickerResult | null> {
+  const data = await fetchJson(`https://api.huobi.pro/market/detail?symbol=${symbol}`);
+  const tick = data?.tick;
+  if (!tick) {
+    throw new Error("HTX ticker nao encontrado");
+  }
+
+  const bid = toNum(tick?.bid?.[0]);
+  const ask = toNum(tick?.ask?.[0]);
+  const mid = bid > 0 && ask > 0 ? (bid + ask) / 2 : 0;
+
+  if (bid <= 0 || ask <= 0 || mid <= 0) {
+    return null;
+  }
+
+  return { bid, ask, mid, source: "HTX Spot Ticker" };
+}
+
+async function fetchTickerKraken(symbol: string): Promise<TickerResult | null> {
+  const data = await fetchJson(`https://api.kraken.com/0/public/Ticker?pair=${symbol}`);
+  if (data?.error && data.error.length > 0) {
+    throw new Error(String(data.error[0]));
+  }
+
+  const key = Object.keys(data?.result ?? {})[0];
+  if (!key) {
+    return null;
+  }
+
+  const ticker = data.result[key];
+  const bid = toNum(ticker?.b?.[0]);
+  const ask = toNum(ticker?.a?.[0]);
+  const mid = bid > 0 && ask > 0 ? (bid + ask) / 2 : 0;
+
+  if (bid <= 0 || ask <= 0 || mid <= 0) {
+    return null;
+  }
+
+  return { bid, ask, mid, source: "Kraken Spot Ticker" };
+}
+
+async function fetchTickerCoinbase(symbol: string): Promise<TickerResult | null> {
+  const data = await fetchJson(`https://api.exchange.coinbase.com/products/${symbol}/ticker`);
+  const bid = toNum(data?.bid);
+  const ask = toNum(data?.ask);
+  const mid = bid > 0 && ask > 0 ? (bid + ask) / 2 : 0;
+
+  if (bid <= 0 || ask <= 0 || mid <= 0) {
+    return null;
+  }
+
+  return { bid, ask, mid, source: "Coinbase Spot Ticker" };
+}
+
 async function fetchTickerWithFallback(pair: PairConfig): Promise<{ ticker: TickerResult | null; reason: string | null }> {
   const errors: string[] = [];
 
@@ -354,6 +458,38 @@ async function fetchTickerWithFallback(pair: PairConfig): Promise<{ ticker: Tick
     const ticker = await fetchTickerCoinex(pair.coinexMarket);
     if (ticker) return { ticker, reason: null };
     errors.push("Sem bid/ask valido na CoinEx");
+  } catch (err) {
+    errors.push(normalizeError(err));
+  }
+
+  try {
+    const ticker = await fetchTickerBybit(pair.bybitSymbol);
+    if (ticker) return { ticker, reason: null };
+    errors.push("Sem bid/ask valido na Bybit");
+  } catch (err) {
+    errors.push(normalizeError(err));
+  }
+
+  try {
+    const ticker = await fetchTickerHtx(pair.htxSymbol);
+    if (ticker) return { ticker, reason: null };
+    errors.push("Sem bid/ask valido na HTX");
+  } catch (err) {
+    errors.push(normalizeError(err));
+  }
+
+  try {
+    const ticker = await fetchTickerKraken(pair.krakenSymbol);
+    if (ticker) return { ticker, reason: null };
+    errors.push("Sem bid/ask valido na Kraken");
+  } catch (err) {
+    errors.push(normalizeError(err));
+  }
+
+  try {
+    const ticker = await fetchTickerCoinbase(pair.coinbaseSymbol);
+    if (ticker) return { ticker, reason: null };
+    errors.push("Sem bid/ask valido na Coinbase");
   } catch (err) {
     errors.push(normalizeError(err));
   }
@@ -449,7 +585,7 @@ export async function GET(request: NextRequest) {
               label: pair.label,
               symbol: pair.symbol,
               status: "unavailable",
-              analyzed_on: "Binance/Gate/KuCoin/OKX/CoinEx",
+              analyzed_on: "Binance/Gate/KuCoin/OKX/CoinEx/Bybit/HTX/Kraken/Coinbase",
               peg_reference: pegReference,
               market_price: null,
               market_price_brl: null,
@@ -508,7 +644,7 @@ export async function GET(request: NextRequest) {
             label: pair.label,
             symbol: pair.symbol,
             status: "unavailable",
-            analyzed_on: "Binance/Gate/KuCoin/OKX/CoinEx",
+            analyzed_on: "Binance/Gate/KuCoin/OKX/CoinEx/Bybit/HTX/Kraken/Coinbase",
             peg_reference: pegReference,
             market_price: null,
             market_price_brl: null,
@@ -522,7 +658,7 @@ export async function GET(request: NextRequest) {
             direction: "below_peg",
             severity: "low",
             signal: "watch",
-            notes: `Par monitorado, mas a consulta da cotacao falhou neste ciclo (${reason}).`,
+            notes: `Par monitorado, mas a consulta da cotacao falhou neste ciclo (${reason})`,
           } as DepegRow;
         }
       })
@@ -547,7 +683,7 @@ export async function GET(request: NextRequest) {
 
     const payload: DepegResponse = {
       timestamp: new Date().toISOString(),
-      source: "binance/gate/kucoin/okx/coinex + frankfurter-fx",
+      source: "binance/gate/kucoin/okx/coinex/bybit/htx/kraken/coinbase + frankfurter-fx",
       threshold_pct: Number(thresholdPct.toFixed(4)),
       usd_brl: usdBrl > 0 ? Number(usdBrl.toFixed(6)) : null,
       monitored_rows: opportunities,
@@ -582,7 +718,7 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     const payload: DepegResponse = {
       timestamp: new Date().toISOString(),
-      source: "binance/gate/kucoin/okx/coinex + frankfurter-fx",
+      source: "binance/gate/kucoin/okx/coinex/bybit/htx/kraken/coinbase + frankfurter-fx",
       threshold_pct: Number(thresholdPct.toFixed(4)),
       usd_brl: null,
       monitored_rows: fallbackRows("Par monitorado, mas a atualizacao geral da API falhou neste ciclo."),
