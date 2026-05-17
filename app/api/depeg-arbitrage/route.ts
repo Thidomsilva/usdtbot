@@ -20,6 +20,8 @@ type DepegRow = {
   id: string;
   label: string;
   symbol: string;
+  analyzed_on: string;
+  peg_reference: string;
   market_price: number;
   bid_price: number;
   ask_price: number;
@@ -37,6 +39,7 @@ type DepegResponse = {
   timestamp: string;
   source: string;
   threshold_pct: number;
+  monitored_rows: DepegRow[];
   opportunities: DepegRow[];
   summary: {
     monitored_pairs: number;
@@ -213,6 +216,8 @@ export async function GET(request: NextRequest) {
             id: pair.id,
             label: pair.label,
             symbol: pair.symbol,
+            analyzed_on: "Binance Spot BookTicker",
+            peg_reference: pair.idealType === "usd_peg" ? "USD (1:1)" : `${pair.fxBase}/USD via Frankfurter`,
             market_price: Number(ticker.mid.toFixed(6)),
             bid_price: Number(ticker.bid.toFixed(6)),
             ask_price: Number(ticker.ask.toFixed(6)),
@@ -233,19 +238,23 @@ export async function GET(request: NextRequest) {
 
     const opportunities = rawRows
       .filter((row): row is DepegRow => row !== null)
+      .sort((a, b) => b.asymmetry_pct - a.asymmetry_pct);
+
+    const aboveThreshold = opportunities
       .filter((row) => row.asymmetry_pct >= thresholdPct)
       .sort((a, b) => b.asymmetry_pct - a.asymmetry_pct);
 
-    const best = opportunities[0] ?? null;
+    const best = aboveThreshold[0] ?? null;
 
     const payload: DepegResponse = {
       timestamp: new Date().toISOString(),
       source: "binance-bookticker + frankfurter-fx",
       threshold_pct: Number(thresholdPct.toFixed(4)),
-      opportunities,
+      monitored_rows: opportunities,
+      opportunities: aboveThreshold,
       summary: {
-        monitored_pairs: PAIRS.length,
-        above_threshold: opportunities.length,
+        monitored_pairs: opportunities.length,
+        above_threshold: aboveThreshold.length,
         max_asymmetry_pct: Number((best?.asymmetry_pct ?? 0).toFixed(4)),
         best_opportunity: best
           ? {
@@ -259,8 +268,8 @@ export async function GET(request: NextRequest) {
           : null,
       },
       warning:
-        opportunities.length === 0
-          ? "Sem descolamento relevante acima do limiar no momento."
+        aboveThreshold.length === 0
+          ? "Sem descolamento relevante acima do limiar no momento. Exibindo os valores atuais de todos os pares monitorados."
           : "Sinal indicativo. Valide liquidez real, slippage e custo operacional antes de executar.",
     };
 
@@ -275,6 +284,7 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString(),
       source: "binance-bookticker + frankfurter-fx",
       threshold_pct: Number(thresholdPct.toFixed(4)),
+      monitored_rows: [],
       opportunities: [],
       summary: {
         monitored_pairs: PAIRS.length,

@@ -7,6 +7,8 @@ type DepegRow = {
   id: string;
   label: string;
   symbol: string;
+  analyzed_on: string;
+  peg_reference: string;
   market_price: number;
   bid_price: number;
   ask_price: number;
@@ -24,6 +26,7 @@ type DepegResponse = {
   timestamp: string;
   source: string;
   threshold_pct: number;
+  monitored_rows: DepegRow[];
   opportunities: DepegRow[];
   summary: {
     monitored_pairs: number;
@@ -163,6 +166,12 @@ export default function DepegArbitragePage() {
             <span>· proxima atualizacao em {countdown}s</span>
           </div>
 
+          {data && data.summary.above_threshold === 0 && (
+            <div style={{ fontSize: 12, color: "var(--muted)" }}>
+              Sem oportunidade no limiar atual, mas os precos em tempo real continuam sendo exibidos para todos os pares monitorados.
+            </div>
+          )}
+
           {data?.warning && <div style={{ fontSize: 12, color: "#f59e0b" }}>Aviso: {data.warning}</div>}
           {data?.error && <div style={{ fontSize: 12, color: "#ef4444" }}>Erro: {data.error}</div>}
         </section>
@@ -181,6 +190,7 @@ export default function DepegArbitragePage() {
             <thead>
               <tr style={{ textAlign: "left", borderBottom: "1px solid var(--card-border)", color: "var(--muted)", fontSize: 12 }}>
                 <th style={{ padding: "10px 8px" }}>Par</th>
+                <th style={{ padding: "10px 8px" }}>Onde analisado</th>
                 <th style={{ padding: "10px 8px" }}>Mercado (mid)</th>
                 <th style={{ padding: "10px 8px" }}>Paridade ideal</th>
                 <th style={{ padding: "10px 8px" }}>Descolamento</th>
@@ -190,11 +200,22 @@ export default function DepegArbitragePage() {
               </tr>
             </thead>
             <tbody>
-              {data?.opportunities.map((row) => (
-                <tr key={row.id} style={{ borderBottom: "1px solid var(--card-border)", fontSize: 13 }}>
+              {data?.monitored_rows.map((row) => (
+                <tr
+                  key={row.id}
+                  style={{
+                    borderBottom: "1px solid var(--card-border)",
+                    fontSize: 13,
+                    background: row.asymmetry_pct >= data.threshold_pct ? "rgba(245, 158, 11, 0.07)" : "transparent",
+                  }}
+                >
                   <td style={{ padding: "10px 8px" }}>
                     <div style={{ fontWeight: 700 }}>{row.label}</div>
                     <div style={{ fontSize: 11, color: "var(--muted)" }}>{row.symbol}</div>
+                  </td>
+                  <td style={{ padding: "10px 8px" }}>
+                    <div>{row.analyzed_on}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{row.peg_reference}</div>
                   </td>
                   <td style={{ padding: "10px 8px" }}>{price(row.market_price)}</td>
                   <td style={{ padding: "10px 8px" }}>{price(row.ideal_price)}</td>
@@ -221,10 +242,10 @@ export default function DepegArbitragePage() {
                   </td>
                 </tr>
               ))}
-              {(!data || data.opportunities.length === 0) && (
+              {(!data || data.monitored_rows.length === 0) && (
                 <tr>
-                  <td colSpan={7} style={{ padding: "14px 8px", color: "var(--muted)", fontSize: 13 }}>
-                    Nenhum descolamento acima do limiar atual.
+                  <td colSpan={8} style={{ padding: "14px 8px", color: "var(--muted)", fontSize: 13 }}>
+                    Nenhum par disponivel neste momento.
                   </td>
                 </tr>
               )}
