@@ -146,6 +146,33 @@ export default function HomePage() {
     [cards]
   );
 
+  const visibleSummary = useMemo(() => {
+    if (okCards.length === 0) return null;
+
+    const minCard = okCards.reduce((best, cur) =>
+      (cur.ex.price_brl ?? Number.POSITIVE_INFINITY) < (best.ex.price_brl ?? Number.POSITIVE_INFINITY) ? cur : best
+    );
+    const maxCard = okCards.reduce((best, cur) =>
+      (cur.ex.price_brl ?? Number.NEGATIVE_INFINITY) > (best.ex.price_brl ?? Number.NEGATIVE_INFINITY) ? cur : best
+    );
+
+    const min = Number((minCard.ex.price_brl ?? 0).toFixed(4));
+    const max = Number((maxCard.ex.price_brl ?? 0).toFixed(4));
+    const avg = Number(
+      (okCards.reduce((acc, { ex }) => acc + (ex.price_brl ?? 0), 0) / okCards.length).toFixed(4)
+    );
+    const spreadPct = min > 0 ? Number((((max - min) / min) * 100).toFixed(4)) : 0;
+
+    return {
+      min,
+      max,
+      avg,
+      spreadPct,
+      minExchange: minCard.ex.label,
+      maxExchange: maxCard.ex.label,
+    };
+  }, [okCards]);
+
   const arbSelectionError = useMemo(() => {
     if (!data) return null;
 
@@ -363,10 +390,10 @@ export default function HomePage() {
         </header>
 
         <div className="status-line" style={{ marginTop: 14, color: "var(--muted)", fontSize: 13 }}>
-          {data ? `${data.ok_count} de ${data.total_count} corretoras ativas` : "Carregando..."} · proxima atualizacao em {countdown}s
+          {data ? `${okCards.length} de ${ORDER.length} corretoras ativas` : "Carregando..."} · proxima atualizacao em {countdown}s
         </div>
 
-        {data?.summary && (
+        {visibleSummary && (
           <section
             className="summary-grid"
             style={{
@@ -382,10 +409,10 @@ export default function HomePage() {
               backdropFilter: "blur(14px)",
             }}
           >
-            <div><strong style={{ color: "var(--muted)" }}>Media</strong><div style={{ marginTop: 4 }}>{money(data.summary.avg)}</div></div>
-            <div><strong style={{ color: "var(--muted)" }}>Minimo</strong><div style={{ marginTop: 4 }}>{money(data.summary.min)} · {data.summary.min_exchange}</div></div>
-            <div><strong style={{ color: "var(--muted)" }}>Maximo</strong><div style={{ marginTop: 4 }}>{money(data.summary.max)} · {data.summary.max_exchange}</div></div>
-            <div><strong style={{ color: "var(--muted)" }}>Spread</strong><div style={{ marginTop: 4 }}>{data.summary.spread_pct.toFixed(4)}%</div></div>
+            <div><strong style={{ color: "var(--muted)" }}>Media</strong><div style={{ marginTop: 4 }}>{money(visibleSummary.avg)}</div></div>
+            <div><strong style={{ color: "var(--muted)" }}>Minimo</strong><div style={{ marginTop: 4 }}>{money(visibleSummary.min)} · {visibleSummary.minExchange}</div></div>
+            <div><strong style={{ color: "var(--muted)" }}>Maximo</strong><div style={{ marginTop: 4 }}>{money(visibleSummary.max)} · {visibleSummary.maxExchange}</div></div>
+            <div><strong style={{ color: "var(--muted)" }}>Spread</strong><div style={{ marginTop: 4 }}>{visibleSummary.spreadPct.toFixed(4)}%</div></div>
           </section>
         )}
 
