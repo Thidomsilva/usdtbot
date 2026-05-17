@@ -89,6 +89,12 @@ const FEES_BY_EXCHANGE: Record<string, { buy_pct: number; sell_pct: number }> = 
   bitget: { buy_pct: 0.2, sell_pct: 0.2 },
   novadax: { buy_pct: 0.35, sell_pct: 0.35 },
   gate: { buy_pct: 0.2, sell_pct: 0.2 },
+  mexc: { buy_pct: 0.2, sell_pct: 0.2 },
+  bitmart: { buy_pct: 0.25, sell_pct: 0.25 },
+  bitso: { buy_pct: 0.5, sell_pct: 0.5 },
+  foxbit: { buy_pct: 0.5, sell_pct: 0.5 },
+  coinex: { buy_pct: 0.2, sell_pct: 0.2 },
+  "crypto.com": { buy_pct: 0.4, sell_pct: 0.4 },
 };
 
 function classifyOpportunity(netSpreadPct: number): Arb["quality"] {
@@ -185,6 +191,12 @@ const EXCHANGES: ExchangeMeta[] = [
   { id: "bitget", label: "Bitget", pix: false, accepts_brl: false, estimated: false },
   { id: "novadax", label: "Novadax", pix: true, accepts_brl: true, estimated: false },
   { id: "gate", label: "Gate.io", pix: false, accepts_brl: false, estimated: false },
+  { id: "mexc", label: "MEXC", pix: false, accepts_brl: false, estimated: true },
+  { id: "bitmart", label: "BitMart", pix: false, accepts_brl: false, estimated: true },
+  { id: "bitso", label: "Bitso", pix: false, accepts_brl: false, estimated: true },
+  { id: "foxbit", label: "Foxbit", pix: true, accepts_brl: true, estimated: true },
+  { id: "coinex", label: "Coinex", pix: false, accepts_brl: false, estimated: true },
+  { id: "crypto.com", label: "Crypto.com", pix: false, accepts_brl: false, estimated: true },
 ];
 
 type RawQuote = {
@@ -615,6 +627,164 @@ async function fxGate(symbol: string): Promise<RawQuote | null> {
   };
 }
 
+async function fxMexc(symbol: string): Promise<RawQuote | null> {
+  const [d, depth] = await Promise.all([
+    fetchJson(`https://api.mexc.com/api/v3/ticker/24hr?symbol=${symbol}USDT`),
+    fetchJson(`https://api.mexc.com/api/v3/depth?symbol=${symbol}USDT&limit=20`).catch(
+      () => ({ bids: [], asks: [] } as Record<string, any>)
+    ),
+  ]);
+  if (!d.lastPrice) return null;
+  const last = safeNumber(d.lastPrice);
+  if (last <= 0) return null;
+  
+  const orderbookData = depth && depth.bids && depth.asks
+    ? {
+        quote_currency: "USDT" as const,
+        bids: parseBookSide(depth.bids, ORDERBOOK_LEVELS),
+        asks: parseBookSide(depth.asks, ORDERBOOK_LEVELS),
+      }
+    : undefined;
+  
+  return {
+    price_usdt: last,
+    bid_usdt: safeNumber(d.bidPrice),
+    ask_usdt: safeNumber(d.askPrice),
+    volume: safeNumber(d.quoteVolume),
+    change_24h: safeNumber(d.priceChangePercent),
+    high: safeNumber(d.highPrice),
+    low: safeNumber(d.lowPrice),
+    orderbook: orderbookData,
+  };
+}
+
+async function fxBitmart(symbol: string): Promise<RawQuote | null> {
+  const [d, depth] = await Promise.all([
+    fetchJson(`https://api.bitmart.com/v2/ticker/24hr?symbol=${symbol}_USDT`),
+    fetchJson(`https://api.bitmart.com/v3/spot/orderbook?symbol=${symbol}_USDT&limit=20`).catch(
+      () => ({ data: { bids: [], asks: [] } } as Record<string, any>)
+    ),
+  ]);
+  const data = d.data ?? {};
+  if (!data.last_price) return null;
+  const last = safeNumber(data.last_price);
+  if (last <= 0) return null;
+  
+  const depthData = depth?.data ?? {};
+  const orderbookData = depthData.bids && depthData.asks
+    ? {
+        quote_currency: "USDT" as const,
+        bids: parseBookSide(depthData.bids, ORDERBOOK_LEVELS),
+        asks: parseBookSide(depthData.asks, ORDERBOOK_LEVELS),
+      }
+    : undefined;
+  
+  return {
+    price_usdt: last,
+    bid_usdt: safeNumber(data.best_bid),
+    ask_usdt: safeNumber(data.best_ask),
+    volume: safeNumber(data.quote_volume_24h),
+    change_24h: safeNumber(data.price_change_24h),
+    high: safeNumber(data.high_24h),
+    low: safeNumber(data.low_24h),
+    orderbook: orderbookData,
+  };
+}
+
+async function fxBitso(symbol: string, usdBrl: number): Promise<RawQuote | null> {
+  try {
+    const d = await fetchJson(`https://api.bitso.com/v3/ticker/?book=${symbol}_mxn`);
+    const payload = d.payload ?? {};
+    if (!payload.last) return null;
+    const lastMxn = safeNumber(payload.last);
+    if (lastMxn <= 0) return null;
+    
+    return {
+      price_usdt: lastMxn / usdBrl,
+      bid_usdt: safeNumber(payload.bid) / usdBrl,
+      ask_usdt: safeNumber(payload.ask) / usdBrl,
+      volume: safeNumber(payload.volume) * lastMxn,
+      change_24h: 0,
+      high: 0,
+      low: 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fxFoxbit(symbol: string, usdBrl: number): Promise<RawQuote | null> {
+  try {
+    const d = await fetchJson(`https://api.foxbit.com.br/v1/ticker?pair=${symbol}_BRL`);
+    const priceBrl = safeNumber(d.last);
+    if (priceBrl <= 0) return null;
+    
+    return {
+      price_usdt: priceBrl / usdBrl,
+      price_brl_direct: priceBrl,
+      bid_brl_direct: safeNumber(d.bid),
+      ask_brl_direct: safeNumber(d.ask),
+      volume: safeNumber(d.volume24h) * priceBrl,
+      change_24h: 0,
+      high: safeNumber(d.high24h) || priceBrl,
+      low: safeNumber(d.low24h) || priceBrl,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fxCoinex(symbol: string): Promise<RawQuote | null> {
+  const [d, depth] = await Promise.all([
+    fetchJson(`https://api.coinex.com/v2/spot/ticker?market=${symbol}USDT`),
+    fetchJson(`https://api.coinex.com/v2/spot/depth?market=${symbol}USDT&limit=20`).catch(
+      () => ({ data: { bids: [], asks: [] } } as Record<string, any>)
+    ),
+  ]);
+  const data = d.data ?? {};
+  if (!data.last) return null;
+  const last = safeNumber(data.last);
+  if (last <= 0) return null;
+  
+  const depthData = depth?.data ?? {};
+  const orderbookData = depthData.bids && depthData.asks
+    ? {
+        quote_currency: "USDT" as const,
+        bids: parseBookSide(depthData.bids, ORDERBOOK_LEVELS),
+        asks: parseBookSide(depthData.asks, ORDERBOOK_LEVELS),
+      }
+    : undefined;
+  
+  return {
+    price_usdt: last,
+    bid_usdt: safeNumber(data.best_bid),
+    ask_usdt: safeNumber(data.best_ask),
+    volume: safeNumber(data.volume),
+    change_24h: safeNumber(data.change),
+    high: safeNumber(data.high),
+    low: safeNumber(data.low),
+    orderbook: orderbookData,
+  };
+}
+
+async function fxCryptoCom(symbol: string): Promise<RawQuote | null> {
+  const d = await fetchJson(`https://api.crypto.com/v2/public/get-ticker?instrument_name=${symbol}_USDT`);
+  const ticker = d.result?.data?.[0] ?? {};
+  if (!ticker.a) return null;
+  const last = safeNumber(ticker.a);
+  if (last <= 0) return null;
+  
+  return {
+    price_usdt: last,
+    bid_usdt: safeNumber(ticker.b),
+    ask_usdt: safeNumber(ticker.k),
+    volume: safeNumber(ticker.vv),
+    change_24h: 0,
+    high: safeNumber(ticker.h),
+    low: safeNumber(ticker.l),
+  };
+}
+
 const FETCHERS: Record<string, { fetcher: Fetcher; needsBrl: boolean }> = {
   binance: { fetcher: async (symbol) => fxBinance(symbol), needsBrl: false },
   coinbase: { fetcher: async (symbol) => fxCoinbase(symbol), needsBrl: false },
@@ -627,6 +797,12 @@ const FETCHERS: Record<string, { fetcher: Fetcher; needsBrl: boolean }> = {
   bitget: { fetcher: async (symbol) => fxBitget(symbol), needsBrl: false },
   novadax: { fetcher: async (symbol, usdBrl) => fxNovadax(symbol, usdBrl), needsBrl: true },
   gate: { fetcher: async (symbol) => fxGate(symbol), needsBrl: false },
+  mexc: { fetcher: async (symbol) => fxMexc(symbol), needsBrl: false },
+  bitmart: { fetcher: async (symbol) => fxBitmart(symbol), needsBrl: false },
+  bitso: { fetcher: async (symbol, usdBrl) => fxBitso(symbol, usdBrl), needsBrl: true },
+  foxbit: { fetcher: async (symbol, usdBrl) => fxFoxbit(symbol, usdBrl), needsBrl: true },
+  coinex: { fetcher: async (symbol) => fxCoinex(symbol), needsBrl: false },
+  "crypto.com": { fetcher: async (symbol) => fxCryptoCom(symbol), needsBrl: false },
 };
 
 async function fetchTokenOnExchange(tokenSymbol: string, exchange: ExchangeMeta, usdBrl: number): Promise<ExchangeQuote> {
