@@ -189,6 +189,8 @@ export default function DepegArbitragePage() {
     }));
   }, [data]);
 
+  const activeThresholdPct = data?.threshold_pct ?? thresholdNum;
+
   const monitoredCount = data ? Math.max(data.summary.monitored_pairs, rowsToRender.length) : 0;
 
   return (
@@ -311,7 +313,7 @@ export default function DepegArbitragePage() {
                     borderBottom: "1px solid var(--card-border)",
                     fontSize: 13,
                     background:
-                      row.status === "ok" && row.asymmetry_pct !== null && row.asymmetry_pct >= data.threshold_pct
+                      row.status === "ok" && row.asymmetry_pct !== null && row.asymmetry_pct >= activeThresholdPct
                         ? "rgba(245, 158, 11, 0.07)"
                         : "transparent",
                   }}

@@ -354,7 +354,10 @@ export async function GET(request: NextRequest) {
       });
 
     const aboveThreshold = opportunities
-      .filter((row) => row.status === "ok" && row.asymmetry_pct !== null && row.asymmetry_pct >= thresholdPct)
+      .filter(
+        (row): row is DepegRow & { status: "ok"; asymmetry_pct: number } =>
+          row.status === "ok" && row.asymmetry_pct !== null && row.asymmetry_pct >= thresholdPct
+      )
       .sort((a, b) => b.asymmetry_pct - a.asymmetry_pct);
 
     const best = aboveThreshold[0] ?? null;
