@@ -24,10 +24,12 @@ type DepegRow = {
   analyzed_on: string;
   peg_reference: string;
   market_price: number | null;
+  market_price_brl: number | null;
   bid_price: number | null;
   ask_price: number | null;
   orderbook_spread_pct: number | null;
   ideal_price: number | null;
+  ideal_price_brl: number | null;
   depeg_pct: number | null;
   asymmetry_pct: number | null;
   direction: "above_peg" | "below_peg";
@@ -40,6 +42,7 @@ type DepegResponse = {
   timestamp: string;
   source: string;
   threshold_pct: number;
+  usd_brl: number | null;
   monitored_rows: DepegRow[];
   opportunities: DepegRow[];
   summary: {
@@ -113,10 +116,12 @@ function fallbackRows(reason: string): DepegRow[] {
       analyzed_on: "Binance Spot BookTicker",
       peg_reference: isUsdPeg ? "USD (1:1)" : `${pair.fxBase}/USD via Frankfurter`,
       market_price: null,
+      market_price_brl: null,
       bid_price: null,
       ask_price: null,
       orderbook_spread_pct: null,
       ideal_price: isUsdPeg ? 1 : null,
+      ideal_price_brl: null,
       depeg_pct: null,
       asymmetry_pct: null,
       direction: "below_peg",
@@ -186,6 +191,15 @@ async function fetchFxToUsd(base: FxBase): Promise<number> {
   return rate;
 }
 
+async function fetchUsdToBrl(): Promise<number> {
+  const payload = await fetchJson("https://api.frankfurter.app/latest?from=USD&to=BRL");
+  const rate = toNum(payload?.rates?.BRL);
+  if (rate <= 0) {
+    throw new Error("FX USD/BRL indisponivel");
+  }
+  return rate;
+}
+
 function classify(asymmetryPct: number): { severity: DepegRow["severity"]; signal: DepegRow["signal"] } {
   if (asymmetryPct >= 4) return { severity: "high", signal: "stress" };
   if (asymmetryPct >= 1.5) return { severity: "medium", signal: "opportunity" };
@@ -224,6 +238,19 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    let usdBrl = 0;
+    const brlUsd = fxMap.get("BRL") ?? 0;
+    if (brlUsd > 0) {
+      usdBrl = 1 / brlUsd;
+    }
+    if (usdBrl <= 0) {
+      try {
+        usdBrl = await fetchUsdToBrl();
+      } catch {
+        usdBrl = 0;
+      }
+    }
+
     const rawRows = await Promise.all(
       PAIRS.map(async (pair) => {
         const pegReference = pair.idealType === "usd_peg" ? "USD (1:1)" : `${pair.fxBase}/USD via Frankfurter`;
@@ -245,10 +272,12 @@ export async function GET(request: NextRequest) {
               analyzed_on: "Binance Spot BookTicker",
               peg_reference: pegReference,
               market_price: null,
+              market_price_brl: null,
               bid_price: null,
               ask_price: null,
               orderbook_spread_pct: null,
               ideal_price: idealPrice > 0 ? Number(idealPrice.toFixed(6)) : null,
+              ideal_price_brl: idealPrice > 0 && usdBrl > 0 ? Number((idealPrice * usdBrl).toFixed(6)) : null,
               depeg_pct: null,
               asymmetry_pct: null,
               direction: "below_peg",
@@ -277,10 +306,12 @@ export async function GET(request: NextRequest) {
             analyzed_on: "Binance Spot BookTicker",
             peg_reference: pegReference,
             market_price: Number(ticker.mid.toFixed(6)),
+            market_price_brl: usdBrl > 0 ? Number((ticker.mid * usdBrl).toFixed(6)) : null,
             bid_price: Number(ticker.bid.toFixed(6)),
             ask_price: Number(ticker.ask.toFixed(6)),
             orderbook_spread_pct: Number(orderbookSpreadPct.toFixed(4)),
             ideal_price: Number(idealPrice.toFixed(6)),
+            ideal_price_brl: usdBrl > 0 ? Number((idealPrice * usdBrl).toFixed(6)) : null,
             depeg_pct: Number(depegPct.toFixed(4)),
             asymmetry_pct: Number(asymmetryPct.toFixed(4)),
             direction,
@@ -297,10 +328,12 @@ export async function GET(request: NextRequest) {
             analyzed_on: "Binance Spot BookTicker",
             peg_reference: pegReference,
             market_price: null,
+            market_price_brl: null,
             bid_price: null,
             ask_price: null,
             orderbook_spread_pct: null,
             ideal_price: idealPrice > 0 ? Number(idealPrice.toFixed(6)) : null,
+            ideal_price_brl: idealPrice > 0 && usdBrl > 0 ? Number((idealPrice * usdBrl).toFixed(6)) : null,
             depeg_pct: null,
             asymmetry_pct: null,
             direction: "below_peg",
@@ -330,6 +363,7 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString(),
       source: "binance-bookticker + frankfurter-fx",
       threshold_pct: Number(thresholdPct.toFixed(4)),
+      usd_brl: usdBrl > 0 ? Number(usdBrl.toFixed(6)) : null,
       monitored_rows: opportunities,
       opportunities: aboveThreshold,
       summary: {
@@ -364,6 +398,7 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString(),
       source: "binance-bookticker + frankfurter-fx",
       threshold_pct: Number(thresholdPct.toFixed(4)),
+      usd_brl: null,
       monitored_rows: fallbackRows("Par monitorado, mas a atualizacao geral da API falhou neste ciclo."),
       opportunities: [],
       summary: {

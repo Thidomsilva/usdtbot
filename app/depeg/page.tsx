@@ -11,10 +11,12 @@ type DepegRow = {
   analyzed_on: string;
   peg_reference: string;
   market_price: number | null;
+  market_price_brl: number | null;
   bid_price: number | null;
   ask_price: number | null;
   orderbook_spread_pct: number | null;
   ideal_price: number | null;
+  ideal_price_brl: number | null;
   depeg_pct: number | null;
   asymmetry_pct: number | null;
   direction: "above_peg" | "below_peg";
@@ -27,6 +29,7 @@ type DepegResponse = {
   timestamp: string;
   source: string;
   threshold_pct: number;
+  usd_brl: number | null;
   monitored_rows: DepegRow[];
   opportunities: DepegRow[];
   summary: {
@@ -48,6 +51,15 @@ type DepegResponse = {
 
 const REFRESH_SECONDS = 20;
 
+const DEFAULT_MONITORED_PAIRS: Array<Pick<DepegRow, "id" | "label" | "symbol" | "peg_reference">> = [
+  { id: "fdusd-usdt", label: "FDUSD x USDT", symbol: "FDUSDUSDT", peg_reference: "USD (1:1)" },
+  { id: "tusd-usdt", label: "TUSD x USDT", symbol: "TUSDUSDT", peg_reference: "USD (1:1)" },
+  { id: "eurc-usdt", label: "EURC x USDT", symbol: "EURCUSDT", peg_reference: "EUR/USD via Frankfurter" },
+  { id: "eurs-usdt", label: "EURS x USDT", symbol: "EURSUSDT", peg_reference: "EUR/USD via Frankfurter" },
+  { id: "brz-usdt", label: "BRZ x USDT", symbol: "BRZUSDT", peg_reference: "BRL/USD via Frankfurter" },
+  { id: "brl1-usdt", label: "BRL1 x USDT", symbol: "BRL1USDT", peg_reference: "BRL/USD via Frankfurter" },
+];
+
 function pct(value: number | null): string {
   if (value === null) return "--";
   return `${value >= 0 ? "+" : ""}${value.toFixed(4)}%`;
@@ -56,6 +68,11 @@ function pct(value: number | null): string {
 function price(value: number | null): string {
   if (value === null) return "--";
   return `USDT ${value.toFixed(6)}`;
+}
+
+function brl(value: number | null): string {
+  if (value === null) return "--";
+  return `R$ ${value.toFixed(6)}`;
 }
 
 function severityColor(level: DepegRow["severity"]): string {
@@ -98,6 +115,42 @@ export default function DepegArbitragePage() {
       clearInterval(countdownTimer);
     };
   }, [thresholdNum]);
+
+  const rowsToRender = useMemo(() => {
+    if (!data) return [] as DepegRow[];
+
+    if (Array.isArray(data.monitored_rows) && data.monitored_rows.length > 0) {
+      return data.monitored_rows;
+    }
+
+    if (Array.isArray(data.opportunities) && data.opportunities.length > 0) {
+      return data.opportunities;
+    }
+
+    return DEFAULT_MONITORED_PAIRS.map((pair) => ({
+      id: pair.id,
+      label: pair.label,
+      symbol: pair.symbol,
+      status: "unavailable" as const,
+      analyzed_on: "Binance Spot BookTicker",
+      peg_reference: pair.peg_reference,
+      market_price: null,
+      market_price_brl: null,
+      bid_price: null,
+      ask_price: null,
+      orderbook_spread_pct: null,
+      ideal_price: pair.peg_reference === "USD (1:1)" ? 1 : null,
+      ideal_price_brl: null,
+      depeg_pct: null,
+      asymmetry_pct: null,
+      direction: "below_peg" as const,
+      severity: "low" as const,
+      signal: "watch" as const,
+      notes: "Par monitorado, sem dados retornados neste ciclo.",
+    }));
+  }, [data]);
+
+  const monitoredCount = data ? Math.max(data.summary.monitored_pairs, rowsToRender.length) : 0;
 
   return (
     <main className="page-shell" style={{ minHeight: "100vh", padding: 24 }}>
@@ -164,10 +217,16 @@ export default function DepegArbitragePage() {
 
           <div style={{ fontSize: 13, color: "var(--muted)", display: "flex", gap: 8, flexWrap: "wrap" }}>
             {data
-              ? `${data.summary.monitored_pairs} pares monitorados · ${data.summary.above_threshold} acima do limiar · max assimetria ${data.summary.max_asymmetry_pct.toFixed(4)}%`
+              ? `${monitoredCount} pares monitorados · ${data.summary.above_threshold} acima do limiar · max assimetria ${data.summary.max_asymmetry_pct.toFixed(4)}%`
               : "Carregando monitoramento de de-peg..."}
             <span>· proxima atualizacao em {countdown}s</span>
           </div>
+
+          {data?.usd_brl && (
+            <div style={{ fontSize: 12, color: "var(--muted)" }}>
+              Referencia cambial: 1 USD = R$ {data.usd_brl.toFixed(4)}
+            </div>
+          )}
 
           {data && data.summary.above_threshold === 0 && (
             <div style={{ fontSize: 12, color: "var(--muted)" }}>
@@ -196,7 +255,9 @@ export default function DepegArbitragePage() {
                 <th style={{ padding: "10px 8px" }}>Status</th>
                 <th style={{ padding: "10px 8px" }}>Onde analisado</th>
                 <th style={{ padding: "10px 8px" }}>Mercado (mid)</th>
+                <th style={{ padding: "10px 8px" }}>Mercado (BRL)</th>
                 <th style={{ padding: "10px 8px" }}>Paridade ideal</th>
+                <th style={{ padding: "10px 8px" }}>Paridade ideal (BRL)</th>
                 <th style={{ padding: "10px 8px" }}>Descolamento</th>
                 <th style={{ padding: "10px 8px" }}>Assimetria</th>
                 <th style={{ padding: "10px 8px" }}>Book spread</th>
@@ -204,7 +265,7 @@ export default function DepegArbitragePage() {
               </tr>
             </thead>
             <tbody>
-              {data?.monitored_rows.map((row) => (
+              {rowsToRender.map((row) => (
                 <tr
                   key={row.id}
                   style={{
@@ -239,7 +300,9 @@ export default function DepegArbitragePage() {
                     <div style={{ fontSize: 11, color: "var(--muted)" }}>{row.peg_reference}</div>
                   </td>
                   <td style={{ padding: "10px 8px" }}>{price(row.market_price)}</td>
+                  <td style={{ padding: "10px 8px", color: "var(--muted)", fontSize: 12 }}>{brl(row.market_price_brl)}</td>
                   <td style={{ padding: "10px 8px" }}>{price(row.ideal_price)}</td>
+                  <td style={{ padding: "10px 8px", color: "var(--muted)", fontSize: 12 }}>{brl(row.ideal_price_brl)}</td>
                   <td
                     style={{
                       padding: "10px 8px",
@@ -281,9 +344,9 @@ export default function DepegArbitragePage() {
                   </td>
                 </tr>
               ))}
-              {(!data || data.monitored_rows.length === 0) && (
+              {(!data || rowsToRender.length === 0) && (
                 <tr>
-                  <td colSpan={9} style={{ padding: "14px 8px", color: "var(--muted)", fontSize: 13 }}>
+                  <td colSpan={11} style={{ padding: "14px 8px", color: "var(--muted)", fontSize: 13 }}>
                     Nenhum par disponivel neste momento.
                   </td>
                 </tr>
