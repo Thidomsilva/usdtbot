@@ -9,9 +9,9 @@ const REFRESH_SECONDS = 5;
 const ORDER = [
   "binance",
   "bybit",
-  "bingx",
-  "kraken",
-  "coinbase",
+  // "bingx",    // sem par BRL
+  // "kraken",   // sem par BRL
+  // "coinbase", // sem par BRL
   "bitget",
   "okx",
   "kucoin",
