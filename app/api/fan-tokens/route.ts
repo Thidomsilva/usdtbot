@@ -91,7 +91,6 @@ const FEES_BY_EXCHANGE: Record<string, { buy_pct: number; sell_pct: number }> = 
   gate: { buy_pct: 0.2, sell_pct: 0.2 },
   mexc: { buy_pct: 0.2, sell_pct: 0.2 },
   bitmart: { buy_pct: 0.25, sell_pct: 0.25 },
-  bitso: { buy_pct: 0.5, sell_pct: 0.5 },
   foxbit: { buy_pct: 0.5, sell_pct: 0.5 },
   coinex: { buy_pct: 0.2, sell_pct: 0.2 },
   "crypto.com": { buy_pct: 0.4, sell_pct: 0.4 },
@@ -193,7 +192,6 @@ const EXCHANGES: ExchangeMeta[] = [
   { id: "gate", label: "Gate.io", pix: false, accepts_brl: false, estimated: false },
   { id: "mexc", label: "MEXC", pix: false, accepts_brl: false, estimated: true },
   { id: "bitmart", label: "BitMart", pix: false, accepts_brl: false, estimated: true },
-  { id: "bitso", label: "Bitso", pix: false, accepts_brl: false, estimated: true },
   { id: "foxbit", label: "Foxbit", pix: true, accepts_brl: true, estimated: true },
   { id: "coinex", label: "Coinex", pix: false, accepts_brl: false, estimated: true },
   { id: "crypto.com", label: "Crypto.com", pix: false, accepts_brl: false, estimated: true },
@@ -691,28 +689,6 @@ async function fxBitmart(symbol: string): Promise<RawQuote | null> {
   };
 }
 
-async function fxBitso(symbol: string, usdBrl: number): Promise<RawQuote | null> {
-  try {
-    const d = await fetchJson(`https://api.bitso.com/v3/ticker/?book=${symbol}_mxn`);
-    const payload = d.payload ?? {};
-    if (!payload.last) return null;
-    const lastMxn = safeNumber(payload.last);
-    if (lastMxn <= 0) return null;
-    
-    return {
-      price_usdt: lastMxn / usdBrl,
-      bid_usdt: safeNumber(payload.bid) / usdBrl,
-      ask_usdt: safeNumber(payload.ask) / usdBrl,
-      volume: safeNumber(payload.volume) * lastMxn,
-      change_24h: 0,
-      high: 0,
-      low: 0,
-    };
-  } catch {
-    return null;
-  }
-}
-
 async function fxFoxbit(symbol: string, usdBrl: number): Promise<RawQuote | null> {
   try {
     const d = await fetchJson(`https://api.foxbit.com.br/v1/ticker?pair=${symbol}_BRL`);
@@ -799,7 +775,6 @@ const FETCHERS: Record<string, { fetcher: Fetcher; needsBrl: boolean }> = {
   gate: { fetcher: async (symbol) => fxGate(symbol), needsBrl: false },
   mexc: { fetcher: async (symbol) => fxMexc(symbol), needsBrl: false },
   bitmart: { fetcher: async (symbol) => fxBitmart(symbol), needsBrl: false },
-  bitso: { fetcher: async (symbol, usdBrl) => fxBitso(symbol, usdBrl), needsBrl: true },
   foxbit: { fetcher: async (symbol, usdBrl) => fxFoxbit(symbol, usdBrl), needsBrl: true },
   coinex: { fetcher: async (symbol) => fxCoinex(symbol), needsBrl: false },
   "crypto.com": { fetcher: async (symbol) => fxCryptoCom(symbol), needsBrl: false },

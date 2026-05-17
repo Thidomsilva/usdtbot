@@ -19,7 +19,6 @@ const EXCHANGES_LIST = [
   { id: "coinbase", label: "Coinbase" },
   { id: "mexc", label: "MEXC" },
   { id: "bitmart", label: "BitMart" },
-  { id: "bitso", label: "Bitso" },
   { id: "foxbit", label: "Foxbit" },
   { id: "coinex", label: "Coinex" },
   { id: "crypto.com", label: "Crypto.com" },
@@ -55,7 +54,10 @@ export default function UsdtInfinityPage() {
       try {
         const parsed = JSON.parse(saved) as string[];
         if (Array.isArray(parsed) && parsed.length > 0) {
-          setSelectedExchanges(new Set(parsed));
+          const allowed = parsed.filter((id) => ALL_EXCHANGE_IDS.includes(id));
+          if (allowed.length > 0) {
+            setSelectedExchanges(new Set(allowed));
+          }
         }
       } catch {}
     }
@@ -120,8 +122,10 @@ export default function UsdtInfinityPage() {
         .map((t: any) => {
           if (!t.best_arb || t.best_arb.spread_pct <= 0) return null;
 
-          const buyExchange = (t.exchanges || []).find((ex: any) => ex.exchange === t.best_arb.buy_exchange);
-          const sellExchange = (t.exchanges || []).find((ex: any) => ex.exchange === t.best_arb.sell_exchange);
+          const tokenExchanges = t.exchanges || [];
+
+          const buyExchange = tokenExchanges.find((ex: any) => ex.exchange === t.best_arb.buy_exchange);
+          const sellExchange = tokenExchanges.find((ex: any) => ex.exchange === t.best_arb.sell_exchange);
 
           const askValue = resolveDisplayPrice(buyExchange, t.best_arb.buy_price_brl, "ask");
           const bidValue = resolveDisplayPrice(sellExchange, t.best_arb.sell_price_brl, "bid");
@@ -152,7 +156,7 @@ export default function UsdtInfinityPage() {
           }));
 
           // Orderbooks de todas as exchanges (filtro aplicado no render)
-          const allExchangesBooks = (t.exchanges || []).map((ex: any) => {
+          const allExchangesBooks = tokenExchanges.map((ex: any) => {
             const exCurrency = getBookCurrency(ex);
             const asks = (ex?.orderbook?.asks || []).slice(0, 5).map((l: any) => ({
               priceBrl: convertBookValue(Number(l.price_brl || 0), ex),
