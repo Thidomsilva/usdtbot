@@ -466,9 +466,53 @@ async function fetchMexc() {
   };
 }
 
+function parseFoxbitBookLevel(level: any): number {
+  if (!level) return 0;
+  if (Array.isArray(level)) {
+    return safeNumber(level[0]);
+  }
+  if (typeof level === "object") {
+    return safeNumber(level.price ?? level[0]);
+  }
+  return safeNumber(level);
+}
+
+async function fetchFoxbit() {
+  const [quotePayload, bookPayload] = await Promise.all([
+    fetchJson("https://api.foxbit.com.br/rest/v3/markets/quotes?side=buy&market_symbol=usdtbrl&base_amount=1"),
+    fetchJson("https://api.foxbit.com.br/rest/v3/markets/usdtbrl/orderbook"),
+  ]);
+
+  const quotedPrice = safeNumber(quotePayload.price);
+  const quoteAmount = safeNumber(quotePayload.quote_amount);
+  const price = quotedPrice > 0 ? quotedPrice : quoteAmount;
+
+  const asks = Array.isArray(bookPayload.asks) ? bookPayload.asks : [];
+  const bids = Array.isArray(bookPayload.bids) ? bookPayload.bids : [];
+  const bestAsk = asks.length > 0 ? parseFoxbitBookLevel(asks[0]) : 0;
+  const bestBid = bids.length > 0 ? parseFoxbitBookLevel(bids[0]) : 0;
+
+  const finalPrice = price > 0 ? price : bestAsk || bestBid;
+  if (finalPrice <= 0) {
+    throw new Error("Foxbit ticker indisponivel");
+  }
+
+  return {
+    price_brl: finalPrice,
+    bid_price_brl: bestBid,
+    ask_price_brl: bestAsk,
+    volume_24h: 0,
+    change_24h: 0,
+    high_24h: finalPrice,
+    low_24h: finalPrice,
+    source_url: "https://foxbit.com.br/trade/usdt-brl",
+  };
+}
+
 const EXCHANGES: ExchangeDef[] = [
   { key: "binance", label: "Binance", fetcher: fetchBinance },
   { key: "bybit", label: "Bybit", fetcher: fetchBybit },
+  { key: "foxbit", label: "Foxbit", fetcher: fetchFoxbit },
   { key: "bingx", label: "BingX", fetcher: fetchBingx },
   { key: "kraken", label: "Kraken", fetcher: fetchKraken },
   { key: "coinbase", label: "Coinbase", fetcher: fetchCoinbase },

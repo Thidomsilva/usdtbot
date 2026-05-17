@@ -9,6 +9,7 @@ const REFRESH_SECONDS = 5;
 const ORDER = [
   "binance",
   "bybit",
+  "foxbit",
   // "bingx",    // sem par BRL
   // "kraken",   // sem par BRL
   // "coinbase", // sem par BRL
@@ -24,6 +25,7 @@ type ThemeMode = "auto" | "light" | "dark";
 const EXCHANGE_META: Record<string, { domain: string }> = {
   binance: { domain: "binance.com" },
   bybit: { domain: "bybit.com" },
+  foxbit: { domain: "foxbit.com.br" },
   bingx: { domain: "bingx.com" },
   kraken: { domain: "kraken.com" },
   coinbase: { domain: "coinbase.com" },
@@ -40,6 +42,7 @@ const EXCHANGE_META: Record<string, { domain: string }> = {
 const DEFAULT_FEES: Record<string, { buy: number; sell: number }> = {
   binance: { buy: 0.20, sell: 0.20 },
   bybit: { buy: 0.20, sell: 0.20 },
+  foxbit: { buy: 0.50, sell: 0.50 },
   bingx: { buy: 0.20, sell: 0.20 },
   kraken: { buy: 0.40, sell: 0.40 },
   coinbase: { buy: 0.60, sell: 0.60 },
