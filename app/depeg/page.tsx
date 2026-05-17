@@ -54,9 +54,11 @@ const REFRESH_SECONDS = 20;
 const DEFAULT_MONITORED_PAIRS: Array<Pick<DepegRow, "id" | "label" | "symbol" | "peg_reference">> = [
   { id: "fdusd-usdt", label: "FDUSD x USDT", symbol: "FDUSDUSDT", peg_reference: "USD (1:1)" },
   { id: "tusd-usdt", label: "TUSD x USDT", symbol: "TUSDUSDT", peg_reference: "USD (1:1)" },
+  { id: "dai-usdt", label: "DAI x USDT", symbol: "DAIUSDT", peg_reference: "USD (1:1)" },
   { id: "eurc-usdt", label: "EURC x USDT", symbol: "EURCUSDT", peg_reference: "EUR/USD via Frankfurter" },
   { id: "eurs-usdt", label: "EURS x USDT", symbol: "EURSUSDT", peg_reference: "EUR/USD via Frankfurter" },
   { id: "brz-usdt", label: "BRZ x USDT", symbol: "BRZUSDT", peg_reference: "BRL/USD via Frankfurter" },
+  { id: "brz-brla", label: "BRZ x BRLA", symbol: "BRZBRLA", peg_reference: "USD (1:1)" },
   { id: "brl1-usdt", label: "BRL1 x USDT", symbol: "BRL1USDT", peg_reference: "BRL/USD via Frankfurter" },
 ];
 

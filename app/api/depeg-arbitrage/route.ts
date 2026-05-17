@@ -95,6 +95,16 @@ const PAIRS: PairConfig[] = [
     idealType: "usd_peg",
   },
   {
+    id: "dai-usdt",
+    label: "DAI x USDT",
+    symbol: "DAIUSDT",
+    gateSymbol: "DAI_USDT",
+    kucoinSymbol: "DAI-USDT",
+    okxInstId: "DAI-USDT",
+    coinexMarket: "DAIUSDT",
+    idealType: "usd_peg",
+  },
+  {
     id: "eurc-usdt",
     label: "EURC x USDT",
     symbol: "EURCUSDT",
@@ -126,6 +136,16 @@ const PAIRS: PairConfig[] = [
     coinexMarket: "BRZUSDT",
     idealType: "fx",
     fxBase: "BRL",
+  },
+  {
+    id: "brz-brla",
+    label: "BRZ x BRLA",
+    symbol: "BRZBRLA",
+    gateSymbol: "BRZ_BRLA",
+    kucoinSymbol: "BRZ-BRLA",
+    okxInstId: "BRZ-BRLA",
+    coinexMarket: "BRZBRLA",
+    idealType: "usd_peg",
   },
   {
     id: "brl1-usdt",
