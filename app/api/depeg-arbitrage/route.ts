@@ -20,6 +20,8 @@ type PairConfig = {
   htxSymbol: string;
   krakenSymbol: string;
   coinbaseSymbol: string;
+  coingeckoId: string;
+  coinmarketcapSlug: string;
   idealType: "usd_peg" | "fx";
   fxBase?: FxBase;
 };
@@ -90,6 +92,8 @@ const PAIRS: PairConfig[] = [
     htxSymbol: "fdusdusdt",
     krakenSymbol: "FDUSDUSDT",
     coinbaseSymbol: "FDUSD-USD",
+    coingeckoId: "first-digital-usd",
+    coinmarketcapSlug: "first-digital-usd",
     idealType: "usd_peg",
   },
   {
@@ -104,6 +108,8 @@ const PAIRS: PairConfig[] = [
     htxSymbol: "tusdusdt",
     krakenSymbol: "TUSDUSDT",
     coinbaseSymbol: "TUSD-USD",
+    coingeckoId: "true-usd",
+    coinmarketcapSlug: "true-usd",
     idealType: "usd_peg",
   },
   {
@@ -118,6 +124,8 @@ const PAIRS: PairConfig[] = [
     htxSymbol: "daiusdt",
     krakenSymbol: "DAIUSDT",
     coinbaseSymbol: "DAI-USD",
+    coingeckoId: "dai",
+    coinmarketcapSlug: "multi-collateral-dai",
     idealType: "usd_peg",
   },
   {
@@ -132,6 +140,8 @@ const PAIRS: PairConfig[] = [
     htxSymbol: "eurcusdt",
     krakenSymbol: "EURCUSDT",
     coinbaseSymbol: "EURC-USD",
+    coingeckoId: "euro-coin",
+    coinmarketcapSlug: "euro-coin",
     idealType: "fx",
     fxBase: "EUR",
   },
@@ -147,6 +157,8 @@ const PAIRS: PairConfig[] = [
     htxSymbol: "eursusdt",
     krakenSymbol: "EURSUSDT",
     coinbaseSymbol: "EURS-USD",
+    coingeckoId: "stasis-eurs",
+    coinmarketcapSlug: "stasis-eurs",
     idealType: "fx",
     fxBase: "EUR",
   },
@@ -162,6 +174,8 @@ const PAIRS: PairConfig[] = [
     htxSymbol: "brzusdt",
     krakenSymbol: "BRZUSDT",
     coinbaseSymbol: "BRZ-USD",
+    coingeckoId: "brz",
+    coinmarketcapSlug: "brz",
     idealType: "fx",
     fxBase: "BRL",
   },
@@ -177,6 +191,8 @@ const PAIRS: PairConfig[] = [
     htxSymbol: "brzbrla",
     krakenSymbol: "BRZBRLA",
     coinbaseSymbol: "BRZ-BRLA",
+    coingeckoId: "brz",
+    coinmarketcapSlug: "brz",
     idealType: "usd_peg",
   },
   {
@@ -191,6 +207,8 @@ const PAIRS: PairConfig[] = [
     htxSymbol: "brl1usdt",
     krakenSymbol: "BRL1USDT",
     coinbaseSymbol: "BRL1-USD",
+    coingeckoId: "brl1",
+    coinmarketcapSlug: "brl1",
     idealType: "fx",
     fxBase: "BRL",
   },
@@ -419,6 +437,41 @@ async function fetchTickerCoinbase(symbol: string): Promise<TickerResult | null>
   return { bid, ask, mid, source: "Coinbase Spot Ticker" };
 }
 
+async function fetchTickerCoinGecko(coingeckoId: string): Promise<TickerResult | null> {
+  const data = await fetchJson(`https://api.coingecko.com/api/v3/simple/price?ids=${coingeckoId}&vs_currencies=usd&include_market_cap=false&include_24hr_vol=false`);
+  const tokenData = data?.[coingeckoId];
+  const price = toNum(tokenData?.usd);
+
+  if (price <= 0) {
+    return null;
+  }
+
+  // CoinGecko não fornece bid/ask, usamos o preço como mid
+  const bid = price * 0.9999;
+  const ask = price * 1.0001;
+
+  return { bid, ask, mid: price, source: "CoinGecko" };
+}
+
+async function fetchTickerCoinMarketCap(slug: string): Promise<TickerResult | null> {
+  try {
+    const data = await fetchJson(`https://api.coinmarketcap.com/data-api/v3/cryptocurrency/detail?slug=${slug}`);
+    const tokenData = data?.data?.statistics?.price;
+    const price = toNum(tokenData);
+
+    if (price <= 0) {
+      return null;
+    }
+
+    const bid = price * 0.9999;
+    const ask = price * 1.0001;
+
+    return { bid, ask, mid: price, source: "CoinMarketCap" };
+  } catch {
+    return null;
+  }
+}
+
 async function fetchTickerWithFallback(pair: PairConfig): Promise<{ ticker: TickerResult | null; reason: string | null }> {
   const errors: string[] = [];
 
@@ -490,6 +543,22 @@ async function fetchTickerWithFallback(pair: PairConfig): Promise<{ ticker: Tick
     const ticker = await fetchTickerCoinbase(pair.coinbaseSymbol);
     if (ticker) return { ticker, reason: null };
     errors.push("Sem bid/ask valido na Coinbase");
+  } catch (err) {
+    errors.push(normalizeError(err));
+  }
+
+  try {
+    const ticker = await fetchTickerCoinGecko(pair.coingeckoId);
+    if (ticker) return { ticker, reason: null };
+    errors.push("Sem preco disponivel na CoinGecko");
+  } catch (err) {
+    errors.push(normalizeError(err));
+  }
+
+  try {
+    const ticker = await fetchTickerCoinMarketCap(pair.coinmarketcapSlug);
+    if (ticker) return { ticker, reason: null };
+    errors.push("Sem preco disponivel na CoinMarketCap");
   } catch (err) {
     errors.push(normalizeError(err));
   }
@@ -585,7 +654,7 @@ export async function GET(request: NextRequest) {
               label: pair.label,
               symbol: pair.symbol,
               status: "unavailable",
-              analyzed_on: "Binance/Gate/KuCoin/OKX/CoinEx/Bybit/HTX/Kraken/Coinbase",
+              analyzed_on: "Binance/Gate/KuCoin/OKX/CoinEx/Bybit/HTX/Kraken/Coinbase/CoinGecko/CoinMarketCap",
               peg_reference: pegReference,
               market_price: null,
               market_price_brl: null,
@@ -644,7 +713,7 @@ export async function GET(request: NextRequest) {
             label: pair.label,
             symbol: pair.symbol,
             status: "unavailable",
-            analyzed_on: "Binance/Gate/KuCoin/OKX/CoinEx/Bybit/HTX/Kraken/Coinbase",
+            analyzed_on: "Binance/Gate/KuCoin/OKX/CoinEx/Bybit/HTX/Kraken/Coinbase/CoinGecko/CoinMarketCap",
             peg_reference: pegReference,
             market_price: null,
             market_price_brl: null,
@@ -683,7 +752,7 @@ export async function GET(request: NextRequest) {
 
     const payload: DepegResponse = {
       timestamp: new Date().toISOString(),
-      source: "binance/gate/kucoin/okx/coinex/bybit/htx/kraken/coinbase + frankfurter-fx",
+      source: "binance/gate/kucoin/okx/coinex/bybit/htx/kraken/coinbase/coingecko/coinmarketcap + frankfurter-fx",
       threshold_pct: Number(thresholdPct.toFixed(4)),
       usd_brl: usdBrl > 0 ? Number(usdBrl.toFixed(6)) : null,
       monitored_rows: opportunities,
@@ -718,7 +787,7 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     const payload: DepegResponse = {
       timestamp: new Date().toISOString(),
-      source: "binance/gate/kucoin/okx/coinex/bybit/htx/kraken/coinbase + frankfurter-fx",
+      source: "binance/gate/kucoin/okx/coinex/bybit/htx/kraken/coinbase/coingecko/coinmarketcap + frankfurter-fx",
       threshold_pct: Number(thresholdPct.toFixed(4)),
       usd_brl: null,
       monitored_rows: fallbackRows("Par monitorado, mas a atualizacao geral da API falhou neste ciclo."),
