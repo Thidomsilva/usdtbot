@@ -468,6 +468,7 @@ export default function ArbitragemScannerPage() {
 							<Link href="/" style={{ textDecoration: "none", color: "var(--muted)" }}>USDT/BRL</Link>
 							<Link href="/fan-tokens" style={{ textDecoration: "none", color: "var(--muted)" }}>Arbitragem Geral</Link>
 							<Link href="/spot-futures" style={{ textDecoration: "none", color: "var(--muted)" }}>Spot x Futuro</Link>
+							<Link href="/depeg" style={{ textDecoration: "none", color: "var(--muted)" }}>De-peg</Link>
 						</div>
 						<h1 style={{ margin: 0, fontSize: 34, letterSpacing: "-0.8px", fontWeight: 800 }}>Scanner de Arbitragem</h1>
 						<p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 15 }}>

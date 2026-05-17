@@ -312,6 +312,7 @@ export default function FanTokensPage() {
             <div style={{ fontSize: 13, marginBottom: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
               <Link href="/" style={{ textDecoration: "none", color: "var(--muted)" }}>Voltar para USDT/BRL</Link>
               <Link href="/spot-futures" style={{ textDecoration: "none", color: "var(--muted)" }}>Abrir Spot x Futuro</Link>
+              <Link href="/depeg" style={{ textDecoration: "none", color: "var(--muted)" }}>Abrir De-peg</Link>
             </div>
             <h1 style={{ margin: 0, fontSize: 34, letterSpacing: "-0.8px", fontWeight: 800 }}>Arbitragem Geral</h1>
             <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 15 }}>
