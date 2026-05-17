@@ -89,7 +89,7 @@ export default function DepegArbitragePage() {
 
   const thresholdNum = useMemo(() => {
     const parsed = Number(thresholdInput.replace(",", "."));
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0.35;
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0.35;
   }, [thresholdInput]);
 
   async function load() {
@@ -99,6 +99,45 @@ export default function DepegArbitragePage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as DepegResponse;
       setData(json);
+    } catch (err) {
+      const fallbackRows: DepegRow[] = DEFAULT_MONITORED_PAIRS.map((pair) => ({
+        id: pair.id,
+        label: pair.label,
+        symbol: pair.symbol,
+        status: "unavailable",
+        analyzed_on: "Binance Spot BookTicker",
+        peg_reference: pair.peg_reference,
+        market_price: null,
+        market_price_brl: null,
+        bid_price: null,
+        ask_price: null,
+        orderbook_spread_pct: null,
+        ideal_price: pair.peg_reference === "USD (1:1)" ? 1 : null,
+        ideal_price_brl: null,
+        depeg_pct: null,
+        asymmetry_pct: null,
+        direction: "below_peg",
+        severity: "low",
+        signal: "watch",
+        notes: "Par monitorado, sem dados retornados neste ciclo.",
+      }));
+
+      setData({
+        timestamp: new Date().toISOString(),
+        source: "frontend-fallback",
+        threshold_pct: thresholdNum,
+        usd_brl: null,
+        monitored_rows: fallbackRows,
+        opportunities: [],
+        summary: {
+          monitored_pairs: fallbackRows.length,
+          above_threshold: 0,
+          max_asymmetry_pct: 0,
+          best_opportunity: null,
+        },
+        error: `Falha ao carregar API de de-peg: ${String(err)}`,
+        warning: "Exibindo pares monitorados sem cotacao neste ciclo.",
+      });
     } finally {
       setLoading(false);
       setCountdown(REFRESH_SECONDS);

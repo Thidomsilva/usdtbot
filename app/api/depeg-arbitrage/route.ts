@@ -139,7 +139,7 @@ function toNum(value: unknown): number {
 
 function parsePositive(value: string | null, fallback: number): number {
   const parsed = toNum(value);
-  if (parsed <= 0) return fallback;
+  if (parsed < 0) return fallback;
   return parsed;
 }
 
