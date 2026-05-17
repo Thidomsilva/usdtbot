@@ -438,6 +438,34 @@ async function fetchCoinbase() {
   };
 }
 
+async function fetchMexc() {
+  const payload = await fetchJson("https://api.mexc.com/api/v3/ticker/24hr?symbol=BRLUSDT");
+  const data = payload;
+  const lastPrice = safeNumber(data.lastPrice);
+  if (lastPrice <= 0) {
+    throw new Error("MEXC BRLUSDT ticker indisponivel");
+  }
+
+  // MEXC has BRLUSDT (BRL->USDT), we need to invert to get USDT/BRL (USDTBRL)
+  const priceBrl = 1 / lastPrice;
+  const bidPrice = safeNumber(data.bidPrice);
+  const askPrice = safeNumber(data.askPrice);
+  
+  return {
+    price_brl: priceBrl,
+    bid_price_brl: askPrice > 0 ? 1 / askPrice : 0, // inverted: ask becomes bid
+    ask_price_brl: bidPrice > 0 ? 1 / bidPrice : 0, // inverted: bid becomes ask
+    volume_24h: safeNumber(data.quoteVolume) > 0 ? safeNumber(data.quoteVolume) / lastPrice : 0,
+    change_24h: (() => {
+      const open = safeNumber(data.openPrice);
+      return open > 0 ? ((lastPrice - open) / open) * -100 : 0; // inverted change
+    })(),
+    high_24h: safeNumber(data.lowPrice) > 0 ? 1 / safeNumber(data.lowPrice) : priceBrl, // inverted: low->high
+    low_24h: safeNumber(data.highPrice) > 0 ? 1 / safeNumber(data.highPrice) : priceBrl, // inverted: high->low
+    source_url: "https://www.mexc.com/exchange/BRLUSDT",
+  };
+}
+
 const EXCHANGES: ExchangeDef[] = [
   { key: "binance", label: "Binance", fetcher: fetchBinance },
   { key: "bybit", label: "Bybit", fetcher: fetchBybit },
@@ -449,6 +477,7 @@ const EXCHANGES: ExchangeDef[] = [
   { key: "kucoin", label: "KuCoin", fetcher: fetchKucoin },
   { key: "novadax", label: "Novadax", fetcher: fetchNovadax },
   { key: "mercadobitcoin", label: "Mercado Bitcoin", fetcher: fetchMercadoBitcoin },
+  { key: "mexc", label: "MEXC", fetcher: fetchMexc },
 ];
 
 function normalizeError(err: unknown): string {

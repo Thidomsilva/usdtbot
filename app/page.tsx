@@ -17,6 +17,7 @@ const ORDER = [
   "kucoin",
   "novadax",
   "mercadobitcoin",
+  "mexc",
 ];
 type ThemeMode = "auto" | "light" | "dark";
 
@@ -31,6 +32,7 @@ const EXCHANGE_META: Record<string, { domain: string }> = {
   kucoin: { domain: "kucoin.com" },
   novadax: { domain: "novadax.com" },
   mercadobitcoin: { domain: "mercadobitcoin.com.br" },
+  mexc: { domain: "mexc.com" },
 };
 
 // Taxas de negociação padrão por exchange (taker fee spot, nível básico sem desconto).
@@ -46,6 +48,7 @@ const DEFAULT_FEES: Record<string, { buy: number; sell: number }> = {
   kucoin: { buy: 0.20, sell: 0.20 },
   novadax: { buy: 0.35, sell: 0.35 },
   mercadobitcoin: { buy: 0.45, sell: 0.45 },
+  mexc: { buy: 0.20, sell: 0.20 },
 };
 
 function money(v: number) {
