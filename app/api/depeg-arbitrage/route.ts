@@ -12,8 +12,19 @@ type PairConfig = {
   id: string;
   label: string;
   symbol: string;
+  gateSymbol: string;
+  kucoinSymbol: string;
+  okxInstId: string;
+  coinexMarket: string;
   idealType: "usd_peg" | "fx";
   fxBase?: FxBase;
+};
+
+type TickerResult = {
+  bid: number;
+  ask: number;
+  mid: number;
+  source: string;
 };
 
 type DepegRow = {
@@ -67,18 +78,30 @@ const PAIRS: PairConfig[] = [
     id: "fdusd-usdt",
     label: "FDUSD x USDT",
     symbol: "FDUSDUSDT",
+    gateSymbol: "FDUSD_USDT",
+    kucoinSymbol: "FDUSD-USDT",
+    okxInstId: "FDUSD-USDT",
+    coinexMarket: "FDUSDUSDT",
     idealType: "usd_peg",
   },
   {
     id: "tusd-usdt",
     label: "TUSD x USDT",
     symbol: "TUSDUSDT",
+    gateSymbol: "TUSD_USDT",
+    kucoinSymbol: "TUSD-USDT",
+    okxInstId: "TUSD-USDT",
+    coinexMarket: "TUSDUSDT",
     idealType: "usd_peg",
   },
   {
     id: "eurc-usdt",
     label: "EURC x USDT",
     symbol: "EURCUSDT",
+    gateSymbol: "EURC_USDT",
+    kucoinSymbol: "EURC-USDT",
+    okxInstId: "EURC-USDT",
+    coinexMarket: "EURCUSDT",
     idealType: "fx",
     fxBase: "EUR",
   },
@@ -86,6 +109,10 @@ const PAIRS: PairConfig[] = [
     id: "eurs-usdt",
     label: "EURS x USDT",
     symbol: "EURSUSDT",
+    gateSymbol: "EURS_USDT",
+    kucoinSymbol: "EURS-USDT",
+    okxInstId: "EURS-USDT",
+    coinexMarket: "EURSUSDT",
     idealType: "fx",
     fxBase: "EUR",
   },
@@ -93,6 +120,10 @@ const PAIRS: PairConfig[] = [
     id: "brz-usdt",
     label: "BRZ x USDT",
     symbol: "BRZUSDT",
+    gateSymbol: "BRZ_USDT",
+    kucoinSymbol: "BRZ-USDT",
+    okxInstId: "BRZ-USDT",
+    coinexMarket: "BRZUSDT",
     idealType: "fx",
     fxBase: "BRL",
   },
@@ -100,6 +131,10 @@ const PAIRS: PairConfig[] = [
     id: "brl1-usdt",
     label: "BRL1 x USDT",
     symbol: "BRL1USDT",
+    gateSymbol: "BRL1_USDT",
+    kucoinSymbol: "BRL1-USDT",
+    okxInstId: "BRL1-USDT",
+    coinexMarket: "BRL1USDT",
     idealType: "fx",
     fxBase: "BRL",
   },
@@ -145,6 +180,12 @@ function parsePositive(value: string | null, fallback: number): number {
 
 function normalizeError(err: unknown): string {
   const msg = String(err ?? "Erro desconhecido");
+  const lower = msg.toLowerCase();
+  if (lower.includes("market") && lower.includes("not found")) return "Mercado nao listado";
+  if (lower.includes("instrument") && lower.includes("doesn't exist")) return "Mercado nao listado";
+  if (lower.includes("invalid symbol")) return "Mercado nao listado";
+  if (msg.toLowerCase().includes("restricted location")) return "Indisponivel na regiao atual";
+  if (msg.toLowerCase().includes("eligibility")) return "Indisponivel na regiao atual";
   if (msg.includes("HTTP 451")) return "Indisponivel na regiao atual";
   if (msg.includes("HTTP 403")) return "Bloqueado para esta regiao";
   if (msg.toLowerCase().includes("timeout")) return "Timeout na consulta";
@@ -169,8 +210,14 @@ async function fetchJson(url: string): Promise<any> {
   return res.json();
 }
 
-async function fetchTicker(symbol: string): Promise<{ bid: number; ask: number; mid: number } | null> {
+async function fetchTickerBinance(symbol: string): Promise<TickerResult | null> {
   const data = await fetchJson(`https://api.binance.com/api/v3/ticker/bookTicker?symbol=${symbol}`);
+
+  const apiMsg = String(data?.msg ?? "");
+  if (apiMsg) {
+    throw new Error(apiMsg);
+  }
+
   const bid = toNum(data?.bidPrice);
   const ask = toNum(data?.askPrice);
   const mid = bid > 0 && ask > 0 ? (bid + ask) / 2 : 0;
@@ -179,7 +226,120 @@ async function fetchTicker(symbol: string): Promise<{ bid: number; ask: number; 
     return null;
   }
 
-  return { bid, ask, mid };
+  return { bid, ask, mid, source: "Binance Spot BookTicker" };
+}
+
+async function fetchTickerGate(currencyPair: string): Promise<TickerResult | null> {
+  const data = await fetchJson(`https://api.gateio.ws/api/v4/spot/tickers?currency_pair=${currencyPair}`);
+  const first = Array.isArray(data) ? data[0] : null;
+  const bid = toNum(first?.highest_bid);
+  const ask = toNum(first?.lowest_ask);
+  const mid = bid > 0 && ask > 0 ? (bid + ask) / 2 : 0;
+
+  if (bid <= 0 || ask <= 0 || mid <= 0) {
+    return null;
+  }
+
+  return { bid, ask, mid, source: "Gate Spot Ticker" };
+}
+
+async function fetchTickerKucoin(symbol: string): Promise<TickerResult | null> {
+  const data = await fetchJson(`https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${symbol}`);
+  const payload = data?.data;
+  const bid = toNum(payload?.bestBid);
+  const ask = toNum(payload?.bestAsk);
+  const mid = bid > 0 && ask > 0 ? (bid + ask) / 2 : 0;
+
+  if (bid <= 0 || ask <= 0 || mid <= 0) {
+    return null;
+  }
+
+  return { bid, ask, mid, source: "KuCoin Spot Level1" };
+}
+
+async function fetchTickerOkx(instId: string): Promise<TickerResult | null> {
+  const data = await fetchJson(`https://www.okx.com/api/v5/market/ticker?instId=${instId}`);
+  const code = String(data?.code ?? "");
+  if (code && code !== "0") {
+    throw new Error(String(data?.msg ?? "Erro na consulta da OKX"));
+  }
+
+  const first = Array.isArray(data?.data) ? data.data[0] : null;
+  const bid = toNum(first?.bidPx);
+  const ask = toNum(first?.askPx);
+  const mid = bid > 0 && ask > 0 ? (bid + ask) / 2 : 0;
+
+  if (bid <= 0 || ask <= 0 || mid <= 0) {
+    return null;
+  }
+
+  return { bid, ask, mid, source: "OKX Spot Ticker" };
+}
+
+async function fetchTickerCoinex(market: string): Promise<TickerResult | null> {
+  const data = await fetchJson(`https://api.coinex.com/v2/spot/ticker?market=${market}`);
+  const code = toNum(data?.code);
+  if (code !== 0) {
+    throw new Error(String(data?.message ?? "Erro na consulta da CoinEx"));
+  }
+
+  const first = Array.isArray(data?.data) ? data.data[0] : null;
+  const bid = toNum(first?.bid);
+  const ask = toNum(first?.ask);
+  const mid = bid > 0 && ask > 0 ? (bid + ask) / 2 : 0;
+
+  if (bid <= 0 || ask <= 0 || mid <= 0) {
+    return null;
+  }
+
+  return { bid, ask, mid, source: "CoinEx Spot Ticker" };
+}
+
+async function fetchTickerWithFallback(pair: PairConfig): Promise<{ ticker: TickerResult | null; reason: string | null }> {
+  const errors: string[] = [];
+
+  try {
+    const ticker = await fetchTickerBinance(pair.symbol);
+    if (ticker) return { ticker, reason: null };
+    errors.push("Sem bid/ask valido na Binance");
+  } catch (err) {
+    errors.push(normalizeError(err));
+  }
+
+  try {
+    const ticker = await fetchTickerGate(pair.gateSymbol);
+    if (ticker) return { ticker, reason: null };
+    errors.push("Sem bid/ask valido na Gate");
+  } catch (err) {
+    errors.push(normalizeError(err));
+  }
+
+  try {
+    const ticker = await fetchTickerKucoin(pair.kucoinSymbol);
+    if (ticker) return { ticker, reason: null };
+    errors.push("Sem bid/ask valido na KuCoin");
+  } catch (err) {
+    errors.push(normalizeError(err));
+  }
+
+  try {
+    const ticker = await fetchTickerOkx(pair.okxInstId);
+    if (ticker) return { ticker, reason: null };
+    errors.push("Sem bid/ask valido na OKX");
+  } catch (err) {
+    errors.push(normalizeError(err));
+  }
+
+  try {
+    const ticker = await fetchTickerCoinex(pair.coinexMarket);
+    if (ticker) return { ticker, reason: null };
+    errors.push("Sem bid/ask valido na CoinEx");
+  } catch (err) {
+    errors.push(normalizeError(err));
+  }
+
+  const reason = [...new Set(errors)].join(" | ");
+  return { ticker: null, reason: reason || null };
 }
 
 async function fetchFxToUsd(base: FxBase): Promise<number> {
@@ -262,14 +422,14 @@ export async function GET(request: NextRequest) {
               : 0;
 
         try {
-          const ticker = await fetchTicker(pair.symbol);
+          const { ticker, reason } = await fetchTickerWithFallback(pair);
           if (!ticker || idealPrice <= 0) {
             return {
               id: pair.id,
               label: pair.label,
               symbol: pair.symbol,
               status: "unavailable",
-              analyzed_on: "Binance Spot BookTicker",
+              analyzed_on: "Binance/Gate/KuCoin/OKX/CoinEx",
               peg_reference: pegReference,
               market_price: null,
               market_price_brl: null,
@@ -283,7 +443,9 @@ export async function GET(request: NextRequest) {
               direction: "below_peg",
               severity: "low",
               signal: "watch",
-              notes: "Par monitorado, mas sem cotacao disponivel neste ciclo.",
+              notes: reason
+                ? `Par monitorado, mas sem cotacao disponivel neste ciclo (${reason}).`
+                : "Par monitorado, mas sem cotacao disponivel neste ciclo.",
             } as DepegRow;
           }
 
@@ -303,7 +465,7 @@ export async function GET(request: NextRequest) {
             label: pair.label,
             symbol: pair.symbol,
             status: "ok",
-            analyzed_on: "Binance Spot BookTicker",
+            analyzed_on: ticker.source,
             peg_reference: pegReference,
             market_price: Number(ticker.mid.toFixed(6)),
             market_price_brl: usdBrl > 0 ? Number((ticker.mid * usdBrl).toFixed(6)) : null,
@@ -319,13 +481,14 @@ export async function GET(request: NextRequest) {
             signal,
             notes,
           } as DepegRow;
-        } catch {
+        } catch (err) {
+          const reason = normalizeError(err);
           return {
             id: pair.id,
             label: pair.label,
             symbol: pair.symbol,
             status: "unavailable",
-            analyzed_on: "Binance Spot BookTicker",
+            analyzed_on: "Binance/Gate/KuCoin/OKX/CoinEx",
             peg_reference: pegReference,
             market_price: null,
             market_price_brl: null,
@@ -339,7 +502,7 @@ export async function GET(request: NextRequest) {
             direction: "below_peg",
             severity: "low",
             signal: "watch",
-            notes: "Par monitorado, mas a consulta da cotacao falhou neste ciclo.",
+            notes: `Par monitorado, mas a consulta da cotacao falhou neste ciclo (${reason}).`,
           } as DepegRow;
         }
       })
@@ -364,7 +527,7 @@ export async function GET(request: NextRequest) {
 
     const payload: DepegResponse = {
       timestamp: new Date().toISOString(),
-      source: "binance-bookticker + frankfurter-fx",
+      source: "binance/gate/kucoin/okx/coinex + frankfurter-fx",
       threshold_pct: Number(thresholdPct.toFixed(4)),
       usd_brl: usdBrl > 0 ? Number(usdBrl.toFixed(6)) : null,
       monitored_rows: opportunities,
@@ -399,7 +562,7 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     const payload: DepegResponse = {
       timestamp: new Date().toISOString(),
-      source: "binance-bookticker + frankfurter-fx",
+      source: "binance/gate/kucoin/okx/coinex + frankfurter-fx",
       threshold_pct: Number(thresholdPct.toFixed(4)),
       usd_brl: null,
       monitored_rows: fallbackRows("Par monitorado, mas a atualizacao geral da API falhou neste ciclo."),

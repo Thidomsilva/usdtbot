@@ -81,6 +81,23 @@ function severityColor(level: DepegRow["severity"]): string {
   return "#22c55e";
 }
 
+function unavailableSignal(notes: string): string {
+  const normalized = notes.toLowerCase();
+  if (normalized.includes("mercado nao listado")) {
+    return "Mercado nao listado";
+  }
+  if (normalized.includes("sem bid/ask valido")) {
+    return "Mercado inativo";
+  }
+  if (normalized.includes("regiao atual") || normalized.includes("restricted location")) {
+    return "Bloqueio regional";
+  }
+  if (normalized.includes("timeout")) {
+    return "Timeout";
+  }
+  return "Sem cotacao";
+}
+
 export default function DepegArbitragePage() {
   const [data, setData] = useState<DepegResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -380,7 +397,9 @@ export default function DepegArbitragePage() {
                         {row.signal.toUpperCase()}
                       </span>
                     ) : (
-                      <span style={{ fontSize: 11, color: "var(--muted)" }}>Sem cotacao</span>
+                      <span style={{ fontSize: 11, color: "var(--muted)" }} title={row.notes}>
+                        {unavailableSignal(row.notes)}
+                      </span>
                     )}
                   </td>
                 </tr>
