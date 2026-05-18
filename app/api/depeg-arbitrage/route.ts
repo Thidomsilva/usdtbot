@@ -648,7 +648,44 @@ async function fetchFxToUsd(base: FxBase): Promise<number> {
   return rate;
 }
 
+async function fetchBinanceUsdtBrl(): Promise<number> {
+  // Tenta obter USDT/BRL diretamente da Binance (mais atualizado que taxa de câmbio)
+  const hosts = ["api.binance.com", "api1.binance.com", "api2.binance.com", "api3.binance.com"];
+  
+  for (const host of hosts) {
+    try {
+      const payload = await fetchJson(`https://${host}/api/v3/ticker/24hr?symbol=USDTBRL`);
+      const price = toNum(payload?.lastPrice);
+      if (price > 0) {
+        return price;
+      }
+    } catch {
+      // Tenta proximo host
+    }
+  }
+  
+  // Fallback para CryptoCompare se Binance direto nao funcionar
+  try {
+    const fallback = await fetchJson("https://min-api.cryptocompare.com/data/price?fsym=USDT&tsyms=BRL&e=Binance");
+    const price = toNum(fallback?.BRL);
+    if (price > 0) {
+      return price;
+    }
+  } catch {
+    // Continua para Frankfurter
+  }
+  
+  throw new Error("Binance USDT/BRL indisponivel");
+}
+
 async function fetchUsdToBrl(): Promise<number> {
+  // Tenta Binance primeiro (mais atualizado)
+  try {
+    return await fetchBinanceUsdtBrl();
+  } catch {
+    // Fallback para Frankfurter
+  }
+  
   const payload = await fetchJson("https://api.frankfurter.app/latest?from=USD&to=BRL");
   const rate = toNum(payload?.rates?.BRL);
   if (rate <= 0) {
