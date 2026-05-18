@@ -594,37 +594,41 @@ export default function DepegArbitragePage() {
                     )}
                   </td>
                   <td style={{ padding: "10px 8px" }}>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      {getExchangeLinks(row.symbol).map((link) => (
-                        <a
-                          key={link.label}
-                          href={link.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{
-                            display: "inline-block",
-                            padding: "4px 8px",
-                            fontSize: 11,
-                            border: "1px solid var(--card-border)",
-                            borderRadius: 6,
-                            color: "var(--link, #0ea5e9)",
-                            textDecoration: "none",
-                            transition: "all 0.2s",
-                            backgroundColor: "rgba(14, 165, 233, 0.08)",
-                          }}
-                          onMouseEnter={(e) => {
-                            (e.target as HTMLAnchorElement).style.backgroundColor = "rgba(14, 165, 233, 0.16)";
-                            (e.target as HTMLAnchorElement).style.borderColor = "#0ea5e9";
-                          }}
-                          onMouseLeave={(e) => {
-                            (e.target as HTMLAnchorElement).style.backgroundColor = "rgba(14, 165, 233, 0.08)";
-                            (e.target as HTMLAnchorElement).style.borderColor = "var(--card-border)";
-                          }}
-                        >
-                          {link.label}
-                        </a>
-                      ))}
-                    </div>
+                    {signal.label === "COMPRA" ? (
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {getExchangeLinks(row.symbol).map((link) => (
+                          <a
+                            key={link.label}
+                            href={link.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              display: "inline-block",
+                              padding: "4px 8px",
+                              fontSize: 11,
+                              border: "1px solid var(--card-border)",
+                              borderRadius: 6,
+                              color: "var(--link, #0ea5e9)",
+                              textDecoration: "none",
+                              transition: "all 0.2s",
+                              backgroundColor: "rgba(14, 165, 233, 0.08)",
+                            }}
+                            onMouseEnter={(e) => {
+                              (e.target as HTMLAnchorElement).style.backgroundColor = "rgba(14, 165, 233, 0.16)";
+                              (e.target as HTMLAnchorElement).style.borderColor = "#0ea5e9";
+                            }}
+                            onMouseLeave={(e) => {
+                              (e.target as HTMLAnchorElement).style.backgroundColor = "rgba(14, 165, 233, 0.08)";
+                              (e.target as HTMLAnchorElement).style.borderColor = "var(--card-border)";
+                            }}
+                          >
+                            {link.label}
+                          </a>
+                        ))}
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: 11, color: "var(--muted)" }}>--</span>
+                    )}
                   </td>
                   </tr>
                 );

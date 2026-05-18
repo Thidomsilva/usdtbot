@@ -4,7 +4,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const TIMEOUT_MS = 9_000;
-const CACHE_TTL_MS = 20_000;
+const CACHE_TTL_MS = 10_000; // Reduzido para 10s para atualizar USD/BRL mais frequentemente
 
 type FxBase = "EUR" | "BRL";
 
