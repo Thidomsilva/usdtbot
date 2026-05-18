@@ -12,6 +12,8 @@ type PairConfig = {
   id: string;
   label: string;
   symbol: string;
+  quoteAsset: "USDT" | "BRLA";
+  pegReference: string;
   gateSymbol: string;
   kucoinSymbol: string;
   okxInstId: string;
@@ -24,6 +26,9 @@ type PairConfig = {
   coinmarketcapSlug: string;
   idealType: "usd_peg" | "fx";
   fxBase?: FxBase;
+  priceMode?: "market" | "defillama_ratio";
+  displayBrl?: boolean;
+  disableAggregatorFallback?: boolean;
 };
 
 type TickerResult = {
@@ -37,6 +42,7 @@ type DepegRow = {
   id: string;
   label: string;
   symbol: string;
+  quote_asset: "USDT" | "BRLA";
   status: "ok" | "unavailable";
   analyzed_on: string;
   peg_reference: string;
@@ -79,11 +85,16 @@ type CacheEntry = {
 
 const cache = new Map<string, CacheEntry>();
 
+const OFFICIAL_TRANSFERO_BRZ_KEY = "polygon:0x4ed141110f6eeeaba9a1df36d8c26f684d2475dc";
+const OFFICIAL_BRLA_KEY = "polygon:0xe6a537a407488807f0bbeb0038b79004f19dddfb";
+
 const PAIRS: PairConfig[] = [
   {
     id: "fdusd-usdt",
     label: "FDUSD x USDT",
     symbol: "FDUSDUSDT",
+    quoteAsset: "USDT",
+    pegReference: "USD (1:1)",
     gateSymbol: "FDUSD_USDT",
     kucoinSymbol: "FDUSD-USDT",
     okxInstId: "FDUSD-USDT",
@@ -100,6 +111,8 @@ const PAIRS: PairConfig[] = [
     id: "tusd-usdt",
     label: "TUSD x USDT",
     symbol: "TUSDUSDT",
+    quoteAsset: "USDT",
+    pegReference: "USD (1:1)",
     gateSymbol: "TUSD_USDT",
     kucoinSymbol: "TUSD-USDT",
     okxInstId: "TUSD-USDT",
@@ -116,6 +129,8 @@ const PAIRS: PairConfig[] = [
     id: "dai-usdt",
     label: "DAI x USDT",
     symbol: "DAIUSDT",
+    quoteAsset: "USDT",
+    pegReference: "USD (1:1)",
     gateSymbol: "DAI_USDT",
     kucoinSymbol: "DAI-USDT",
     okxInstId: "DAI-USDT",
@@ -132,6 +147,8 @@ const PAIRS: PairConfig[] = [
     id: "eurc-usdt",
     label: "EURC x USDT",
     symbol: "EURCUSDT",
+    quoteAsset: "USDT",
+    pegReference: "EUR/USD via Frankfurter",
     gateSymbol: "EURC_USDT",
     kucoinSymbol: "EURC-USDT",
     okxInstId: "EURC-USDT",
@@ -149,6 +166,8 @@ const PAIRS: PairConfig[] = [
     id: "eurs-usdt",
     label: "EURS x USDT",
     symbol: "EURSUSDT",
+    quoteAsset: "USDT",
+    pegReference: "EUR/USD via Frankfurter",
     gateSymbol: "EURS_USDT",
     kucoinSymbol: "EURS-USDT",
     okxInstId: "EURS-USDT",
@@ -166,6 +185,8 @@ const PAIRS: PairConfig[] = [
     id: "brz-usdt",
     label: "BRZ x USDT",
     symbol: "BRZUSDT",
+    quoteAsset: "USDT",
+    pegReference: "BRL/USD via Frankfurter",
     gateSymbol: "BRZ_USDT",
     kucoinSymbol: "BRZ-USDT",
     okxInstId: "BRZ-USDT",
@@ -183,6 +204,8 @@ const PAIRS: PairConfig[] = [
     id: "brz-brla",
     label: "BRZ x BRLA",
     symbol: "BRZBRLA",
+    quoteAsset: "BRLA",
+    pegReference: "BRLA (1:1, contratos oficiais)",
     gateSymbol: "BRZ_BRLA",
     kucoinSymbol: "BRZ-BRLA",
     okxInstId: "BRZ-BRLA",
@@ -194,11 +217,16 @@ const PAIRS: PairConfig[] = [
     coingeckoId: "brz",
     coinmarketcapSlug: "brz",
     idealType: "usd_peg",
+    priceMode: "defillama_ratio",
+    displayBrl: false,
+    disableAggregatorFallback: true,
   },
   {
     id: "brl1-usdt",
     label: "BRL1 x USDT",
     symbol: "BRL1USDT",
+    quoteAsset: "USDT",
+    pegReference: "BRL/USD via Frankfurter",
     gateSymbol: "BRL1_USDT",
     kucoinSymbol: "BRL1-USDT",
     okxInstId: "BRL1-USDT",
@@ -221,9 +249,10 @@ function fallbackRows(reason: string): DepegRow[] {
       id: pair.id,
       label: pair.label,
       symbol: pair.symbol,
+      quote_asset: pair.quoteAsset,
       status: "unavailable",
       analyzed_on: "Binance Spot BookTicker",
-      peg_reference: isUsdPeg ? "USD (1:1)" : `${pair.fxBase}/USD via Frankfurter`,
+      peg_reference: pair.pegReference,
       market_price: null,
       market_price_brl: null,
       bid_price: null,
@@ -472,8 +501,42 @@ async function fetchTickerCoinMarketCap(slug: string): Promise<TickerResult | nu
   }
 }
 
+async function fetchTickerDefiLlamaRatio(baseKey: string, quoteKey: string, source: string): Promise<TickerResult | null> {
+  const data = await fetchJson(`https://coins.llama.fi/prices/current/${baseKey},${quoteKey}`);
+  const baseUsd = toNum(data?.coins?.[baseKey]?.price);
+  const quoteUsd = toNum(data?.coins?.[quoteKey]?.price);
+
+  if (baseUsd <= 0 || quoteUsd <= 0) {
+    return null;
+  }
+
+  const mid = baseUsd / quoteUsd;
+  if (mid <= 0) {
+    return null;
+  }
+
+  const bid = mid * 0.9999;
+  const ask = mid * 1.0001;
+
+  return { bid, ask, mid, source };
+}
+
 async function fetchTickerWithFallback(pair: PairConfig): Promise<{ ticker: TickerResult | null; reason: string | null }> {
   const errors: string[] = [];
+
+  if (pair.priceMode === "defillama_ratio") {
+    try {
+      const ticker = await fetchTickerDefiLlamaRatio(
+        OFFICIAL_TRANSFERO_BRZ_KEY,
+        OFFICIAL_BRLA_KEY,
+        "DefiLlama on-chain ratio (Transfero oficial na Polygon)"
+      );
+      if (ticker) return { ticker, reason: null };
+      errors.push("Sem preco oficial disponivel no DefiLlama para BRZ/BRLA");
+    } catch (err) {
+      errors.push(normalizeError(err));
+    }
+  }
 
   try {
     const ticker = await fetchTickerBinance(pair.symbol);
@@ -545,6 +608,11 @@ async function fetchTickerWithFallback(pair: PairConfig): Promise<{ ticker: Tick
     errors.push("Sem bid/ask valido na Coinbase");
   } catch (err) {
     errors.push(normalizeError(err));
+  }
+
+  if (pair.disableAggregatorFallback) {
+    const reason = [...new Set(errors)].join(" | ");
+    return { ticker: null, reason: reason || null };
   }
 
   try {
@@ -638,7 +706,7 @@ export async function GET(request: NextRequest) {
 
     const rawRows = await Promise.all(
       PAIRS.map(async (pair) => {
-        const pegReference = pair.idealType === "usd_peg" ? "USD (1:1)" : `${pair.fxBase}/USD via Frankfurter`;
+        const pegReference = pair.pegReference;
         const idealPrice =
           pair.idealType === "usd_peg"
             ? 1
@@ -653,8 +721,9 @@ export async function GET(request: NextRequest) {
               id: pair.id,
               label: pair.label,
               symbol: pair.symbol,
+              quote_asset: pair.quoteAsset,
               status: "unavailable",
-              analyzed_on: "Binance/Gate/KuCoin/OKX/CoinEx/Bybit/HTX/Kraken/Coinbase/CoinGecko/CoinMarketCap",
+              analyzed_on: "Binance/Gate/KuCoin/OKX/CoinEx/Bybit/HTX/Kraken/Coinbase/CoinGecko/CoinMarketCap/DefiLlama",
               peg_reference: pegReference,
               market_price: null,
               market_price_brl: null,
@@ -662,7 +731,8 @@ export async function GET(request: NextRequest) {
               ask_price: null,
               orderbook_spread_pct: null,
               ideal_price: idealPrice > 0 ? Number(idealPrice.toFixed(6)) : null,
-              ideal_price_brl: idealPrice > 0 && usdBrl > 0 ? Number((idealPrice * usdBrl).toFixed(6)) : null,
+              ideal_price_brl:
+                pair.displayBrl === false || idealPrice <= 0 || usdBrl <= 0 ? null : Number((idealPrice * usdBrl).toFixed(6)),
               depeg_pct: null,
               asymmetry_pct: null,
               direction: "below_peg",
@@ -689,16 +759,19 @@ export async function GET(request: NextRequest) {
             id: pair.id,
             label: pair.label,
             symbol: pair.symbol,
+            quote_asset: pair.quoteAsset,
             status: "ok",
             analyzed_on: ticker.source,
             peg_reference: pegReference,
             market_price: Number(ticker.mid.toFixed(6)),
-            market_price_brl: usdBrl > 0 ? Number((ticker.mid * usdBrl).toFixed(6)) : null,
+            market_price_brl:
+              pair.displayBrl === false || usdBrl <= 0 ? null : Number((ticker.mid * usdBrl).toFixed(6)),
             bid_price: Number(ticker.bid.toFixed(6)),
             ask_price: Number(ticker.ask.toFixed(6)),
             orderbook_spread_pct: Number(orderbookSpreadPct.toFixed(4)),
             ideal_price: Number(idealPrice.toFixed(6)),
-            ideal_price_brl: usdBrl > 0 ? Number((idealPrice * usdBrl).toFixed(6)) : null,
+            ideal_price_brl:
+              pair.displayBrl === false || usdBrl <= 0 ? null : Number((idealPrice * usdBrl).toFixed(6)),
             depeg_pct: Number(depegPct.toFixed(4)),
             asymmetry_pct: Number(asymmetryPct.toFixed(4)),
             direction,
@@ -712,8 +785,9 @@ export async function GET(request: NextRequest) {
             id: pair.id,
             label: pair.label,
             symbol: pair.symbol,
+            quote_asset: pair.quoteAsset,
             status: "unavailable",
-            analyzed_on: "Binance/Gate/KuCoin/OKX/CoinEx/Bybit/HTX/Kraken/Coinbase/CoinGecko/CoinMarketCap",
+            analyzed_on: "Binance/Gate/KuCoin/OKX/CoinEx/Bybit/HTX/Kraken/Coinbase/CoinGecko/CoinMarketCap/DefiLlama",
             peg_reference: pegReference,
             market_price: null,
             market_price_brl: null,
@@ -752,7 +826,7 @@ export async function GET(request: NextRequest) {
 
     const payload: DepegResponse = {
       timestamp: new Date().toISOString(),
-      source: "binance/gate/kucoin/okx/coinex/bybit/htx/kraken/coinbase/coingecko/coinmarketcap + frankfurter-fx",
+      source: "binance/gate/kucoin/okx/coinex/bybit/htx/kraken/coinbase/coingecko/coinmarketcap + frankfurter-fx + defillama-official",
       threshold_pct: Number(thresholdPct.toFixed(4)),
       usd_brl: usdBrl > 0 ? Number(usdBrl.toFixed(6)) : null,
       monitored_rows: opportunities,
@@ -787,7 +861,7 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     const payload: DepegResponse = {
       timestamp: new Date().toISOString(),
-      source: "binance/gate/kucoin/okx/coinex/bybit/htx/kraken/coinbase/coingecko/coinmarketcap + frankfurter-fx",
+      source: "binance/gate/kucoin/okx/coinex/bybit/htx/kraken/coinbase/coingecko/coinmarketcap + frankfurter-fx + defillama-official",
       threshold_pct: Number(thresholdPct.toFixed(4)),
       usd_brl: null,
       monitored_rows: fallbackRows("Par monitorado, mas a atualizacao geral da API falhou neste ciclo."),

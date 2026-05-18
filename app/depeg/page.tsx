@@ -7,6 +7,7 @@ type DepegRow = {
   id: string;
   label: string;
   symbol: string;
+  quote_asset: "USDT" | "BRLA";
   status: "ok" | "unavailable";
   analyzed_on: string;
   peg_reference: string;
@@ -51,15 +52,15 @@ type DepegResponse = {
 
 const REFRESH_SECONDS = 20;
 
-const DEFAULT_MONITORED_PAIRS: Array<Pick<DepegRow, "id" | "label" | "symbol" | "peg_reference">> = [
-  { id: "fdusd-usdt", label: "FDUSD x USDT", symbol: "FDUSDUSDT", peg_reference: "USD (1:1)" },
-  { id: "tusd-usdt", label: "TUSD x USDT", symbol: "TUSDUSDT", peg_reference: "USD (1:1)" },
-  { id: "dai-usdt", label: "DAI x USDT", symbol: "DAIUSDT", peg_reference: "USD (1:1)" },
-  { id: "eurc-usdt", label: "EURC x USDT", symbol: "EURCUSDT", peg_reference: "EUR/USD via Frankfurter" },
-  { id: "eurs-usdt", label: "EURS x USDT", symbol: "EURSUSDT", peg_reference: "EUR/USD via Frankfurter" },
-  { id: "brz-usdt", label: "BRZ x USDT", symbol: "BRZUSDT", peg_reference: "BRL/USD via Frankfurter" },
-  { id: "brz-brla", label: "BRZ x BRLA", symbol: "BRZBRLA", peg_reference: "USD (1:1)" },
-  { id: "brl1-usdt", label: "BRL1 x USDT", symbol: "BRL1USDT", peg_reference: "BRL/USD via Frankfurter" },
+const DEFAULT_MONITORED_PAIRS: Array<Pick<DepegRow, "id" | "label" | "symbol" | "quote_asset" | "peg_reference"> & { ideal_price: number | null }> = [
+  { id: "fdusd-usdt", label: "FDUSD x USDT", symbol: "FDUSDUSDT", quote_asset: "USDT", peg_reference: "USD (1:1)", ideal_price: 1 },
+  { id: "tusd-usdt", label: "TUSD x USDT", symbol: "TUSDUSDT", quote_asset: "USDT", peg_reference: "USD (1:1)", ideal_price: 1 },
+  { id: "dai-usdt", label: "DAI x USDT", symbol: "DAIUSDT", quote_asset: "USDT", peg_reference: "USD (1:1)", ideal_price: 1 },
+  { id: "eurc-usdt", label: "EURC x USDT", symbol: "EURCUSDT", quote_asset: "USDT", peg_reference: "EUR/USD via Frankfurter", ideal_price: null },
+  { id: "eurs-usdt", label: "EURS x USDT", symbol: "EURSUSDT", quote_asset: "USDT", peg_reference: "EUR/USD via Frankfurter", ideal_price: null },
+  { id: "brz-usdt", label: "BRZ x USDT", symbol: "BRZUSDT", quote_asset: "USDT", peg_reference: "BRL/USD via Frankfurter", ideal_price: null },
+  { id: "brz-brla", label: "BRZ x BRLA", symbol: "BRZBRLA", quote_asset: "BRLA", peg_reference: "BRLA (1:1, contratos oficiais)", ideal_price: 1 },
+  { id: "brl1-usdt", label: "BRL1 x USDT", symbol: "BRL1USDT", quote_asset: "USDT", peg_reference: "BRL/USD via Frankfurter", ideal_price: null },
 ];
 
 function pct(value: number | null): string {
@@ -67,9 +68,9 @@ function pct(value: number | null): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(4)}%`;
 }
 
-function price(value: number | null): string {
+function price(value: number | null, quoteAsset: DepegRow["quote_asset"]): string {
   if (value === null) return "--";
-  return `USDT ${value.toFixed(6)}`;
+  return `${quoteAsset} ${value.toFixed(6)}`;
 }
 
 function brl(value: number | null): string {
@@ -123,6 +124,7 @@ export default function DepegArbitragePage() {
         id: pair.id,
         label: pair.label,
         symbol: pair.symbol,
+        quote_asset: pair.quote_asset,
         status: "unavailable",
         analyzed_on: "Binance Spot BookTicker",
         peg_reference: pair.peg_reference,
@@ -131,7 +133,7 @@ export default function DepegArbitragePage() {
         bid_price: null,
         ask_price: null,
         orderbook_spread_pct: null,
-        ideal_price: pair.peg_reference === "USD (1:1)" ? 1 : null,
+        ideal_price: pair.ideal_price,
         ideal_price_brl: null,
         depeg_pct: null,
         asymmetry_pct: null,
@@ -189,6 +191,7 @@ export default function DepegArbitragePage() {
       id: pair.id,
       label: pair.label,
       symbol: pair.symbol,
+      quote_asset: pair.quote_asset,
       status: "unavailable" as const,
       analyzed_on: "Binance Spot BookTicker",
       peg_reference: pair.peg_reference,
@@ -197,7 +200,7 @@ export default function DepegArbitragePage() {
       bid_price: null,
       ask_price: null,
       orderbook_spread_pct: null,
-      ideal_price: pair.peg_reference === "USD (1:1)" ? 1 : null,
+      ideal_price: pair.ideal_price,
       ideal_price_brl: null,
       depeg_pct: null,
       asymmetry_pct: null,
@@ -359,9 +362,9 @@ export default function DepegArbitragePage() {
                     <div>{row.analyzed_on}</div>
                     <div style={{ fontSize: 11, color: "var(--muted)" }}>{row.peg_reference}</div>
                   </td>
-                  <td style={{ padding: "10px 8px" }}>{price(row.market_price)}</td>
+                  <td style={{ padding: "10px 8px" }}>{price(row.market_price, row.quote_asset)}</td>
                   <td style={{ padding: "10px 8px", color: "var(--muted)", fontSize: 12 }}>{brl(row.market_price_brl)}</td>
-                  <td style={{ padding: "10px 8px" }}>{price(row.ideal_price)}</td>
+                  <td style={{ padding: "10px 8px" }}>{price(row.ideal_price, row.quote_asset)}</td>
                   <td style={{ padding: "10px 8px", color: "var(--muted)", fontSize: 12 }}>{brl(row.ideal_price_brl)}</td>
                   <td
                     style={{
