@@ -134,6 +134,34 @@ function repegPotentialColor(level: RepegPotential): string {
   return "#ef4444";
 }
 
+function getExchangeLinks(symbol: string): Array<{ label: string; url: string }> {
+  const links: Array<{ label: string; url: string }> = [];
+  
+  // Binance
+  links.push({ label: "Binance", url: `https://www.binance.com/trade/${symbol}` });
+  
+  // Gate.io
+  const gateSymbol = symbol.replace("USDT", "_USDT");
+  links.push({ label: "Gate.io", url: `https://www.gate.io/trade/${gateSymbol}` });
+  
+  // KuCoin
+  const kucoinSymbol = symbol.replace("USDT", "-USDT").replace("BRLA", "-BRLA");
+  links.push({ label: "KuCoin", url: `https://www.kucoin.com/trade/${kucoinSymbol}` });
+  
+  // OKX
+  const okxSymbol = symbol.replace("USDT", "-USDT").replace("BRLA", "-BRLA");
+  links.push({ label: "OKX", url: `https://www.okx.com/trade-spot/${okxSymbol.toLowerCase()}` });
+  
+  // Bybit
+  links.push({ label: "Bybit", url: `https://www.bybit.com/trade/spot/${symbol}` });
+  
+  // Kraken
+  const krakenSymbol = symbol.replace("USDT", "/USD").replace("BRLA", "/BRL");
+  links.push({ label: "Kraken", url: `https://www.kraken.com/prices/${krakenSymbol}` });
+  
+  return links;
+}
+
 function actionSignal(row: DepegRow, activeThresholdPct: number): { label: string; color: string } {
   if (row.depeg_pct === null) return { label: "SEM DADO", color: "var(--muted)" };
   if (row.depeg_pct > 0) return { label: "IGNORAR", color: "#ef4444" };
@@ -430,6 +458,7 @@ export default function DepegArbitragePage() {
                 <th style={{ padding: "10px 8px" }}>Margem liquida est.</th>
                 <th style={{ padding: "10px 8px" }}>Potencial repareamento</th>
                 <th style={{ padding: "10px 8px" }}>Sinal</th>
+                <th style={{ padding: "10px 8px" }}>Comprar</th>
               </tr>
             </thead>
             <tbody>
@@ -544,12 +573,45 @@ export default function DepegArbitragePage() {
                       </span>
                     )}
                   </td>
+                  <td style={{ padding: "10px 8px" }}>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {getExchangeLinks(row.symbol).map((link) => (
+                        <a
+                          key={link.label}
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            display: "inline-block",
+                            padding: "4px 8px",
+                            fontSize: 11,
+                            border: "1px solid var(--card-border)",
+                            borderRadius: 6,
+                            color: "var(--link, #0ea5e9)",
+                            textDecoration: "none",
+                            transition: "all 0.2s",
+                            backgroundColor: "rgba(14, 165, 233, 0.08)",
+                          }}
+                          onMouseEnter={(e) => {
+                            (e.target as HTMLAnchorElement).style.backgroundColor = "rgba(14, 165, 233, 0.16)";
+                            (e.target as HTMLAnchorElement).style.borderColor = "#0ea5e9";
+                          }}
+                          onMouseLeave={(e) => {
+                            (e.target as HTMLAnchorElement).style.backgroundColor = "rgba(14, 165, 233, 0.08)";
+                            (e.target as HTMLAnchorElement).style.borderColor = "var(--card-border)";
+                          }}
+                        >
+                          {link.label}
+                        </a>
+                      ))}
+                    </div>
+                  </td>
                   </tr>
                 );
               })}
               {(!data || rankedRows.length === 0) && (
                 <tr>
-                  <td colSpan={13} style={{ padding: "14px 8px", color: "var(--muted)", fontSize: 13 }}>
+                  <td colSpan={14} style={{ padding: "14px 8px", color: "var(--muted)", fontSize: 13 }}>
                     Nenhum par disponivel neste momento.
                   </td>
                 </tr>
