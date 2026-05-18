@@ -44,6 +44,7 @@ type DepegResponse = {
       asymmetry_pct: number;
       direction: "above_peg" | "below_peg";
       signal: "watch" | "opportunity" | "stress";
+      net_margin_pct: number | null;
     } | null;
   };
   warning?: string;
@@ -51,6 +52,10 @@ type DepegResponse = {
 };
 
 const REFRESH_SECONDS = 20;
+const DEFAULT_ESTIMATED_FEE_PCT = 0.15;
+
+type DirectionMode = "all" | "buy_discount" | "sell_premium";
+type RepegPotential = "high" | "medium" | "low";
 
 const DEFAULT_MONITORED_PAIRS: Array<Pick<DepegRow, "id" | "label" | "symbol" | "quote_asset" | "peg_reference"> & { ideal_price: number | null }> = [
   { id: "fdusd-usdt", label: "FDUSD x USDT", symbol: "FDUSDUSDT", quote_asset: "USDT", peg_reference: "USD (1:1)", ideal_price: 1 },
@@ -101,11 +106,49 @@ function unavailableSignal(notes: string): string {
   return "Sem cotacao";
 }
 
+function getEstimatedFeePct(row: DepegRow): number {
+  if (row.quote_asset === "BRLA") return 0.1;
+  return DEFAULT_ESTIMATED_FEE_PCT;
+}
+
+function getNetMarginPct(row: DepegRow): number | null {
+  if (row.depeg_pct === null || row.orderbook_spread_pct === null) return null;
+  return Math.abs(row.depeg_pct) - row.orderbook_spread_pct - getEstimatedFeePct(row);
+}
+
+function getRepegPotential(row: DepegRow): RepegPotential {
+  if (row.id === "fdusd-usdt" || row.id === "dai-usdt" || row.id === "eurc-usdt") return "high";
+  if (row.id === "brz-usdt" || row.id === "brz-brla" || row.id === "brl1-usdt") return "medium";
+  return "low";
+}
+
+function repegPotentialLabel(level: RepegPotential): string {
+  if (level === "high") return "ALTO";
+  if (level === "medium") return "MEDIO";
+  return "BAIXO";
+}
+
+function repegPotentialColor(level: RepegPotential): string {
+  if (level === "high") return "#22c55e";
+  if (level === "medium") return "#f59e0b";
+  return "#ef4444";
+}
+
+function actionSignal(row: DepegRow, activeThresholdPct: number): { label: string; color: string } {
+  if (row.depeg_pct === null) return { label: "SEM DADO", color: "var(--muted)" };
+  if (row.depeg_pct > 0) return { label: "IGNORAR", color: "#ef4444" };
+
+  const asymmetry = row.asymmetry_pct ?? 0;
+  if (asymmetry >= activeThresholdPct) return { label: "COMPRA", color: "#22c55e" };
+  return { label: "AGUARDAR", color: "#f59e0b" };
+}
+
 export default function DepegArbitragePage() {
   const [data, setData] = useState<DepegResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [countdown, setCountdown] = useState(REFRESH_SECONDS);
   const [thresholdInput, setThresholdInput] = useState("0.35");
+  const [directionMode, setDirectionMode] = useState<DirectionMode>("buy_discount");
 
   const thresholdNum = useMemo(() => {
     const parsed = Number(thresholdInput.replace(",", "."));
@@ -211,6 +254,33 @@ export default function DepegArbitragePage() {
     }));
   }, [data]);
 
+  const filteredRows = useMemo(() => {
+    return rowsToRender.filter((row) => {
+      if (directionMode === "all") return true;
+
+      if (directionMode === "buy_discount") {
+        if (row.id === "eurs-usdt") return false;
+        return row.status === "ok" && row.depeg_pct !== null && row.depeg_pct < 0;
+      }
+
+      return row.status === "ok" && row.depeg_pct !== null && row.depeg_pct > 0;
+    });
+  }, [directionMode, rowsToRender]);
+
+  const rankedRows = useMemo(() => {
+    const rows = [...filteredRows];
+    rows.sort((a, b) => {
+      const aNet = getNetMarginPct(a);
+      const bNet = getNetMarginPct(b);
+      if (aNet === null && bNet === null) return a.label.localeCompare(b.label);
+      if (aNet === null) return 1;
+      if (bNet === null) return -1;
+      if (bNet !== aNet) return bNet - aNet;
+      return a.label.localeCompare(b.label);
+    });
+    return rows;
+  }, [filteredRows]);
+
   const activeThresholdPct = data?.threshold_pct ?? thresholdNum;
 
   const monitoredCount = data ? Math.max(data.summary.monitored_pairs, rowsToRender.length) : 0;
@@ -276,6 +346,39 @@ export default function DepegArbitragePage() {
                 }}
               />
             </label>
+            <div style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>Direcao</span>
+              <div style={{ display: "inline-flex", border: "1px solid var(--card-border)", borderRadius: 10, overflow: "hidden", width: "fit-content" }}>
+                {[
+                  { value: "all", label: "Todas" },
+                  { value: "buy_discount", label: "Compra (desconto)" },
+                  { value: "sell_premium", label: "Venda (premium)" },
+                ].map((mode) => {
+                  const active = directionMode === mode.value;
+                  return (
+                    <button
+                      key={mode.value}
+                      onClick={() => setDirectionMode(mode.value as DirectionMode)}
+                      style={{
+                        border: "none",
+                        borderRight: mode.value === "sell_premium" ? "none" : "1px solid var(--card-border)",
+                        padding: "10px 12px",
+                        background: active ? "rgba(14, 165, 233, 0.18)" : "rgba(255,255,255,0.04)",
+                        color: active ? "var(--text)" : "var(--muted)",
+                        fontWeight: active ? 700 : 500,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {mode.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>
+            Margem liquida est. = |Descolamento| - Book spread - Taxa estimada (0.15% em USDT, 0.10% em BRLA).
           </div>
 
           <div style={{ fontSize: 13, color: "var(--muted)", display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -311,7 +414,7 @@ export default function DepegArbitragePage() {
             overflowX: "auto",
           }}
         >
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 980 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1180 }}>
             <thead>
               <tr style={{ textAlign: "left", borderBottom: "1px solid var(--card-border)", color: "var(--muted)", fontSize: 12 }}>
                 <th style={{ padding: "10px 8px" }}>Par</th>
@@ -324,22 +427,29 @@ export default function DepegArbitragePage() {
                 <th style={{ padding: "10px 8px" }}>Descolamento</th>
                 <th style={{ padding: "10px 8px" }}>Assimetria</th>
                 <th style={{ padding: "10px 8px" }}>Book spread</th>
+                <th style={{ padding: "10px 8px" }}>Margem liquida est.</th>
+                <th style={{ padding: "10px 8px" }}>Potencial repareamento</th>
                 <th style={{ padding: "10px 8px" }}>Sinal</th>
               </tr>
             </thead>
             <tbody>
-              {rowsToRender.map((row) => (
-                <tr
-                  key={row.id}
-                  style={{
-                    borderBottom: "1px solid var(--card-border)",
-                    fontSize: 13,
-                    background:
-                      row.status === "ok" && row.asymmetry_pct !== null && row.asymmetry_pct >= activeThresholdPct
-                        ? "rgba(245, 158, 11, 0.07)"
-                        : "transparent",
-                  }}
-                >
+              {rankedRows.map((row) => {
+                const netMarginPct = getNetMarginPct(row);
+                const repegLevel = getRepegPotential(row);
+                const signal = actionSignal(row, activeThresholdPct);
+
+                return (
+                  <tr
+                    key={row.id}
+                    style={{
+                      borderBottom: "1px solid var(--card-border)",
+                      fontSize: 13,
+                      background:
+                        row.status === "ok" && netMarginPct !== null && netMarginPct > 0
+                          ? "rgba(34, 197, 94, 0.08)"
+                          : "transparent",
+                    }}
+                  >
                   <td style={{ padding: "10px 8px" }}>
                     <div style={{ fontWeight: 700 }}>{row.label}</div>
                     <div style={{ fontSize: 11, color: "var(--muted)" }}>{row.symbol}</div>
@@ -387,19 +497,46 @@ export default function DepegArbitragePage() {
                   <td style={{ padding: "10px 8px", color: "var(--muted)" }}>
                     {row.orderbook_spread_pct === null ? "--" : `${row.orderbook_spread_pct.toFixed(4)}%`}
                   </td>
+                  <td
+                    style={{
+                      padding: "10px 8px",
+                      color: netMarginPct === null ? "var(--muted)" : netMarginPct >= 0 ? "#22c55e" : "#ef4444",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {netMarginPct === null ? "--" : `${netMarginPct.toFixed(4)}%`}
+                  </td>
                   <td style={{ padding: "10px 8px" }}>
                     {row.status === "ok" ? (
                       <span
                         style={{
-                          border: `1px solid ${severityColor(row.severity)}`,
-                          color: severityColor(row.severity),
+                          border: `1px solid ${repegPotentialColor(repegLevel)}`,
+                          color: repegPotentialColor(repegLevel),
                           borderRadius: 999,
                           padding: "2px 10px",
                           fontSize: 11,
                           fontWeight: 700,
                         }}
                       >
-                        {row.signal.toUpperCase()}
+                        {repegPotentialLabel(repegLevel)}
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 11, color: "var(--muted)" }}>--</span>
+                    )}
+                  </td>
+                  <td style={{ padding: "10px 8px" }}>
+                    {row.status === "ok" ? (
+                      <span
+                        style={{
+                          border: `1px solid ${signal.color}`,
+                          color: signal.color,
+                          borderRadius: 999,
+                          padding: "2px 10px",
+                          fontSize: 11,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {signal.label}
                       </span>
                     ) : (
                       <span style={{ fontSize: 11, color: "var(--muted)" }} title={row.notes}>
@@ -407,11 +544,12 @@ export default function DepegArbitragePage() {
                       </span>
                     )}
                   </td>
-                </tr>
-              ))}
-              {(!data || rowsToRender.length === 0) && (
+                  </tr>
+                );
+              })}
+              {(!data || rankedRows.length === 0) && (
                 <tr>
-                  <td colSpan={11} style={{ padding: "14px 8px", color: "var(--muted)", fontSize: 13 }}>
+                  <td colSpan={13} style={{ padding: "14px 8px", color: "var(--muted)", fontSize: 13 }}>
                     Nenhum par disponivel neste momento.
                   </td>
                 </tr>

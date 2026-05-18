@@ -72,7 +72,11 @@ type DepegResponse = {
     monitored_pairs: number;
     above_threshold: number;
     max_asymmetry_pct: number;
-    best_opportunity: Pick<DepegRow, "id" | "label" | "depeg_pct" | "asymmetry_pct" | "direction" | "signal"> | null;
+    best_opportunity:
+      | (Pick<DepegRow, "id" | "label" | "depeg_pct" | "asymmetry_pct" | "direction" | "signal"> & {
+          net_margin_pct: number | null;
+        })
+      | null;
   };
   warning?: string;
   error?: string;
@@ -659,6 +663,15 @@ function classify(asymmetryPct: number): { severity: DepegRow["severity"]; signa
   return { severity: "low", signal: "watch" };
 }
 
+function estimatedFeePct(quoteAsset: DepegRow["quote_asset"]): number {
+  return quoteAsset === "BRLA" ? 0.1 : 0.15;
+}
+
+function netMarginPct(row: Pick<DepegRow, "depeg_pct" | "orderbook_spread_pct" | "quote_asset">): number | null {
+  if (row.depeg_pct === null || row.orderbook_spread_pct === null) return null;
+  return Math.abs(row.depeg_pct) - row.orderbook_spread_pct - estimatedFeePct(row.quote_asset);
+}
+
 export async function GET(request: NextRequest) {
   const thresholdPct = parsePositive(request.nextUrl.searchParams.get("min_depeg_pct"), 0.35);
   const now = Date.now();
@@ -818,11 +831,24 @@ export async function GET(request: NextRequest) {
     const aboveThreshold = opportunities
       .filter(
         (row): row is DepegRow & { status: "ok"; asymmetry_pct: number } =>
-          row.status === "ok" && row.asymmetry_pct !== null && row.asymmetry_pct >= thresholdPct
+          row.status === "ok" &&
+          row.asymmetry_pct !== null &&
+          row.asymmetry_pct >= thresholdPct &&
+          row.depeg_pct !== null &&
+          row.depeg_pct < 0
       )
-      .sort((a, b) => b.asymmetry_pct - a.asymmetry_pct);
+      .sort((a, b) => {
+        const aNet = netMarginPct(a);
+        const bNet = netMarginPct(b);
+        if (aNet === null && bNet === null) return b.asymmetry_pct - a.asymmetry_pct;
+        if (aNet === null) return 1;
+        if (bNet === null) return -1;
+        if (bNet !== aNet) return bNet - aNet;
+        return b.asymmetry_pct - a.asymmetry_pct;
+      });
 
     const best = aboveThreshold[0] ?? null;
+    const bestNetMargin = best ? netMarginPct(best) : null;
 
     const payload: DepegResponse = {
       timestamp: new Date().toISOString(),
@@ -843,12 +869,13 @@ export async function GET(request: NextRequest) {
               asymmetry_pct: best.asymmetry_pct,
               direction: best.direction,
               signal: best.signal,
+              net_margin_pct: bestNetMargin !== null ? Number(bestNetMargin.toFixed(4)) : null,
             }
           : null,
       },
       warning:
         aboveThreshold.length === 0
-          ? "Sem descolamento relevante acima do limiar no momento. Exibindo os valores atuais de todos os pares monitorados."
+          ? "Sem oportunidade de compra em desconto acima do limiar no momento. Exibindo os valores atuais de todos os pares monitorados."
           : "Sinal indicativo. Valide liquidez real, slippage e custo operacional antes de executar.",
     };
 
