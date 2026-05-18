@@ -137,27 +137,47 @@ function repegPotentialColor(level: RepegPotential): string {
 function getExchangeLinks(symbol: string): Array<{ label: string; url: string }> {
   const links: Array<{ label: string; url: string }> = [];
   
-  // Binance
-  links.push({ label: "Binance", url: `https://www.binance.com/trade/${symbol}` });
+  // Extrai base e quote (último token é sempre USDT ou BRLA)
+  const match = symbol.match(/^(.+?)(USDT|BRLA)$/);
+  const base = match?.[1] || symbol;
+  const quote = match?.[2] || "USDT";
   
-  // Gate.io
-  const gateSymbol = symbol.replace("USDT", "_USDT");
-  links.push({ label: "Gate.io", url: `https://www.gate.io/trade/${gateSymbol}` });
+  // Binance - formato: FDUSDUSDT
+  links.push({ 
+    label: "Binance", 
+    url: `https://www.binance.com/trade/${symbol}` 
+  });
   
-  // KuCoin
-  const kucoinSymbol = symbol.replace("USDT", "-USDT").replace("BRLA", "-BRLA");
-  links.push({ label: "KuCoin", url: `https://www.kucoin.com/trade/${kucoinSymbol}` });
+  // Gate.io - formato: FDUSD_USDT
+  links.push({ 
+    label: "Gate.io", 
+    url: `https://www.gate.io/trade/${base}_${quote}` 
+  });
   
-  // OKX
-  const okxSymbol = symbol.replace("USDT", "-USDT").replace("BRLA", "-BRLA");
-  links.push({ label: "OKX", url: `https://www.okx.com/trade-spot/${okxSymbol.toLowerCase()}` });
+  // KuCoin - formato: FDUSD-USDT
+  links.push({ 
+    label: "KuCoin", 
+    url: `https://www.kucoin.com/trade/${base}-${quote}` 
+  });
   
-  // Bybit
-  links.push({ label: "Bybit", url: `https://www.bybit.com/trade/spot/${symbol}` });
+  // OKX - formato: fdusd-usdt
+  links.push({ 
+    label: "OKX", 
+    url: `https://www.okx.com/trade-spot/${base.toLowerCase()}-${quote.toLowerCase()}` 
+  });
   
-  // Kraken
-  const krakenSymbol = symbol.replace("USDT", "/USD").replace("BRLA", "/BRL");
-  links.push({ label: "Kraken", url: `https://www.kraken.com/prices/${krakenSymbol}` });
+  // Bybit - formato: FDUSDUSDT
+  links.push({ 
+    label: "Bybit", 
+    url: `https://www.bybit.com/trade/spot/${symbol}` 
+  });
+  
+  // Kraken - formato: FDUSD/USD ou FDUSD/BRL
+  const krakenQuote = quote === "USDT" ? "USD" : "BRL";
+  links.push({ 
+    label: "Kraken", 
+    url: `https://www.kraken.com/prices/${base}/{krakenQuote}`.replace("{krakenQuote}", krakenQuote) 
+  });
   
   return links;
 }
