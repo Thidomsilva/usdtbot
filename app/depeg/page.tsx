@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+type QuoteAsset = "USDT" | "USDC" | "DAI" | "BRLA" | "BRL1" | "BRZ";
+
 type DepegRow = {
   id: string;
   label: string;
   symbol: string;
-  quote_asset: "USDT" | "BRLA";
+  quote_asset: QuoteAsset;
   status: "ok" | "unavailable";
   analyzed_on: string;
   peg_reference: string;
@@ -53,20 +55,29 @@ type DepegResponse = {
 
 const REFRESH_SECONDS = 20;
 const DEFAULT_ESTIMATED_FEE_PCT = 0.15;
+const BRL_STABLE_FEE_PCT = 0.1;
 
 type DirectionMode = "all" | "buy_discount" | "sell_premium";
 type RepegPotential = "high" | "medium" | "low";
 
 const DEFAULT_MONITORED_PAIRS: Array<Pick<DepegRow, "id" | "label" | "symbol" | "quote_asset" | "peg_reference"> & { ideal_price: number | null }> = [
-  { id: "fdusd-usdt", label: "FDUSD x USDT", symbol: "FDUSDUSDT", quote_asset: "USDT", peg_reference: "USD (1:1)", ideal_price: 1 },
-  { id: "tusd-usdt", label: "TUSD x USDT", symbol: "TUSDUSDT", quote_asset: "USDT", peg_reference: "USD (1:1)", ideal_price: 1 },
-  { id: "dai-usdt", label: "DAI x USDT", symbol: "DAIUSDT", quote_asset: "USDT", peg_reference: "USD (1:1)", ideal_price: 1 },
-  { id: "eurc-usdt", label: "EURC x USDT", symbol: "EURCUSDT", quote_asset: "USDT", peg_reference: "EUR/USD via Frankfurter", ideal_price: null },
-  { id: "eurs-usdt", label: "EURS x USDT", symbol: "EURSUSDT", quote_asset: "USDT", peg_reference: "EUR/USD via Frankfurter", ideal_price: null },
-  { id: "brz-usdt", label: "BRZ x USDT", symbol: "BRZUSDT", quote_asset: "USDT", peg_reference: "BRL/USD via Frankfurter", ideal_price: null },
-  { id: "brz-brla", label: "BRZ x BRLA", symbol: "BRZBRLA", quote_asset: "BRLA", peg_reference: "BRLA (1:1, contratos oficiais)", ideal_price: 1 },
-  { id: "brl1-usdt", label: "BRL1 x USDT", symbol: "BRL1USDT", quote_asset: "USDT", peg_reference: "BRL/USD via Frankfurter", ideal_price: null },
+  { id: "usdt-usdc", label: "USDT x USDC", symbol: "USDTUSDC", quote_asset: "USDC", peg_reference: "USD stablecoin (1:1)", ideal_price: 1 },
+  { id: "usdt-dai", label: "USDT x DAI", symbol: "USDTDAI", quote_asset: "DAI", peg_reference: "USD stablecoin (1:1)", ideal_price: 1 },
+  { id: "usdc-usdt", label: "USDC x USDT", symbol: "USDCUSDT", quote_asset: "USDT", peg_reference: "USD stablecoin (1:1)", ideal_price: 1 },
+  { id: "usdc-dai", label: "USDC x DAI", symbol: "USDCDAI", quote_asset: "DAI", peg_reference: "USD stablecoin (1:1)", ideal_price: 1 },
+  { id: "dai-usdt", label: "DAI x USDT", symbol: "DAIUSDT", quote_asset: "USDT", peg_reference: "USD stablecoin (1:1)", ideal_price: 1 },
+  { id: "dai-usdc", label: "DAI x USDC", symbol: "DAIUSDC", quote_asset: "USDC", peg_reference: "USD stablecoin (1:1)", ideal_price: 1 },
+  { id: "brla-brl1", label: "BRLA x BRL1", symbol: "BRLABRL1", quote_asset: "BRL1", peg_reference: "BRL stablecoin (1:1)", ideal_price: 1 },
+  { id: "brla-brz", label: "BRLA x BRZ", symbol: "BRLABRZ", quote_asset: "BRZ", peg_reference: "BRL stablecoin (1:1)", ideal_price: 1 },
+  { id: "brz-brla", label: "BRZ x BRLA", symbol: "BRZBRLA", quote_asset: "BRLA", peg_reference: "BRL stablecoin (1:1)", ideal_price: 1 },
+  { id: "brz-brl1", label: "BRZ x BRL1", symbol: "BRZBRL1", quote_asset: "BRL1", peg_reference: "BRL stablecoin (1:1)", ideal_price: 1 },
+  { id: "brl1-brz", label: "BRL1 x BRZ", symbol: "BRL1BRZ", quote_asset: "BRZ", peg_reference: "BRL stablecoin (1:1)", ideal_price: 1 },
+  { id: "brl1-brla", label: "BRL1 x BRLA", symbol: "BRL1BRLA", quote_asset: "BRLA", peg_reference: "BRL stablecoin (1:1)", ideal_price: 1 },
 ];
+
+function isBrlStableQuote(quoteAsset: QuoteAsset): boolean {
+  return quoteAsset === "BRLA" || quoteAsset === "BRL1" || quoteAsset === "BRZ";
+}
 
 function pct(value: number | null): string {
   if (value === null) return "--";
@@ -107,8 +118,7 @@ function unavailableSignal(notes: string): string {
 }
 
 function getEstimatedFeePct(row: DepegRow): number {
-  if (row.quote_asset === "BRLA") return 0.1;
-  return DEFAULT_ESTIMATED_FEE_PCT;
+  return isBrlStableQuote(row.quote_asset) ? BRL_STABLE_FEE_PCT : DEFAULT_ESTIMATED_FEE_PCT;
 }
 
 function getNetMarginPct(row: DepegRow): number | null {
@@ -117,9 +127,9 @@ function getNetMarginPct(row: DepegRow): number | null {
 }
 
 function getRepegPotential(row: DepegRow): RepegPotential {
-  if (row.id === "fdusd-usdt" || row.id === "dai-usdt" || row.id === "eurc-usdt") return "high";
-  if (row.id === "brz-usdt" || row.id === "brz-brla" || row.id === "brl1-usdt") return "medium";
-  return "low";
+  if (row.id.startsWith("usdt-") || row.id.startsWith("usdc-") || row.id.startsWith("dai-")) return "high";
+  if (row.id === "brz-brla" || row.id === "brla-brl1" || row.id === "brl1-brla") return "high";
+  return "medium";
 }
 
 function repegPotentialLabel(level: RepegPotential): string {
@@ -137,8 +147,8 @@ function repegPotentialColor(level: RepegPotential): string {
 function getExchangeLinks(symbol: string): Array<{ label: string; url: string }> {
   const links: Array<{ label: string; url: string }> = [];
   
-  // Extrai base e quote (último token é sempre USDT ou BRLA)
-  const match = symbol.match(/^(.+?)(USDT|BRLA)$/);
+  // Extrai base e quote para os pares monitorados.
+  const match = symbol.match(/^(.+?)(USDT|USDC|DAI|BRLA|BRL1|BRZ)$/);
   const base = match?.[1] || symbol;
   const quote = match?.[2] || "USDT";
   
@@ -173,7 +183,7 @@ function getExchangeLinks(symbol: string): Array<{ label: string; url: string }>
   });
   
   // Kraken - formato: FDUSD/USD ou FDUSD/BRL
-  const krakenQuote = quote === "USDT" ? "USD" : "BRL";
+  const krakenQuote = quote === "BRLA" || quote === "BRL1" || quote === "BRZ" ? "BRL" : quote;
   links.push({ 
     label: "Kraken", 
     url: `https://www.kraken.com/prices/${base}/{krakenQuote}`.replace("{krakenQuote}", krakenQuote) 
@@ -307,7 +317,6 @@ export default function DepegArbitragePage() {
       if (directionMode === "all") return true;
 
       if (directionMode === "buy_discount") {
-        if (row.id === "eurs-usdt") return false;
         return row.status === "ok" && row.depeg_pct !== null && row.depeg_pct < 0;
       }
 
@@ -426,7 +435,7 @@ export default function DepegArbitragePage() {
           </div>
 
           <div style={{ fontSize: 12, color: "var(--muted)" }}>
-            Margem liquida est. = |Descolamento| - Book spread - Taxa estimada (0.15% em USDT, 0.10% em BRLA).
+            Margem liquida est. = |Descolamento| - Book spread - Taxa estimada (0.15% em pares USD-stable, 0.10% em pares BRL-stable).
           </div>
 
           <div style={{ fontSize: 13, color: "var(--muted)", display: "flex", gap: 8, flexWrap: "wrap" }}>
