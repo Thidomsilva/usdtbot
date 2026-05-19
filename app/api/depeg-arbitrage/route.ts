@@ -7,6 +7,7 @@ const TIMEOUT_MS = 9_000;
 const CACHE_TTL_MS = 10_000; // Reduzido para 10s para atualizar USD/BRL mais frequentemente
 
 type FxBase = "EUR" | "BRL";
+type AssetSymbol = "USDT" | "USDC" | "DAI" | "BRLA" | "BRL1" | "BRZ";
 type QuoteAsset = "USDT" | "USDC" | "DAI" | "BRLA" | "BRL1" | "BRZ";
 type IdealType = "usd_peg" | "fx" | "cross_peg";
 
@@ -14,6 +15,7 @@ type PairConfig = {
   id: string;
   label: string;
   symbol: string;
+  baseAsset: AssetSymbol;
   quoteAsset: QuoteAsset;
   pegReference: string;
   gateSymbol: string;
@@ -91,11 +93,21 @@ type CacheEntry = {
 
 const cache = new Map<string, CacheEntry>();
 
+const ASSET_METADATA: Record<AssetSymbol, { coingeckoId: string; coinmarketcapSlug: string }> = {
+  USDT: { coingeckoId: "tether", coinmarketcapSlug: "tether" },
+  USDC: { coingeckoId: "usd-coin", coinmarketcapSlug: "usd-coin" },
+  DAI: { coingeckoId: "dai", coinmarketcapSlug: "multi-collateral-dai" },
+  BRLA: { coingeckoId: "brazilian-digital-token", coinmarketcapSlug: "brla-digital-brl" },
+  BRL1: { coingeckoId: "brl1", coinmarketcapSlug: "brl1" },
+  BRZ: { coingeckoId: "brz", coinmarketcapSlug: "brz" },
+};
+
 const PAIRS: PairConfig[] = [
   {
     id: "usdt-usdc",
     label: "USDT x USDC",
     symbol: "USDTUSDC",
+    baseAsset: "USDT",
     quoteAsset: "USDC",
     pegReference: "USD stablecoin (1:1)",
     gateSymbol: "USDT_USDC",
@@ -114,6 +126,7 @@ const PAIRS: PairConfig[] = [
     id: "usdt-dai",
     label: "USDT x DAI",
     symbol: "USDTDAI",
+    baseAsset: "USDT",
     quoteAsset: "DAI",
     pegReference: "USD stablecoin (1:1)",
     gateSymbol: "USDT_DAI",
@@ -132,6 +145,7 @@ const PAIRS: PairConfig[] = [
     id: "usdc-usdt",
     label: "USDC x USDT",
     symbol: "USDCUSDT",
+    baseAsset: "USDC",
     quoteAsset: "USDT",
     pegReference: "USD stablecoin (1:1)",
     gateSymbol: "USDC_USDT",
@@ -150,6 +164,7 @@ const PAIRS: PairConfig[] = [
     id: "usdc-dai",
     label: "USDC x DAI",
     symbol: "USDCDAI",
+    baseAsset: "USDC",
     quoteAsset: "DAI",
     pegReference: "USD stablecoin (1:1)",
     gateSymbol: "USDC_DAI",
@@ -168,6 +183,7 @@ const PAIRS: PairConfig[] = [
     id: "dai-usdt",
     label: "DAI x USDT",
     symbol: "DAIUSDT",
+    baseAsset: "DAI",
     quoteAsset: "USDT",
     pegReference: "USD stablecoin (1:1)",
     gateSymbol: "DAI_USDT",
@@ -186,6 +202,7 @@ const PAIRS: PairConfig[] = [
     id: "dai-usdc",
     label: "DAI x USDC",
     symbol: "DAIUSDC",
+    baseAsset: "DAI",
     quoteAsset: "USDC",
     pegReference: "USD stablecoin (1:1)",
     gateSymbol: "DAI_USDC",
@@ -204,6 +221,7 @@ const PAIRS: PairConfig[] = [
     id: "brla-brl1",
     label: "BRLA x BRL1",
     symbol: "BRLABRL1",
+    baseAsset: "BRLA",
     quoteAsset: "BRL1",
     pegReference: "BRL stablecoin (1:1)",
     gateSymbol: "BRLA_BRL1",
@@ -222,6 +240,7 @@ const PAIRS: PairConfig[] = [
     id: "brla-brz",
     label: "BRLA x BRZ",
     symbol: "BRLABRZ",
+    baseAsset: "BRLA",
     quoteAsset: "BRZ",
     pegReference: "BRL stablecoin (1:1)",
     gateSymbol: "BRLA_BRZ",
@@ -240,6 +259,7 @@ const PAIRS: PairConfig[] = [
     id: "brz-brla",
     label: "BRZ x BRLA",
     symbol: "BRZBRLA",
+    baseAsset: "BRZ",
     quoteAsset: "BRLA",
     pegReference: "BRL stablecoin (1:1)",
     gateSymbol: "BRZ_BRLA",
@@ -258,6 +278,7 @@ const PAIRS: PairConfig[] = [
     id: "brz-brl1",
     label: "BRZ x BRL1",
     symbol: "BRZBRL1",
+    baseAsset: "BRZ",
     quoteAsset: "BRL1",
     pegReference: "BRL stablecoin (1:1)",
     gateSymbol: "BRZ_BRL1",
@@ -276,6 +297,7 @@ const PAIRS: PairConfig[] = [
     id: "brl1-brz",
     label: "BRL1 x BRZ",
     symbol: "BRL1BRZ",
+    baseAsset: "BRL1",
     quoteAsset: "BRZ",
     pegReference: "BRL stablecoin (1:1)",
     gateSymbol: "BRL1_BRZ",
@@ -294,6 +316,7 @@ const PAIRS: PairConfig[] = [
     id: "brl1-brla",
     label: "BRL1 x BRLA",
     symbol: "BRL1BRLA",
+    baseAsset: "BRL1",
     quoteAsset: "BRLA",
     pegReference: "BRL stablecoin (1:1)",
     gateSymbol: "BRL1_BRLA",
@@ -312,7 +335,7 @@ const PAIRS: PairConfig[] = [
 
 function fallbackRows(reason: string): DepegRow[] {
   return PAIRS.map((pair) => {
-    const isUsdPeg = pair.idealType === "usd_peg";
+    const hasFixedParity = pair.idealType === "usd_peg" || pair.idealType === "cross_peg";
     return {
       id: pair.id,
       label: pair.label,
@@ -326,7 +349,7 @@ function fallbackRows(reason: string): DepegRow[] {
       bid_price: null,
       ask_price: null,
       orderbook_spread_pct: null,
-      ideal_price: isUsdPeg ? 1 : null,
+      ideal_price: hasFixedParity ? 1 : null,
       ideal_price_brl: null,
       depeg_pct: null,
       asymmetry_pct: null,
@@ -569,6 +592,51 @@ async function fetchTickerCoinMarketCap(slug: string): Promise<TickerResult | nu
   }
 }
 
+async function fetchAggregatorRatio(pair: PairConfig): Promise<TickerResult | null> {
+  const baseMeta = ASSET_METADATA[pair.baseAsset];
+  const quoteMeta = ASSET_METADATA[pair.quoteAsset];
+
+  try {
+    const [baseTicker, quoteTicker] = await Promise.all([
+      fetchTickerCoinGecko(baseMeta.coingeckoId),
+      fetchTickerCoinGecko(quoteMeta.coingeckoId),
+    ]);
+
+    if (baseTicker && quoteTicker && baseTicker.mid > 0 && quoteTicker.mid > 0) {
+      const mid = baseTicker.mid / quoteTicker.mid;
+      return {
+        bid: mid * 0.9999,
+        ask: mid * 1.0001,
+        mid,
+        source: "CoinGecko ratio",
+      };
+    }
+  } catch {
+    // Continua para o fallback seguinte.
+  }
+
+  try {
+    const [baseTicker, quoteTicker] = await Promise.all([
+      fetchTickerCoinMarketCap(baseMeta.coinmarketcapSlug),
+      fetchTickerCoinMarketCap(quoteMeta.coinmarketcapSlug),
+    ]);
+
+    if (baseTicker && quoteTicker && baseTicker.mid > 0 && quoteTicker.mid > 0) {
+      const mid = baseTicker.mid / quoteTicker.mid;
+      return {
+        bid: mid * 0.9999,
+        ask: mid * 1.0001,
+        mid,
+        source: "CoinMarketCap ratio",
+      };
+    }
+  } catch {
+    // Sem razao disponivel nos agregadores.
+  }
+
+  return null;
+}
+
 async function fetchTickerWithFallback(pair: PairConfig): Promise<{ ticker: TickerResult | null; reason: string | null }> {
   const errors: string[] = [];
 
@@ -645,6 +713,19 @@ async function fetchTickerWithFallback(pair: PairConfig): Promise<{ ticker: Tick
   }
 
   if (pair.disableAggregatorFallback) {
+    const reason = [...new Set(errors)].join(" | ");
+    return { ticker: null, reason: reason || null };
+  }
+
+  if (pair.idealType === "cross_peg") {
+    try {
+      const ticker = await fetchAggregatorRatio(pair);
+      if (ticker) return { ticker, reason: null };
+      errors.push("Sem razao disponivel nos agregadores para o par monitorado");
+    } catch (err) {
+      errors.push(normalizeError(err));
+    }
+
     const reason = [...new Set(errors)].join(" | ");
     return { ticker: null, reason: reason || null };
   }
