@@ -33,6 +33,7 @@ type PairConfig = {
   priceMode?: "market" | "defillama_ratio";
   displayBrl?: boolean;
   disableAggregatorFallback?: boolean;
+  defilamaSymbol?: string; // ID alternativo para DefiLlama (ex: ethereum:0x...)
 };
 
 type TickerResult = {
@@ -235,6 +236,7 @@ const PAIRS: PairConfig[] = [
     coingeckoId: "brazilian-digital-token",
     coinmarketcapSlug: "brla-digital-brl",
     idealType: "cross_peg",
+    defilamaSymbol: "polygon:0xe6a537a407488807f0bbeb0038b79004f19dddfb,polygon:0x5c067c80c00ecd2345b05e83a3e758ef799c40b5",
   },
   {
     id: "brla-brz",
@@ -254,6 +256,7 @@ const PAIRS: PairConfig[] = [
     coingeckoId: "brazilian-digital-token",
     coinmarketcapSlug: "brla-digital-brl",
     idealType: "cross_peg",
+    defilamaSymbol: "polygon:0xe6a537a407488807f0bbeb0038b79004f19dddfb,polygon:0x4ed141110f6eeeaba9a1df36d8c26f684d2475dc",
   },
   {
     id: "brz-brla",
@@ -273,6 +276,7 @@ const PAIRS: PairConfig[] = [
     coingeckoId: "brz",
     coinmarketcapSlug: "brz",
     idealType: "cross_peg",
+    defilamaSymbol: "polygon:0x4ed141110f6eeeaba9a1df36d8c26f684d2475dc,polygon:0xe6a537a407488807f0bbeb0038b79004f19dddfb",
   },
   {
     id: "brz-brl1",
@@ -292,6 +296,7 @@ const PAIRS: PairConfig[] = [
     coingeckoId: "brz",
     coinmarketcapSlug: "brz",
     idealType: "cross_peg",
+    defilamaSymbol: "polygon:0x4ed141110f6eeeaba9a1df36d8c26f684d2475dc,polygon:0x5c067c80c00ecd2345b05e83a3e758ef799c40b5",
   },
   {
     id: "brl1-brz",
@@ -311,6 +316,7 @@ const PAIRS: PairConfig[] = [
     coingeckoId: "brl1",
     coinmarketcapSlug: "brl1",
     idealType: "cross_peg",
+    defilamaSymbol: "polygon:0x5c067c80c00ecd2345b05e83a3e758ef799c40b5,polygon:0x4ed141110f6eeeaba9a1df36d8c26f684d2475dc",
   },
   {
     id: "brl1-brla",
@@ -330,6 +336,7 @@ const PAIRS: PairConfig[] = [
     coingeckoId: "brl1",
     coinmarketcapSlug: "brl1",
     idealType: "cross_peg",
+    defilamaSymbol: "polygon:0x5c067c80c00ecd2345b05e83a3e758ef799c40b5,polygon:0xe6a537a407488807f0bbeb0038b79004f19dddfb",
   },
 ];
 
@@ -592,6 +599,56 @@ async function fetchTickerCoinMarketCap(slug: string): Promise<TickerResult | nu
   }
 }
 
+async function fetchTickerDefiLlama(coingeckoId: string, defilamaSymbol?: string): Promise<TickerResult | null> {
+  try {
+    // Tenta primeiro com o símbolo customizado se fornecido (ex: ethereum:0x...)
+    if (defilamaSymbol) {
+      const data = await fetchJson(
+        `https://api.llama.fi/prices?symbols=${defilamaSymbol}&searchWidth=4h`
+      );
+      
+      const coins = data?.coins || {};
+      const tokenData = coins[defilamaSymbol];
+      
+      if (tokenData) {
+        const price = toNum(tokenData.price);
+        if (price > 0) {
+          const bid = price * 0.9999;
+          const ask = price * 1.0001;
+          return { bid, ask, mid: price, source: "DefiLlama" };
+        }
+      }
+    }
+
+    // Tenta com o CoinGecko ID
+    const data = await fetchJson(
+      `https://api.llama.fi/prices?symbols=coingecko:${coingeckoId}&searchWidth=4h`
+    );
+    
+    const coins = data?.coins || {};
+    const key = `coingecko:${coingeckoId}`;
+    const tokenData = coins[key];
+    
+    if (!tokenData) {
+      return null;
+    }
+    
+    const price = toNum(tokenData.price);
+    
+    if (price <= 0) {
+      return null;
+    }
+
+    // DefiLlama nao fornece bid/ask, usamos o preco como mid
+    const bid = price * 0.9999;
+    const ask = price * 1.0001;
+
+    return { bid, ask, mid: price, source: "DefiLlama" };
+  } catch {
+    return null;
+  }
+}
+
 async function fetchAggregatorRatio(pair: PairConfig): Promise<TickerResult | null> {
   const baseMeta = ASSET_METADATA[pair.baseAsset];
   const quoteMeta = ASSET_METADATA[pair.quoteAsset];
@@ -628,6 +685,29 @@ async function fetchAggregatorRatio(pair: PairConfig): Promise<TickerResult | nu
         ask: mid * 1.0001,
         mid,
         source: "CoinMarketCap ratio",
+      };
+    }
+  } catch {
+    // Continua para o fallback seguinte.
+  }
+
+  try {
+    const defilamaAddrs = pair.defilamaSymbol?.split(",").map(s => s.trim()) || [];
+    const baseDefillama = defilamaAddrs[0] || undefined;
+    const quoteDefillama = defilamaAddrs[1] || undefined;
+
+    const [baseTicker, quoteTicker] = await Promise.all([
+      fetchTickerDefiLlama(baseMeta.coingeckoId, baseDefillama),
+      fetchTickerDefiLlama(quoteMeta.coingeckoId, quoteDefillama),
+    ]);
+
+    if (baseTicker && quoteTicker && baseTicker.mid > 0 && quoteTicker.mid > 0) {
+      const mid = baseTicker.mid / quoteTicker.mid;
+      return {
+        bid: mid * 0.9999,
+        ask: mid * 1.0001,
+        mid,
+        source: "DefiLlama ratio",
       };
     }
   } catch {
@@ -742,6 +822,16 @@ async function fetchTickerWithFallback(pair: PairConfig): Promise<{ ticker: Tick
     const ticker = await fetchTickerCoinMarketCap(pair.coinmarketcapSlug);
     if (ticker) return { ticker, reason: null };
     errors.push("Sem preco disponivel na CoinMarketCap");
+  } catch (err) {
+    errors.push(normalizeError(err));
+  }
+
+  try {
+    const defilamaAddrs = pair.defilamaSymbol?.split(",").map(s => s.trim()) || [];
+    const baseDefillama = defilamaAddrs[0] || undefined;
+    const ticker = await fetchTickerDefiLlama(pair.coingeckoId, baseDefillama);
+    if (ticker) return { ticker, reason: null };
+    errors.push("Sem preco disponivel na DefiLlama");
   } catch (err) {
     errors.push(normalizeError(err));
   }
