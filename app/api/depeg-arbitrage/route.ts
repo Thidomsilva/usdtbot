@@ -98,7 +98,7 @@ const ASSET_METADATA: Record<AssetSymbol, { coingeckoId: string; coinmarketcapSl
   USDT: { coingeckoId: "tether", coinmarketcapSlug: "tether" },
   USDC: { coingeckoId: "usd-coin", coinmarketcapSlug: "usd-coin" },
   DAI: { coingeckoId: "dai", coinmarketcapSlug: "multi-collateral-dai" },
-  BRLA: { coingeckoId: "brazilian-digital-token", coinmarketcapSlug: "brla-digital-brl" },
+  BRLA: { coingeckoId: "brla-digital-brla", coinmarketcapSlug: "brla-digital-brl" },
   BRL1: { coingeckoId: "brl1", coinmarketcapSlug: "brl1" },
   BRZ: { coingeckoId: "brz", coinmarketcapSlug: "brz" },
 };
@@ -233,7 +233,7 @@ const PAIRS: PairConfig[] = [
     htxSymbol: "brlabrl1",
     krakenSymbol: "BRLABRL1",
     coinbaseSymbol: "BRLA-BRL1",
-    coingeckoId: "brazilian-digital-token",
+    coingeckoId: "brla-digital-brla",
     coinmarketcapSlug: "brla-digital-brl",
     idealType: "cross_peg",
     defilamaSymbol: "polygon:0xe6a537a407488807f0bbeb0038b79004f19dddfb,polygon:0x5c067c80c00ecd2345b05e83a3e758ef799c40b5",
@@ -253,7 +253,7 @@ const PAIRS: PairConfig[] = [
     htxSymbol: "brlabrz",
     krakenSymbol: "BRLABRZ",
     coinbaseSymbol: "BRLA-BRZ",
-    coingeckoId: "brazilian-digital-token",
+    coingeckoId: "brla-digital-brla",
     coinmarketcapSlug: "brla-digital-brl",
     idealType: "cross_peg",
     defilamaSymbol: "polygon:0xe6a537a407488807f0bbeb0038b79004f19dddfb,polygon:0x4ed141110f6eeeaba9a1df36d8c26f684d2475dc",
@@ -604,7 +604,7 @@ async function fetchTickerDefiLlama(coingeckoId: string, defilamaSymbol?: string
     // Tenta primeiro com o símbolo customizado se fornecido (ex: ethereum:0x...)
     if (defilamaSymbol) {
       const data = await fetchJson(
-        `https://api.llama.fi/prices?symbols=${defilamaSymbol}&searchWidth=4h`
+        `https://coins.llama.fi/prices/current/${defilamaSymbol}`
       );
       
       const coins = data?.coins || {};
@@ -622,7 +622,7 @@ async function fetchTickerDefiLlama(coingeckoId: string, defilamaSymbol?: string
 
     // Tenta com o CoinGecko ID
     const data = await fetchJson(
-      `https://api.llama.fi/prices?symbols=coingecko:${coingeckoId}&searchWidth=4h`
+      `https://coins.llama.fi/prices/current/coingecko:${coingeckoId}`
     );
     
     const coins = data?.coins || {};
