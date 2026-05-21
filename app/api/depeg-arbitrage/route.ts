@@ -921,6 +921,20 @@ function netMarginPct(row: Pick<DepegRow, "depeg_pct" | "orderbook_spread_pct" |
   return Math.abs(row.depeg_pct) - row.orderbook_spread_pct - estimatedFeePct(row.quote_asset);
 }
 
+function hasExecutableOrderbookSource(source: string): boolean {
+  return (
+    source.includes("Binance Spot BookTicker") ||
+    source.includes("Gate Spot Ticker") ||
+    source.includes("KuCoin Spot Level1") ||
+    source.includes("OKX Spot Ticker") ||
+    source.includes("CoinEx Spot Ticker") ||
+    source.includes("Bybit Spot Ticker") ||
+    source.includes("HTX Spot Ticker") ||
+    source.includes("Kraken Spot Ticker") ||
+    source.includes("Coinbase Spot Ticker")
+  );
+}
+
 export async function GET(request: NextRequest) {
   const thresholdPct = parsePositive(request.nextUrl.searchParams.get("min_depeg_pct"), 0.35);
   const now = Date.now();
@@ -1014,10 +1028,12 @@ export async function GET(request: NextRequest) {
           const orderbookSpreadPct = ((ticker.ask - ticker.bid) / ticker.mid) * 100;
           const { severity, signal } = classify(asymmetryPct);
 
-          const notes =
-            direction === "below_peg"
+          const executableSource = hasExecutableOrderbookSource(ticker.source);
+          const notes = executableSource
+            ? direction === "below_peg"
               ? "Ativo negociando abaixo da paridade teorica."
-              : "Ativo negociando acima da paridade teorica.";
+              : "Ativo negociando acima da paridade teorica."
+            : "Fonte indicativa (ratio), pode divergir da execucao real no mesmo momento.";
 
           return {
             id: pair.id,
@@ -1081,6 +1097,7 @@ export async function GET(request: NextRequest) {
       .filter(
         (row): row is DepegRow & { status: "ok"; asymmetry_pct: number } =>
           row.status === "ok" &&
+          hasExecutableOrderbookSource(row.analyzed_on) &&
           row.asymmetry_pct !== null &&
           row.asymmetry_pct >= thresholdPct &&
           row.depeg_pct !== null &&
@@ -1125,7 +1142,7 @@ export async function GET(request: NextRequest) {
       warning:
         aboveThreshold.length === 0
           ? "Sem oportunidade de compra em desconto acima do limiar no momento. Exibindo os valores atuais de todos os pares monitorados."
-          : "Sinal indicativo. Valide liquidez real, slippage e custo operacional antes de executar.",
+          : "Sinal baseado em fontes executaveis (orderbook). Valide liquidez real, slippage e custo operacional antes de executar.",
     };
 
     cache.set(cacheKey, {

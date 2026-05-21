@@ -126,6 +126,20 @@ function getNetMarginPct(row: DepegRow): number | null {
   return Math.abs(row.depeg_pct) - row.orderbook_spread_pct - getEstimatedFeePct(row);
 }
 
+function hasExecutableOrderbookSource(source: string): boolean {
+  return (
+    source.includes("Binance Spot BookTicker") ||
+    source.includes("Gate Spot Ticker") ||
+    source.includes("KuCoin Spot Level1") ||
+    source.includes("OKX Spot Ticker") ||
+    source.includes("CoinEx Spot Ticker") ||
+    source.includes("Bybit Spot Ticker") ||
+    source.includes("HTX Spot Ticker") ||
+    source.includes("Kraken Spot Ticker") ||
+    source.includes("Coinbase Spot Ticker")
+  );
+}
+
 function getRepegPotential(row: DepegRow): RepegPotential {
   if (row.id.startsWith("usdt-") || row.id.startsWith("usdc-") || row.id.startsWith("dai-")) return "high";
   if (row.id === "brz-brla" || row.id === "brla-brl1" || row.id === "brl1-brla") return "high";
@@ -194,6 +208,7 @@ function getExchangeLinks(symbol: string): Array<{ label: string; url: string }>
 
 function actionSignal(row: DepegRow, activeThresholdPct: number): { label: string; color: string } {
   if (row.depeg_pct === null) return { label: "SEM DADO", color: "var(--muted)" };
+  if (!hasExecutableOrderbookSource(row.analyzed_on)) return { label: "INDICATIVO", color: "#f59e0b" };
   if (row.depeg_pct > 0) return { label: "IGNORAR", color: "#ef4444" };
 
   const asymmetry = row.asymmetry_pct ?? 0;
@@ -528,7 +543,10 @@ export default function DepegArbitragePage() {
                   </td>
                   <td style={{ padding: "10px 8px" }}>
                     <div>{row.analyzed_on}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{row.peg_reference}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                      {row.peg_reference}
+                      {!hasExecutableOrderbookSource(row.analyzed_on) ? " · fonte indicativa" : ""}
+                    </div>
                   </td>
                   <td style={{ padding: "10px 8px" }}>{price(row.market_price, row.quote_asset)}</td>
                   <td style={{ padding: "10px 8px", color: "var(--muted)", fontSize: 12 }}>{brl(row.market_price_brl)}</td>
