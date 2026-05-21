@@ -545,7 +545,7 @@ export default function DepegArbitragePage() {
                     <div>{row.analyzed_on}</div>
                     <div style={{ fontSize: 11, color: "var(--muted)" }}>
                       {row.peg_reference}
-                      {!hasExecutableOrderbookSource(row.analyzed_on) ? " · fonte indicativa" : ""}
+                      {row.status === "ok" && !hasExecutableOrderbookSource(row.analyzed_on) ? " · fonte indicativa" : ""}
                     </div>
                   </td>
                   <td style={{ padding: "10px 8px" }}>{price(row.market_price, row.quote_asset)}</td>
