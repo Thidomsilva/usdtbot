@@ -4,7 +4,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const TIMEOUT_MS = 9_000;
-const CACHE_TTL_MS = 10_000; // Reduzido para 10s para atualizar USD/BRL mais frequentemente
+const CACHE_TTL_MS = 2_000; // Cache curto para reduzir defasagem entre tela e mercado
 
 type FxBase = "EUR" | "BRL";
 type AssetSymbol = "USDT" | "USDC" | "DAI" | "BRLA" | "BRL1" | "BRZ";
@@ -798,16 +798,13 @@ async function fetchTickerWithFallback(pair: PairConfig): Promise<{ ticker: Tick
   }
 
   if (pair.idealType === "cross_peg") {
-    try {
-      const ticker = await fetchAggregatorRatio(pair);
-      if (ticker) return { ticker, reason: null };
-      errors.push("Sem razao disponivel nos agregadores para o par monitorado");
-    } catch (err) {
-      errors.push(normalizeError(err));
-    }
-
     const reason = [...new Set(errors)].join(" | ");
-    return { ticker: null, reason: reason || null };
+    return {
+      ticker: null,
+      reason:
+        reason ||
+        "Sem fonte executavel de orderbook no momento (ratio foi desconsiderado para evitar divergencia com a pratica)",
+    };
   }
 
   try {
@@ -1118,7 +1115,7 @@ export async function GET(request: NextRequest) {
 
     const payload: DepegResponse = {
       timestamp: new Date().toISOString(),
-      source: "binance/gate/kucoin/okx/coinex/bybit/htx/kraken/coinbase/coingecko/coinmarketcap + frankfurter-fx + defillama-official",
+      source: "binance/gate/kucoin/okx/coinex/bybit/htx/kraken/coinbase + frankfurter-fx",
       threshold_pct: Number(thresholdPct.toFixed(4)),
       usd_brl: usdBrl > 0 ? Number(usdBrl.toFixed(6)) : null,
       monitored_rows: opportunities,
@@ -1154,7 +1151,7 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     const payload: DepegResponse = {
       timestamp: new Date().toISOString(),
-      source: "binance/gate/kucoin/okx/coinex/bybit/htx/kraken/coinbase/coingecko/coinmarketcap + frankfurter-fx + defillama-official",
+      source: "binance/gate/kucoin/okx/coinex/bybit/htx/kraken/coinbase + frankfurter-fx",
       threshold_pct: Number(thresholdPct.toFixed(4)),
       usd_brl: null,
       monitored_rows: fallbackRows("Par monitorado, mas a atualizacao geral da API falhou neste ciclo."),

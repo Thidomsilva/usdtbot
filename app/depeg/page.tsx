@@ -53,7 +53,7 @@ type DepegResponse = {
   error?: string;
 };
 
-const REFRESH_SECONDS = 20;
+const REFRESH_SECONDS = 5;
 const DEFAULT_ESTIMATED_FEE_PCT = 0.15;
 const BRL_STABLE_FEE_PCT = 0.1;
 
