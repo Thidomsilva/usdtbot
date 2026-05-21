@@ -798,12 +798,25 @@ async function fetchTickerWithFallback(pair: PairConfig): Promise<{ ticker: Tick
   }
 
   if (pair.idealType === "cross_peg") {
+    try {
+      const ticker = await fetchAggregatorRatio(pair);
+      if (ticker) {
+        return {
+          ticker,
+          reason: [...new Set(errors)].join(" | ") || null,
+        };
+      }
+      errors.push("Sem razao disponivel nos agregadores para o par monitorado");
+    } catch (err) {
+      errors.push(normalizeError(err));
+    }
+
     const reason = [...new Set(errors)].join(" | ");
     return {
       ticker: null,
       reason:
         reason ||
-        "Sem fonte executavel de orderbook no momento (ratio foi desconsiderado para evitar divergencia com a pratica)",
+        "Sem fonte executavel de orderbook e sem preco indicativo de ratio no momento",
     };
   }
 
@@ -1042,9 +1055,9 @@ export async function GET(request: NextRequest) {
             peg_reference: pegReference,
             market_price: Number(ticker.mid.toFixed(6)),
             market_price_brl: pair.displayBrl === false ? null : toBrlDisplay(ticker.mid, pair.quoteAsset, usdBrl),
-            bid_price: Number(ticker.bid.toFixed(6)),
-            ask_price: Number(ticker.ask.toFixed(6)),
-            orderbook_spread_pct: Number(orderbookSpreadPct.toFixed(4)),
+            bid_price: executableSource ? Number(ticker.bid.toFixed(6)) : null,
+            ask_price: executableSource ? Number(ticker.ask.toFixed(6)) : null,
+            orderbook_spread_pct: executableSource ? Number(orderbookSpreadPct.toFixed(4)) : null,
             ideal_price: Number(idealPrice.toFixed(6)),
             ideal_price_brl: pair.displayBrl === false ? null : toBrlDisplay(idealPrice, pair.quoteAsset, usdBrl),
             depeg_pct: Number(depegPct.toFixed(4)),
