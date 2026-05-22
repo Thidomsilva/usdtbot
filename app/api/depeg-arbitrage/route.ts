@@ -10,6 +10,7 @@ type FxBase = "EUR" | "BRL";
 type AssetSymbol = "USDT" | "USDC" | "DAI" | "BRLA" | "BRL1" | "BRZ";
 type QuoteAsset = "USDT" | "USDC" | "DAI" | "BRLA" | "BRL1" | "BRZ";
 type IdealType = "usd_peg" | "fx" | "cross_peg";
+type DirectionMode = "all" | "buy_discount" | "sell_premium";
 
 type PairConfig = {
   id: string;
@@ -377,6 +378,12 @@ function parsePositive(value: string | null, fallback: number): number {
   const parsed = toNum(value);
   if (parsed < 0) return fallback;
   return parsed;
+}
+
+function parseDirectionMode(value: string | null): DirectionMode {
+  if (value === "buy_discount") return "buy_discount";
+  if (value === "sell_premium") return "sell_premium";
+  return "all";
 }
 
 function normalizeError(err: unknown): string {
@@ -947,8 +954,9 @@ function hasExecutableOrderbookSource(source: string): boolean {
 
 export async function GET(request: NextRequest) {
   const thresholdPct = parsePositive(request.nextUrl.searchParams.get("min_depeg_pct"), 0.35);
+  const directionMode = parseDirectionMode(request.nextUrl.searchParams.get("direction_mode"));
   const now = Date.now();
-  const cacheKey = thresholdPct.toFixed(4);
+  const cacheKey = `${thresholdPct.toFixed(4)}:${directionMode}`;
   const cacheHit = cache.get(cacheKey);
 
   if (cacheHit && cacheHit.expiresAt > now) {
@@ -1111,7 +1119,11 @@ export async function GET(request: NextRequest) {
           row.asymmetry_pct !== null &&
           row.asymmetry_pct >= thresholdPct &&
           row.depeg_pct !== null &&
-          row.depeg_pct < 0
+          (
+            directionMode === "all" ||
+            (directionMode === "buy_discount" && row.depeg_pct < 0) ||
+            (directionMode === "sell_premium" && row.depeg_pct > 0)
+          )
       )
       .sort((a, b) => {
         const aNet = netMarginPct(a);
@@ -1125,6 +1137,16 @@ export async function GET(request: NextRequest) {
 
     const best = aboveThreshold[0] ?? null;
     const bestNetMargin = best ? netMarginPct(best) : null;
+    const maxAsymmetryPct = opportunities.reduce((max, row) => {
+      if (row.status !== "ok" || row.asymmetry_pct === null) return max;
+      return Math.max(max, row.asymmetry_pct);
+    }, 0);
+
+    const warningByDirection: Record<DirectionMode, string> = {
+      all: "Sem oportunidade acima do limiar na direcao selecionada (todas) no momento. Exibindo os valores atuais de todos os pares monitorados.",
+      buy_discount: "Sem oportunidade de compra em desconto acima do limiar no momento. Exibindo os valores atuais de todos os pares monitorados.",
+      sell_premium: "Sem oportunidade de venda em premium acima do limiar no momento. Exibindo os valores atuais de todos os pares monitorados.",
+    };
 
     const payload: DepegResponse = {
       timestamp: new Date().toISOString(),
@@ -1136,7 +1158,7 @@ export async function GET(request: NextRequest) {
       summary: {
         monitored_pairs: PAIRS.length,
         above_threshold: aboveThreshold.length,
-        max_asymmetry_pct: Number((best?.asymmetry_pct ?? 0).toFixed(4)),
+        max_asymmetry_pct: Number(maxAsymmetryPct.toFixed(4)),
         best_opportunity: best
           ? {
               id: best.id,
@@ -1151,7 +1173,7 @@ export async function GET(request: NextRequest) {
       },
       warning:
         aboveThreshold.length === 0
-          ? "Sem oportunidade de compra em desconto acima do limiar no momento. Exibindo os valores atuais de todos os pares monitorados."
+          ? warningByDirection[directionMode]
           : "Sinal baseado em fontes executaveis (orderbook). Valide liquidez real, slippage e custo operacional antes de executar.",
     };
 

@@ -221,7 +221,7 @@ export default function DepegArbitragePage() {
   const [loading, setLoading] = useState(true);
   const [countdown, setCountdown] = useState(REFRESH_SECONDS);
   const [thresholdInput, setThresholdInput] = useState("0.35");
-  const [directionMode, setDirectionMode] = useState<DirectionMode>("buy_discount");
+  const [directionMode, setDirectionMode] = useState<DirectionMode>("all");
 
   const thresholdNum = useMemo(() => {
     const parsed = Number(thresholdInput.replace(",", "."));
@@ -230,7 +230,7 @@ export default function DepegArbitragePage() {
 
   async function load() {
     try {
-      const qs = new URLSearchParams({ min_depeg_pct: String(thresholdNum) });
+      const qs = new URLSearchParams({ min_depeg_pct: String(thresholdNum), direction_mode: directionMode });
       const res = await fetch(`/api/depeg-arbitrage?${qs.toString()}`, { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as DepegResponse;
@@ -290,7 +290,7 @@ export default function DepegArbitragePage() {
       clearInterval(refreshTimer);
       clearInterval(countdownTimer);
     };
-  }, [thresholdNum]);
+  }, [thresholdNum, directionMode]);
 
   const rowsToRender = useMemo(() => {
     if (!data) return [] as DepegRow[];
