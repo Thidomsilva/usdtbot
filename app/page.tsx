@@ -65,6 +65,14 @@ function vol(v: number) {
   return `R$ ${v.toFixed(0)}`;
 }
 
+function getBuyPrice(ex: { ask_price_brl?: number; price_brl?: number }): number {
+  return ex.ask_price_brl && ex.ask_price_brl > 0 ? ex.ask_price_brl : ex.price_brl ?? 0;
+}
+
+function getSellPrice(ex: { bid_price_brl?: number; price_brl?: number }): number {
+  return ex.bid_price_brl && ex.bid_price_brl > 0 ? ex.bid_price_brl : ex.price_brl ?? 0;
+}
+
 export default function HomePage() {
   const [data, setData] = useState<PricesResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -184,14 +192,16 @@ export default function HomePage() {
 
     if (arbBuyEx) {
       const buy = data.exchanges[arbBuyEx];
-      if (!buy || buy.status !== "ok" || !buy.price_brl || buy.price_brl <= 0) {
+      const buyPrice = buy ? getBuyPrice(buy) : 0;
+      if (!buy || buy.status !== "ok" || buyPrice <= 0) {
         return `Exchange de compra indisponivel no momento: ${buy?.label ?? arbBuyEx}`;
       }
     }
 
     if (arbSellEx) {
       const sell = data.exchanges[arbSellEx];
-      if (!sell || sell.status !== "ok" || !sell.price_brl || sell.price_brl <= 0) {
+      const sellPrice = sell ? getSellPrice(sell) : 0;
+      if (!sell || sell.status !== "ok" || sellPrice <= 0) {
         return `Exchange de venda indisponivel no momento: ${sell?.label ?? arbSellEx}`;
       }
     }
@@ -217,15 +227,15 @@ export default function HomePage() {
 
     // Melhor compra: minimiza custo efetivo = preço / (1 - taxa)
     const autoBuy = [...okCards].reduce((best, cur) => {
-      const curEff = (cur.ex.price_brl ?? Infinity) / (1 - (customFees[cur.key]?.buy ?? 0.10) / 100);
-      const bestEff = (best.ex.price_brl ?? Infinity) / (1 - (customFees[best.key]?.buy ?? 0.10) / 100);
+      const curEff = getBuyPrice(cur.ex) / (1 - (customFees[cur.key]?.buy ?? 0.10) / 100);
+      const bestEff = getBuyPrice(best.ex) / (1 - (customFees[best.key]?.buy ?? 0.10) / 100);
       return curEff < bestEff ? cur : best;
     });
 
     // Melhor venda: maximiza retorno efetivo = preço * (1 - taxa)
     const autoSell = [...okCards].reduce((best, cur) => {
-      const curEff = (cur.ex.price_brl ?? 0) * (1 - (customFees[cur.key]?.sell ?? 0.10) / 100);
-      const bestEff = (best.ex.price_brl ?? 0) * (1 - (customFees[best.key]?.sell ?? 0.10) / 100);
+      const curEff = getSellPrice(cur.ex) * (1 - (customFees[cur.key]?.sell ?? 0.10) / 100);
+      const bestEff = getSellPrice(best.ex) * (1 - (customFees[best.key]?.sell ?? 0.10) / 100);
       return curEff > bestEff ? cur : best;
     });
 
@@ -236,19 +246,24 @@ export default function HomePage() {
 
     const buyEx = data.exchanges[buyKey];
     const sellEx = data.exchanges[sellKey];
-    if (!buyEx?.price_brl || !sellEx?.price_brl || buyEx.status !== "ok" || sellEx.status !== "ok") return null;
+    if (buyEx?.status !== "ok" || sellEx?.status !== "ok") return null;
+
+    const buyPrice = getBuyPrice(buyEx);
+    const sellPrice = getSellPrice(sellEx);
+    if (buyPrice <= 0 || sellPrice <= 0) return null;
 
     const buyFeeVal = (customFees[buyKey]?.buy ?? 0.10) / 100;
     const sellFeeVal = (customFees[sellKey]?.sell ?? 0.10) / 100;
-    const usdtReceived = (amount / buyEx.price_brl) * (1 - buyFeeVal);
-    const brlReceived = usdtReceived * sellEx.price_brl * (1 - sellFeeVal);
+    const usdtReceived = (amount / buyPrice) * (1 - buyFeeVal);
+    const brlReceived = usdtReceived * sellPrice * (1 - sellFeeVal);
     const profit = brlReceived - amount;
 
     return {
       sameExchange: false as const,
       buyKey, sellKey,
       buyLabel: buyEx.label, sellLabel: sellEx.label,
-      buyPrice: buyEx.price_brl, sellPrice: sellEx.price_brl,
+      buyPrice,
+      sellPrice,
       buyFee: buyFeeVal * 100, sellFee: sellFeeVal * 100,
       usdtReceived, brlReceived,
       profit, profitPct: (profit / amount) * 100, amount,
@@ -457,6 +472,10 @@ export default function HomePage() {
                 {ok ? (
                   <>
                     <div className={styles.cardPrice}>{money(ex.price_brl ?? 0)}</div>
+                    <div className={styles.cardMetrics}>
+                      <span>Compra (ask): {money(getBuyPrice(ex))}</span>
+                      <span>Venda (bid): {money(getSellPrice(ex))}</span>
+                    </div>
                     {(ex.pricing_mode === "fallback" || ex.warning || ex.source_pair) && (
                       <div className={styles.cardWarning}>
                         {ex.warning ?? `Preco estimado sem par BRL direto; fonte: ${ex.source_pair ?? "USDT/USD"}. Pode haver variacao.`}
@@ -515,7 +534,7 @@ export default function HomePage() {
               >
                 <option value="">Auto (mais barata)</option>
                 {cards.map(({ key, ex }) => {
-                  const unavailable = ex.status !== "ok" || !ex.price_brl || ex.price_brl <= 0;
+                  const unavailable = ex.status !== "ok" || getBuyPrice(ex) <= 0;
                   return (
                     <option key={key} value={key} disabled={unavailable}>
                       {ex.label}{unavailable ? " (indisponivel)" : ""}
@@ -533,7 +552,7 @@ export default function HomePage() {
               >
                 <option value="">Auto (mais cara)</option>
                 {cards.map(({ key, ex }) => {
-                  const unavailable = ex.status !== "ok" || !ex.price_brl || ex.price_brl <= 0;
+                  const unavailable = ex.status !== "ok" || getSellPrice(ex) <= 0;
                   return (
                     <option key={key} value={key} disabled={unavailable}>
                       {ex.label}{unavailable ? " (indisponivel)" : ""}
