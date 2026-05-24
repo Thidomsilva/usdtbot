@@ -58,6 +58,10 @@ function money(v: number) {
   return `R$ ${v.toFixed(4)}`;
 }
 
+function bookMoney(v: number) {
+  return `R$ ${v.toFixed(6)}`;
+}
+
 function vol(v: number) {
   if (v >= 1_000_000_000) return `R$ ${(v / 1_000_000_000).toFixed(2)}B`;
   if (v >= 1_000_000) return `R$ ${(v / 1_000_000).toFixed(2)}M`;
@@ -71,6 +75,21 @@ function getBuyPrice(ex: { ask_price_brl?: number; price_brl?: number }): number
 
 function getSellPrice(ex: { bid_price_brl?: number; price_brl?: number }): number {
   return ex.bid_price_brl && ex.bid_price_brl > 0 ? ex.bid_price_brl : ex.price_brl ?? 0;
+}
+
+function getCurrentPrice(ex: { price_brl?: number }): number {
+  return ex.price_brl ?? 0;
+}
+
+function getBookTradePrice(ex: { ask_price_brl?: number; bid_price_brl?: number; price_brl?: number }): number {
+  const ask = ex.ask_price_brl ?? 0;
+  const bid = ex.bid_price_brl ?? 0;
+  if (ask > 0 && bid > 0) {
+    return (ask + bid) / 2;
+  }
+  if (ask > 0) return ask;
+  if (bid > 0) return bid;
+  return getCurrentPrice(ex);
 }
 
 export default function HomePage() {
@@ -471,10 +490,14 @@ export default function HomePage() {
                 </div>
                 {ok ? (
                   <>
-                    <div className={styles.cardPrice}>{money(ex.price_brl ?? 0)}</div>
+                    <div className={styles.cardPrice}>{money(getBookTradePrice(ex))}</div>
                     <div className={styles.cardMetrics}>
-                      <span>Compra (ask): {money(getBuyPrice(ex))}</span>
-                      <span>Venda (bid): {money(getSellPrice(ex))}</span>
+                      <span>Book (comercial): {bookMoney(getBookTradePrice(ex))}</span>
+                      <span>Atual: {money(getCurrentPrice(ex))}</span>
+                    </div>
+                    <div className={styles.cardMetrics}>
+                      <span>Compra (ask): {bookMoney(getBuyPrice(ex))}</span>
+                      <span>Venda (bid): {bookMoney(getSellPrice(ex))}</span>
                     </div>
                     {(ex.pricing_mode === "fallback" || ex.warning || ex.source_pair) && (
                       <div className={styles.cardWarning}>

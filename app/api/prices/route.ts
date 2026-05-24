@@ -16,8 +16,8 @@ type ExchangeDef = {
   fetcher: Fetcher;
 };
 
-function roundIfPositive(value: number | undefined): number | undefined {
-  return value && value > 0 ? Number(value.toFixed(4)) : undefined;
+function roundIfPositive(value: number | undefined, decimals = 4): number | undefined {
+  return value && value > 0 ? Number(value.toFixed(decimals)) : undefined;
 }
 
 async function fetchJson(url: string): Promise<Record<string, any>> {
@@ -552,8 +552,9 @@ export async function GET() {
             source_pair: data.source_pair,
             warning: data.warning,
             price_brl: Number((data.price_brl ?? 0).toFixed(4)),
-            bid_price_brl: roundIfPositive(data.bid_price_brl),
-            ask_price_brl: roundIfPositive(data.ask_price_brl),
+            // Book com mais precisao para nao "achatar" spread pequeno.
+            bid_price_brl: roundIfPositive(data.bid_price_brl, 6),
+            ask_price_brl: roundIfPositive(data.ask_price_brl, 6),
             volume_24h: Number((data.volume_24h ?? 0).toFixed(4)),
             change_24h: Number((data.change_24h ?? 0).toFixed(4)),
             high_24h: Number((data.high_24h ?? 0).toFixed(4)),
