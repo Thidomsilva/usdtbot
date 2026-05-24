@@ -77,6 +77,14 @@ function getSellPrice(ex: { bid_price_brl?: number; price_brl?: number }): numbe
   return ex.bid_price_brl && ex.bid_price_brl > 0 ? ex.bid_price_brl : ex.price_brl ?? 0;
 }
 
+function getDisplayedBuyBook(ex: { ask_price_brl?: number }): number | null {
+  return ex.ask_price_brl && ex.ask_price_brl > 0 ? ex.ask_price_brl : null;
+}
+
+function getDisplayedSellBook(ex: { bid_price_brl?: number }): number | null {
+  return ex.bid_price_brl && ex.bid_price_brl > 0 ? ex.bid_price_brl : null;
+}
+
 function getCurrentPrice(ex: { price_brl?: number }): number {
   return ex.price_brl ?? 0;
 }
@@ -475,6 +483,8 @@ export default function HomePage() {
           {cards.map(({ key, ex }) => {
             if (!ex) return null;
             const ok = ex.status === "ok";
+            const buyBook = getDisplayedBuyBook(ex);
+            const sellBook = getDisplayedSellBook(ex);
             return (
               <article key={key} className={styles.cardModern}>
                 <div className={styles.cardHeader}>
@@ -496,8 +506,8 @@ export default function HomePage() {
                       <span>Atual: {money(getCurrentPrice(ex))}</span>
                     </div>
                     <div className={styles.cardMetrics}>
-                      <span>Compra (ask): {bookMoney(getBuyPrice(ex))}</span>
-                      <span>Venda (bid): {bookMoney(getSellPrice(ex))}</span>
+                      <span>Compra (ask): {buyBook != null ? bookMoney(buyBook) : "indisponivel"}</span>
+                      <span>Venda (bid): {sellBook != null ? bookMoney(sellBook) : "indisponivel"}</span>
                     </div>
                     {(ex.pricing_mode === "fallback" || ex.warning || ex.source_pair) && (
                       <div className={styles.cardWarning}>
