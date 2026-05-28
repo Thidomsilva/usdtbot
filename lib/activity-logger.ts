@@ -27,10 +27,21 @@ export interface UserActivity {
   }>
 }
 
+// Verificar se estamos em um ambiente onde fs está disponível (Node.js)
+const canUseFsModule = (): boolean => {
+  try {
+    return typeof process !== 'undefined' && process.env.NODE_ENV !== undefined
+  } catch {
+    return false
+  }
+}
+
 const LOGS_FILE = path.join(process.cwd(), 'data', 'activity-logs.json')
 const SESSIONS_FILE = path.join(process.cwd(), 'data', 'user-sessions.json')
 
 async function ensureLogsFile() {
+  if (!canUseFsModule()) return
+
   try {
     await fs.access(LOGS_FILE)
   } catch {
@@ -40,6 +51,8 @@ async function ensureLogsFile() {
 }
 
 async function ensureSessionsFile() {
+  if (!canUseFsModule()) return
+
   try {
     await fs.access(SESSIONS_FILE)
   } catch {
@@ -55,6 +68,8 @@ export async function logActivity(
   path: string,
   method?: string
 ): Promise<void> {
+  if (!canUseFsModule()) return
+
   try {
     await ensureLogsFile()
 
@@ -89,6 +104,8 @@ export async function recordUserSession(
   userRole: 'admin' | 'user',
   action: 'login' | 'logout' | 'activity'
 ): Promise<void> {
+  if (!canUseFsModule()) return
+
   try {
     await ensureSessionsFile()
 
@@ -144,6 +161,8 @@ export async function getActivityLogs(
   limit: number = 500,
   username?: string
 ): Promise<ActivityLog[]> {
+  if (!canUseFsModule()) return []
+
   try {
     await ensureLogsFile()
 
@@ -173,6 +192,8 @@ export async function getUserSessions(): Promise<
     sessionDuration: string
   }>
 > {
+  if (!canUseFsModule()) return []
+
   try {
     await ensureSessionsFile()
 
@@ -223,6 +244,18 @@ export async function getAccessStatistics(days: number = 7): Promise<{
   topPages: Array<{ page: string; count: number }>
   topUsers: Array<{ username: string; count: number }>
 }> {
+  if (!canUseFsModule()) {
+    return {
+      totalLogins: 0,
+      totalAccess: 0,
+      activeUsers: 0,
+      accessByPage: {},
+      accessByUser: {},
+      topPages: [],
+      topUsers: [],
+    }
+  }
+
   try {
     await ensureLogsFile()
 

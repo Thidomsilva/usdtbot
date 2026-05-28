@@ -5,11 +5,15 @@ import { recordUserSession } from '@/lib/activity-logger'
 export async function POST(request: NextRequest) {
   const session = await readSessionFromRequest(request)
 
-  // Logar o logout se houver sessão
+  // Logar o logout se houver sessão (não bloquear se falhar)
   if (session) {
-    await recordUserSession(session.username, session.role, 'logout').catch((err) =>
-      console.error('[LOGOUT] Erro ao logar:', err)
-    )
+    try {
+      await recordUserSession(session.username, session.role, 'logout').catch((err) =>
+        console.error('[LOGOUT] Erro ao logar:', err)
+      )
+    } catch (err) {
+      console.error('[LOGOUT] Erro não esperado ao logar:', err)
+    }
   }
 
   const response = NextResponse.json({ ok: true })

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionSecret, readSessionFromToken, SESSION_COOKIE } from './lib/session'
-import { logActivity, recordUserSession } from './lib/activity-logger'
 
 const PUBLIC_FILE_PATTERN = /\.[^/]+$/
 
@@ -76,12 +75,6 @@ export async function middleware(request: NextRequest) {
   if (isAdminPath(pathname) && session.role !== 'admin') {
     return NextResponse.json({ error: 'Acesso negado. Apenas admins podem acessar esta página.' }, { status: 403 })
   }
-
-  // Logar acesso (sem bloquear requisição)
-  Promise.all([
-    logActivity(session.username, session.role, 'page_access', pathname, request.method),
-    recordUserSession(session.username, session.role, 'activity'),
-  ]).catch((err) => console.error('[MIDDLEWARE] Erro ao logar atividade:', err))
 
   return NextResponse.next()
 }

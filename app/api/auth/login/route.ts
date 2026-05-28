@@ -50,11 +50,15 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // Logar o login
-  await Promise.all([
-    logActivity(user.username, user.role, 'login', '/api/auth/login', 'POST'),
-    recordUserSession(user.username, user.role, 'login'),
-  ]).catch((err) => console.error('[LOGIN] Erro ao logar:', err))
+  // Logar o login (não bloquear se falhar)
+  try {
+    await Promise.all([
+      logActivity(user.username, user.role, 'login', '/api/auth/login', 'POST'),
+      recordUserSession(user.username, user.role, 'login'),
+    ]).catch((err) => console.error('[LOGIN] Erro ao logar:', err))
+  } catch (err) {
+    console.error('[LOGIN] Erro não esperado ao logar:', err)
+  }
 
   const response = NextResponse.json({ ok: true, user: { username: user.username, role: user.role } })
 
