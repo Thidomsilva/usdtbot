@@ -106,7 +106,7 @@ export async function createSessionToken(
   username: string,
   role: SessionRole,
   secret: string,
-  durationSeconds = 60 * 60 * 24 * 30
+  durationSeconds = 60 * 60 * 3 // 3 horas de inatividade
 ): Promise<string> {
   const payload: SessionPayload = {
     username,

@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { SESSION_COOKIE } from '@/lib/session'
+import { SESSION_COOKIE, readSessionFromRequest } from '@/lib/session'
+import { recordUserSession } from '@/lib/activity-logger'
 
-export async function POST(_request: NextRequest) {
+export async function POST(request: NextRequest) {
+  const session = await readSessionFromRequest(request)
+
+  // Logar o logout se houver sessão
+  if (session) {
+    await recordUserSession(session.username, session.role, 'logout').catch((err) =>
+      console.error('[LOGOUT] Erro ao logar:', err)
+    )
+  }
 
   const response = NextResponse.json({ ok: true })
   response.cookies.set({

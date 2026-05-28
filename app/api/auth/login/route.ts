@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createSessionToken, getSessionSecret, SESSION_COOKIE } from '@/lib/session'
 import { verifyUserCredentials } from '@/lib/user-store'
+import { logActivity, recordUserSession } from '@/lib/activity-logger'
 
 export const runtime = 'nodejs'
 
@@ -49,6 +50,12 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  // Logar o login
+  await Promise.all([
+    logActivity(user.username, user.role, 'login', '/api/auth/login', 'POST'),
+    recordUserSession(user.username, user.role, 'login'),
+  ]).catch((err) => console.error('[LOGIN] Erro ao logar:', err))
+
   const response = NextResponse.json({ ok: true, user: { username: user.username, role: user.role } })
 
   response.cookies.set({
@@ -58,7 +65,7 @@ export async function POST(request: NextRequest) {
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
     path: '/',
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: 60 * 60 * 3, // 3 horas
   })
 
   return response

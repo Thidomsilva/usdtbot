@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionSecret, readSessionFromToken, SESSION_COOKIE } from './lib/session'
+import { logActivity, recordUserSession } from './lib/activity-logger'
 
 const PUBLIC_FILE_PATTERN = /\.[^/]+$/
 
@@ -21,6 +22,10 @@ function isPublicPath(pathname: string): boolean {
     || pathname.startsWith('/api/telegram')
     || pathname === '/api/health/debug'
     || PUBLIC_FILE_PATTERN.test(pathname)
+}
+
+function isAdminPath(pathname: string): boolean {
+  return pathname.startsWith('/admin/') && pathname !== '/admin/arbitragem-geral'
 }
 
 export async function middleware(request: NextRequest) {
@@ -56,18 +61,29 @@ export async function middleware(request: NextRequest) {
     return null
   })
 
-  if (session) {
-    return NextResponse.next()
+  if (!session) {
+    // Token expirado (por inatividade de 3h) ou inválido
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Sessao expirada ou invalida' }, { status: 401 })
+    }
+
+    const loginUrl = new URL('/login', request.url)
+    loginUrl.searchParams.set('next', `${pathname}${search}`)
+    return NextResponse.redirect(loginUrl)
   }
 
-  // Token expirado ou inválido
-  if (pathname.startsWith('/api/')) {
-    return NextResponse.json({ error: 'Sessao expirada ou invalida' }, { status: 401 })
+  // Verificar se é uma rota de admin
+  if (isAdminPath(pathname) && session.role !== 'admin') {
+    return NextResponse.json({ error: 'Acesso negado. Apenas admins podem acessar esta página.' }, { status: 403 })
   }
 
-  const loginUrl = new URL('/login', request.url)
-  loginUrl.searchParams.set('next', `${pathname}${search}`)
-  return NextResponse.redirect(loginUrl)
+  // Logar acesso (sem bloquear requisição)
+  Promise.all([
+    logActivity(session.username, session.role, 'page_access', pathname, request.method),
+    recordUserSession(session.username, session.role, 'activity'),
+  ]).catch((err) => console.error('[MIDDLEWARE] Erro ao logar atividade:', err))
+
+  return NextResponse.next()
 }
 
 export const config = {
