@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import styles from '@/app/ModernGrid.module.css'
 
 interface ActivityLog {
   id: string
@@ -11,6 +10,7 @@ interface ActivityLog {
   path: string
   method?: string
   timestamp: string
+  lastActivityAt?: string
 }
 
 interface UserSession {
@@ -82,250 +82,388 @@ export default function AccessLogsPage() {
     return date.toLocaleString('pt-BR')
   }
 
-  const getActivityColor = (type: string) => {
-    switch (type) {
-      case 'login':
-        return '#22c55e'
-      case 'logout':
-        return '#ef4444'
-      case 'page_access':
-        return '#3b82f6'
-      case 'api_call':
-        return '#a78bfa'
-      default:
-        return '#6b7280'
-    }
+  const styles = {
+    container: {
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+      padding: '40px 20px',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    },
+    content: {
+      maxWidth: '1400px',
+      margin: '0 auto',
+    },
+    header: {
+      marginBottom: '40px',
+      textAlign: 'center' as const,
+    },
+    title: {
+      fontSize: '36px',
+      fontWeight: 'bold',
+      color: '#ffffff',
+      margin: '0 0 10px 0',
+    },
+    subtitle: {
+      fontSize: '14px',
+      color: '#a0aec0',
+      margin: 0,
+    },
+    statsGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+      gap: '20px',
+      marginBottom: '40px',
+    },
+    statCard: {
+      background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
+      border: '1px solid rgba(255,255,255,0.2)',
+      borderRadius: '16px',
+      padding: '24px',
+      backdropFilter: 'blur(10px)',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.1)',
+    },
+    statValue: {
+      fontSize: '48px',
+      fontWeight: 'bold',
+      margin: '12px 0 8px 0',
+      backgroundImage: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      backgroundClip: 'text' as const,
+      WebkitBackgroundClip: 'text' as const,
+      WebkitTextFillColor: 'transparent' as const,
+    },
+    statLabel: {
+      fontSize: '16px',
+      color: '#ffffff',
+      fontWeight: '600',
+      margin: '0 0 12px 0',
+    },
+    statSubtext: {
+      fontSize: '13px',
+      color: '#a0aec0',
+      margin: 0,
+    },
+    sectionCard: {
+      background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
+      border: '1px solid rgba(255,255,255,0.2)',
+      borderRadius: '16px',
+      padding: '28px',
+      backdropFilter: 'blur(10px)',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.1)',
+      marginBottom: '24px',
+    },
+    sectionTitle: {
+      fontSize: '22px',
+      fontWeight: '700',
+      color: '#ffffff',
+      margin: '0 0 20px 0',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+    },
+    topGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+      gap: '24px',
+      marginBottom: '24px',
+    },
+    topItem: {
+      padding: '12px 16px',
+      borderBottom: '1px solid rgba(255,255,255,0.1)',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      color: '#a0aec0',
+      fontSize: '14px',
+    },
+    topItemName: {
+      color: '#ffffff',
+      fontWeight: '500',
+      flex: 1,
+      wordBreak: 'break-word' as const,
+    },
+    topItemCount: {
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      color: 'white',
+      padding: '4px 12px',
+      borderRadius: '8px',
+      fontWeight: 'bold',
+      fontSize: '12px',
+      marginLeft: '12px',
+    },
+    filterSection: {
+      display: 'flex',
+      gap: '12px',
+      marginBottom: '20px',
+      flexWrap: 'wrap' as const,
+    },
+    input: {
+      padding: '10px 14px',
+      border: '1px solid rgba(255,255,255,0.2)',
+      borderRadius: '8px',
+      background: 'rgba(255,255,255,0.05)',
+      color: '#ffffff',
+      fontSize: '14px',
+      flex: 1,
+      minWidth: '200px',
+      backdropFilter: 'blur(10px)',
+    },
+    select: {
+      padding: '10px 14px',
+      border: '1px solid rgba(255,255,255,0.2)',
+      borderRadius: '8px',
+      background: 'rgba(255,255,255,0.05)',
+      color: '#ffffff',
+      fontSize: '14px',
+      backdropFilter: 'blur(10px)',
+      cursor: 'pointer',
+    },
+    table: {
+      width: '100%',
+      borderCollapse: 'collapse' as const,
+      fontSize: '14px',
+    },
+    tableHeader: {
+      borderBottom: '2px solid rgba(255,255,255,0.2)',
+      backgroundColor: 'rgba(255,255,255,0.05)',
+    },
+    tableHeaderCell: {
+      textAlign: 'left' as const,
+      padding: '12px 16px',
+      fontWeight: '600',
+      color: '#ffffff',
+      fontSize: '13px',
+      textTransform: 'uppercase' as const,
+      letterSpacing: '0.5px',
+    },
+    tableRow: {
+      borderBottom: '1px solid rgba(255,255,255,0.1)',
+      transition: 'background-color 0.2s ease',
+    },
+    tableCell: {
+      padding: '14px 16px',
+      color: '#a0aec0',
+      fontSize: '13px',
+    },
+    usernameBold: {
+      fontWeight: '600',
+      color: '#ffffff',
+    },
+    badge: {
+      display: 'inline-block',
+      padding: '4px 10px',
+      borderRadius: '6px',
+      fontSize: '12px',
+      fontWeight: '600',
+      whiteSpace: 'nowrap' as const,
+    },
+    onlineUsers: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+      gap: '16px',
+    },
+    userCard: {
+      background: 'rgba(255,255,255,0.05)',
+      border: '1px solid rgba(255,255,255,0.1)',
+      borderRadius: '12px',
+      padding: '16px',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    userInfo: {
+      flex: 1,
+    },
+    userName: {
+      color: '#ffffff',
+      fontWeight: '600',
+      fontSize: '14px',
+      margin: '0 0 4px 0',
+    },
+    userMeta: {
+      fontSize: '12px',
+      color: '#a0aec0',
+      margin: '4px 0 0 0',
+    },
+    emptyState: {
+      textAlign: 'center' as const,
+      padding: '40px 20px',
+      color: '#a0aec0',
+    },
   }
 
   return (
-    <div className={styles.container}>
-      <h1>📊 Dashboard de Acessos</h1>
-
-      {/* Estatísticas Gerais */}
-      <div className={styles.grid}>
-        <div className={styles.card} style={{ borderLeft: '4px solid #22c55e' }}>
-          <h3>Usuários Online</h3>
-          <p style={{ fontSize: '2em', fontWeight: 'bold', color: '#22c55e' }}>{activeCount}</p>
-          <p style={{ fontSize: '0.9em', color: '#6b7280' }}>de {sessions.length} total</p>
+    <div style={styles.container}>
+      <div style={styles.content}>
+        <div style={styles.header}>
+          <h1 style={styles.title}>📊 Dashboard de Acessos</h1>
+          <p style={styles.subtitle}>Monitoramento em tempo real de acesso ao sistema</p>
         </div>
 
-        <div className={styles.card} style={{ borderLeft: '4px solid #3b82f6' }}>
-          <h3>Logins (últimos {days}d)</h3>
-          <p style={{ fontSize: '2em', fontWeight: 'bold', color: '#3b82f6' }}>{stats?.totalLogins || 0}</p>
-        </div>
+        {/* Estatísticas */}
+        <div style={styles.statsGrid}>
+          <div style={styles.statCard}>
+            <div style={styles.statLabel}>👥 Online Agora</div>
+            <div style={styles.statValue}>{activeCount}</div>
+            <div style={styles.statSubtext}>de {sessions.length} total registrado</div>
+          </div>
 
-        <div className={styles.card} style={{ borderLeft: '4px solid #8b5cf6' }}>
-          <h3>Total de Acessos</h3>
-          <p style={{ fontSize: '2em', fontWeight: 'bold', color: '#8b5cf6' }}>{stats?.totalAccess || 0}</p>
-        </div>
+          <div style={styles.statCard}>
+            <div style={styles.statLabel}>🔓 Logins</div>
+            <div style={styles.statValue}>{stats?.totalLogins || 0}</div>
+            <div style={styles.statSubtext}>últimos {days} dias</div>
+          </div>
 
-        <div className={styles.card} style={{ borderLeft: '4px solid #f59e0b' }}>
-          <h3>Usuários Ativos</h3>
-          <p style={{ fontSize: '2em', fontWeight: 'bold', color: '#f59e0b' }}>{stats?.activeUsers || 0}</p>
-        </div>
-      </div>
+          <div style={styles.statCard}>
+            <div style={styles.statLabel}>📈 Total de Acessos</div>
+            <div style={styles.statValue}>{stats?.totalAccess || 0}</div>
+            <div style={styles.statSubtext}>interações registradas</div>
+          </div>
 
-      {/* Top Páginas e Usuários */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '30px' }}>
-        <div className={styles.card}>
-          <h2>Top Páginas Acessadas</h2>
-          <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-            {stats?.topPages.map((page, idx) => (
-              <div
-                key={idx}
-                style={{
-                  padding: '10px',
-                  borderBottom: '1px solid #e5e7eb',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
-                <span style={{ fontSize: '0.9em', color: '#4b5563' }}>{page.page}</span>
-                <span
-                  style={{
-                    backgroundColor: '#e0e7ff',
-                    color: '#3730a3',
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    fontWeight: 'bold',
-                  }}
-                >
-                  {page.count}
-                </span>
-              </div>
-            ))}
+          <div style={styles.statCard}>
+            <div style={styles.statLabel}>⭐ Usuários Ativos</div>
+            <div style={styles.statValue}>{stats?.activeUsers || 0}</div>
+            <div style={styles.statSubtext}>diferentes usuários</div>
           </div>
         </div>
 
-        <div className={styles.card}>
-          <h2>Top Usuários</h2>
-          <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-            {stats?.topUsers.map((user, idx) => (
-              <div
-                key={idx}
-                style={{
-                  padding: '10px',
-                  borderBottom: '1px solid #e5e7eb',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
-                <span style={{ fontSize: '0.9em', color: '#4b5563' }}>{user.username}</span>
-                <span
-                  style={{
-                    backgroundColor: '#fef08a',
-                    color: '#713f12',
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    fontWeight: 'bold',
-                  }}
-                >
-                  {user.count}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Usuários Online */}
-      <div className={styles.card} style={{ marginBottom: '30px' }}>
-        <h2>Usuários Online Agora</h2>
-        {activeUsers.length === 0 ? (
-          <p style={{ color: '#6b7280' }}>Nenhum usuário online</p>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #e5e7eb', backgroundColor: '#f9fafb' }}>
-                  <th style={{ textAlign: 'left', padding: '10px' }}>Usuário</th>
-                  <th style={{ textAlign: 'left', padding: '10px' }}>Perfil</th>
-                  <th style={{ textAlign: 'left', padding: '10px' }}>Login em</th>
-                  <th style={{ textAlign: 'left', padding: '10px' }}>Último Acesso</th>
-                  <th style={{ textAlign: 'left', padding: '10px' }}>Duração</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeUsers.map((session) => (
-                  <tr key={session.username} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                    <td style={{ padding: '10px' }}>
-                      <strong>{session.username}</strong>
-                    </td>
-                    <td style={{ padding: '10px' }}>
-                      <span
-                        style={{
-                          backgroundColor: session.role === 'admin' ? '#fee2e2' : '#e0f2fe',
-                          color: session.role === 'admin' ? '#991b1b' : '#0c2d6b',
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          fontSize: '0.85em',
-                          fontWeight: 'bold',
-                        }}
-                      >
-                        {session.role === 'admin' ? '👤 Admin' : '👤 User'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '10px', fontSize: '0.9em', color: '#6b7280' }}>
-                      {formatDate(session.loginAt)}
-                    </td>
-                    <td style={{ padding: '10px', fontSize: '0.9em', color: '#6b7280' }}>
-                      {formatDate(session.lastActivityAt)}
-                    </td>
-                    <td style={{ padding: '10px', fontSize: '0.9em', color: '#6b7280' }}>
-                      {session.sessionDuration}
-                    </td>
-                  </tr>
+        {/* Top Páginas e Usuários */}
+        <div style={styles.topGrid}>
+          <div style={styles.sectionCard}>
+            <div style={styles.sectionTitle}>🔥 Top Páginas Acessadas</div>
+            {stats?.topPages && stats.topPages.length > 0 ? (
+              <div>
+                {stats.topPages.map((page, idx) => (
+                  <div key={idx} style={styles.topItem}>
+                    <span style={styles.topItemName} title={page.page}>{page.page}</span>
+                    <span style={styles.topItemCount}>{page.count}</span>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            ) : (
+              <div style={styles.emptyState}>Nenhum acesso registrado</div>
+            )}
           </div>
-        )}
-      </div>
 
-      {/* Histórico de Acessos */}
-      <div className={styles.card}>
-        <h2>Histórico de Acessos</h2>
-        <div style={{ marginBottom: '15px', display: 'flex', gap: '10px' }}>
-          <input
-            type="text"
-            placeholder="Filtrar por usuário..."
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            style={{
-              padding: '8px 12px',
-              border: '1px solid #d1d5db',
-              borderRadius: '4px',
-              flex: 1,
-            }}
-          />
-          <select
-            value={days}
-            onChange={(e) => setDays(parseInt(e.target.value))}
-            style={{
-              padding: '8px 12px',
-              border: '1px solid #d1d5db',
-              borderRadius: '4px',
-            }}
-          >
-            <option value={1}>Últimas 24h</option>
-            <option value={7}>Últimos 7 dias</option>
-            <option value={30}>Últimos 30 dias</option>
-          </select>
+          <div style={styles.sectionCard}>
+            <div style={styles.sectionTitle}>👤 Top Usuários</div>
+            {stats?.topUsers && stats.topUsers.length > 0 ? (
+              <div>
+                {stats.topUsers.map((user, idx) => (
+                  <div key={idx} style={styles.topItem}>
+                    <span style={styles.topItemName}>{user.username}</span>
+                    <span style={styles.topItemCount}>{user.count}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={styles.emptyState}>Nenhum usuário</div>
+            )}
+          </div>
         </div>
 
-        {loading ? (
-          <p style={{ color: '#6b7280' }}>Carregando...</p>
-        ) : logs.length === 0 ? (
-          <p style={{ color: '#6b7280' }}>Nenhum acesso encontrado</p>
-        ) : (
-          <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #e5e7eb', backgroundColor: '#f9fafb' }}>
-                  <th style={{ textAlign: 'left', padding: '10px' }}>Usuário</th>
-                  <th style={{ textAlign: 'left', padding: '10px' }}>Tipo</th>
-                  <th style={{ textAlign: 'left', padding: '10px' }}>Caminho</th>
-                  <th style={{ textAlign: 'left', padding: '10px' }}>Horário</th>
-                </tr>
-              </thead>
-              <tbody>
-                {logs.map((log) => (
-                  <tr key={log.id} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                    <td style={{ padding: '10px' }}>
-                      <strong>{log.username}</strong>
-                    </td>
-                    <td style={{ padding: '10px' }}>
-                      <span
-                        style={{
-                          backgroundColor: getActivityColor(log.activityType),
-                          color: 'white',
-                          padding: '3px 8px',
-                          borderRadius: '3px',
-                          fontSize: '0.85em',
-                          fontWeight: 'bold',
-                        }}
-                      >
-                        {log.activityType === 'login'
-                          ? '🔓 Login'
-                          : log.activityType === 'logout'
-                            ? '🔒 Logout'
-                            : log.activityType === 'page_access'
-                              ? '📄 Página'
-                              : '🔗 API'}
+        {/* Usuários Online */}
+        <div style={styles.sectionCard}>
+          <div style={styles.sectionTitle}>✅ Usuários Online Agora</div>
+          {activeUsers.length === 0 ? (
+            <div style={styles.emptyState}>Nenhum usuário online no momento</div>
+          ) : (
+            <div style={styles.onlineUsers}>
+              {activeUsers.map((session) => (
+                <div key={session.username} style={styles.userCard}>
+                  <div style={styles.userInfo}>
+                    <p style={styles.userName}>
+                      {session.role === 'admin' ? '👤' : '👤'} {session.username}
+                    </p>
+                    <p style={styles.userMeta}>
+                      <span style={{ ...styles.badge, background: session.role === 'admin' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)', color: session.role === 'admin' ? '#ef4444' : '#3b82f6' }}>
+                        {session.role === 'admin' ? 'Admin' : 'Usuário'}
                       </span>
-                    </td>
-                    <td style={{ padding: '10px', fontSize: '0.9em', color: '#4b5563' }}>{log.path}</td>
-                    <td style={{ padding: '10px', fontSize: '0.9em', color: '#6b7280' }}>
-                      {formatDate(log.timestamp)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </p>
+                    <p style={styles.userMeta}>
+                      Login: {formatDate(session.loginAt)}
+                    </p>
+                    <p style={styles.userMeta}>
+                      Online há: {session.sessionDuration}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Histórico de Acessos */}
+        <div style={styles.sectionCard}>
+          <div style={styles.sectionTitle}>📋 Histórico de Acessos</div>
+          <div style={styles.filterSection}>
+            <input
+              type="text"
+              placeholder="Filtrar por usuário..."
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              style={styles.input}
+            />
+            <select
+              value={days}
+              onChange={(e) => setDays(parseInt(e.target.value))}
+              style={styles.select}
+            >
+              <option value={1}>Últimas 24h</option>
+              <option value={7}>Últimos 7 dias</option>
+              <option value={30}>Últimos 30 dias</option>
+            </select>
           </div>
-        )}
+
+          {loading ? (
+            <div style={styles.emptyState}>Carregando dados...</div>
+          ) : logs.length === 0 ? (
+            <div style={styles.emptyState}>Nenhum acesso encontrado</div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={styles.table}>
+                <thead style={styles.tableHeader}>
+                  <tr>
+                    <th style={styles.tableHeaderCell}>Usuário</th>
+                    <th style={styles.tableHeaderCell}>Tipo</th>
+                    <th style={styles.tableHeaderCell}>Página/Rota</th>
+                    <th style={styles.tableHeaderCell}>Horário</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logs.map((log) => (
+                    <tr key={log.id} style={styles.tableRow}>
+                      <td style={styles.tableCell}>
+                        <span style={styles.usernameBold}>{log.username}</span>
+                      </td>
+                      <td style={styles.tableCell}>
+                        <span
+                          style={{
+                            ...styles.badge,
+                            background: log.activityType === 'login' ? 'rgba(34, 197, 94, 0.2)' : 
+                                      log.activityType === 'logout' ? 'rgba(239, 68, 68, 0.2)' :
+                                      log.activityType === 'page_access' ? 'rgba(59, 130, 246, 0.2)' :
+                                      'rgba(168, 85, 247, 0.2)',
+                            color: log.activityType === 'login' ? '#22c55e' :
+                                   log.activityType === 'logout' ? '#ef4444' :
+                                   log.activityType === 'page_access' ? '#3b82f6' :
+                                   '#a855f7',
+                          }}
+                        >
+                          {log.activityType === 'login' ? '🔓 Login' :
+                           log.activityType === 'logout' ? '🔒 Logout' :
+                           log.activityType === 'page_access' ? '📄 Página' :
+                           '🔗 API'}
+                        </span>
+                      </td>
+                      <td style={styles.tableCell}>{log.path}</td>
+                      <td style={styles.tableCell}>{formatDate(log.timestamp)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

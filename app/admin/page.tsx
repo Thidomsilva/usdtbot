@@ -325,7 +325,10 @@ export default function AdminPage() {
               Se algum acesso tiver sido recriado como cliente1 ou cliente2, use Editar acesso para restaurar o login correto e definir uma nova senha.
             </p>
           </div>
-          <div style={{ display: "flex", gap: 10 }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <Link href="/admin/access-logs" style={{ textDecoration: "none", color: "white", border: "none", borderRadius: 10, padding: "10px 16px", background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)", fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>
+              📊 Dashboard de Acessos
+            </Link>
             <Link href="/arbitragem-scanner" style={{ textDecoration: "none", color: "var(--text)", border: "1px solid var(--card-border)", borderRadius: 10, padding: "10px 12px", background: "var(--card)" }}>
               Arbitragem Scanner
             </Link>
