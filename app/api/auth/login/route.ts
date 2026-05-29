@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
 
   let token
   try {
-    token = await createSessionToken(user.username, user.role, secret)
+    token = await createSessionToken(user.username, user.role, secret, user.email)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro desconhecido'
     console.error('[LOGIN] Erro ao criar token:', message)
@@ -60,7 +60,10 @@ export async function POST(request: NextRequest) {
     console.error('[LOGIN] Erro não esperado ao logar:', err)
   }
 
-  const response = NextResponse.json({ ok: true, user: { username: user.username, role: user.role } })
+  const response = NextResponse.json({
+    ok: true,
+    user: { username: user.username, email: user.email, role: user.role },
+  })
 
   response.cookies.set({
     name: SESSION_COOKIE,

@@ -9,6 +9,7 @@ export type UserRole = 'admin' | 'user'
 
 export type StoredUser = {
   username: string
+  email: string | null
   role: UserRole
   salt: string
   passwordHash: string
@@ -222,7 +223,7 @@ function isValidEmail(value: string): boolean {
 function toPublicUser(user: StoredUser): PublicUser {
   return {
     username: user.username,
-    email: isValidEmail(user.username) ? user.username : null,
+    email: user.email ?? (isValidEmail(user.username) ? user.username : null),
     role: user.role,
     active: user.active,
     telegramChatId: user.telegramChatId,
@@ -233,9 +234,13 @@ function toPublicUser(user: StoredUser): PublicUser {
 }
 
 function normalizeStoredUser(entry: StoredUser): StoredUser {
+  const rawEmail = (entry as StoredUser & { email?: unknown }).email
+  const normalizedEmail = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : null
+
   return {
     ...entry,
     username: entry.username.trim().toLowerCase(),
+    email: normalizedEmail || (isValidEmail(entry.username) ? entry.username.trim().toLowerCase() : null),
     telegramChatId: entry.telegramChatId ? String(entry.telegramChatId).trim() : null,
     telegramLinkedAt: entry.telegramLinkedAt ?? null,
   }
@@ -249,6 +254,7 @@ function isStoredUser(entry: unknown): entry is StoredUser {
   const candidate = entry as Partial<StoredUser>
   return Boolean(
     typeof candidate.username === 'string' &&
+      (typeof candidate.email === 'string' || candidate.email === null || candidate.email === undefined) &&
       (candidate.role === 'admin' || candidate.role === 'user') &&
       typeof candidate.salt === 'string' &&
       typeof candidate.passwordHash === 'string' &&
@@ -384,6 +390,7 @@ async function initializeStore(backend: StorageBackend): Promise<UserStore> {
     const salt = randomBytes(16).toString('hex')
     users.push({
       username: adminEmail,
+      email: adminEmail,
       role: 'admin',
       salt,
       passwordHash: hashPassword(adminPassword, salt),
@@ -403,6 +410,7 @@ async function initializeStore(backend: StorageBackend): Promise<UserStore> {
     const salt = randomBytes(16).toString('hex')
     users.push({
       username: seed.username,
+      email: seed.username,
       role: seed.username === adminEmail ? 'admin' : 'user',
       salt,
       passwordHash: hashPassword(seed.password, salt),
@@ -615,6 +623,7 @@ async function ensureBootstrapAdmin(store: UserStore): Promise<UserStore> {
     const salt = randomBytes(16).toString('hex')
     store.users.push({
       username: adminEmail,
+      email: adminEmail,
       role: 'admin',
       salt,
       passwordHash: hashPassword(adminPassword, salt),
@@ -745,6 +754,7 @@ export async function createUser(input: {
 
   const created: StoredUser = {
     username,
+    email: username,
     role,
     salt,
     passwordHash: hashPassword(password, salt),
@@ -850,6 +860,7 @@ export async function updateUserCredentials(input: {
 
   if (normalizedNextUsername !== user.username) {
     user.username = normalizedNextUsername
+    user.email = normalizedNextUsername
     changed = true
   }
 

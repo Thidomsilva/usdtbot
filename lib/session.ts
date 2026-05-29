@@ -4,6 +4,7 @@ export type SessionRole = 'admin' | 'user'
 
 type SessionPayload = {
   username: string
+  email?: string | null
   role: SessionRole
   exp: number
 }
@@ -106,10 +107,12 @@ export async function createSessionToken(
   username: string,
   role: SessionRole,
   secret: string,
+  email?: string | null,
   durationSeconds = 60 * 60 * 3 // 3 horas de inatividade
 ): Promise<string> {
   const payload: SessionPayload = {
     username,
+    email: email ?? null,
     role,
     exp: Math.floor(Date.now() / 1000) + durationSeconds,
   }

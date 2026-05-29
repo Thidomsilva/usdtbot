@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
     authenticated: true,
     user: {
       username: session.username,
+      email: session.email ?? null,
       role: session.role,
     },
   })
