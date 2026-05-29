@@ -300,6 +300,7 @@ export async function getUserSessions(): Promise<
         const sessionsData = JSON.parse(data) as {
           sessions: Array<{
             username: string
+            email?: string | null
             role: 'admin' | 'user'
             loginAt: string
             lastActivityAt: string
