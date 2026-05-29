@@ -23,6 +23,11 @@ interface UserSession {
   sessionDuration: string
 }
 
+interface AdminUser {
+  username: string
+  email: string | null
+}
+
 interface Statistics {
   totalLogins: number
   totalAccess: number
@@ -36,6 +41,7 @@ interface Statistics {
 export default function AccessLogsPage() {
   const [logs, setLogs] = useState<ActivityLog[]>([])
   const [sessions, setSessions] = useState<UserSession[]>([])
+  const [users, setUsers] = useState<AdminUser[]>([])
   const [stats, setStats] = useState<Statistics | null>(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('')
@@ -45,10 +51,11 @@ export default function AccessLogsPage() {
     const fetchData = async () => {
       setLoading(true)
       try {
-        const [logsRes, sessionsRes, statsRes] = await Promise.all([
+        const [logsRes, sessionsRes, statsRes, usersRes] = await Promise.all([
           fetch('/api/admin/access-logs?limit=500' + (filter ? `&username=${filter}` : '')),
           fetch('/api/admin/user-sessions'),
           fetch(`/api/admin/statistics?days=${days}`),
+          fetch('/api/admin/users'),
         ])
 
         if (logsRes.ok) {
@@ -62,6 +69,10 @@ export default function AccessLogsPage() {
         if (statsRes.ok) {
           const data = await statsRes.json()
           setStats(data.stats || null)
+        }
+        if (usersRes.ok) {
+          const data = await usersRes.json()
+          setUsers(data.users || [])
         }
       } catch (error) {
         console.error('Erro ao buscar dados:', error)
@@ -80,6 +91,11 @@ export default function AccessLogsPage() {
   const formatDate = (isoString: string) => {
     const date = new Date(isoString)
     return date.toLocaleString('pt-BR')
+  }
+
+  const getEmailForUsername = (username: string) => {
+    const user = users.find((entry) => entry.username === username)
+    return user?.email ?? null
   }
 
   const styles = {
@@ -181,6 +197,12 @@ export default function AccessLogsPage() {
       flex: 1,
       wordBreak: 'break-word' as const,
     },
+    topItemMeta: {
+      color: '#94a3b8',
+      fontSize: '12px',
+      marginTop: '4px',
+      wordBreak: 'break-word' as const,
+    },
     topItemCount: {
       background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
       color: 'white',
@@ -279,6 +301,12 @@ export default function AccessLogsPage() {
       fontSize: '14px',
       margin: '0 0 4px 0',
     },
+    userEmail: {
+      fontSize: '12px',
+      color: '#94a3b8',
+      margin: '0 0 6px 0',
+      wordBreak: 'break-word' as const,
+    },
     userMeta: {
       fontSize: '12px',
       color: '#a0aec0',
@@ -350,7 +378,12 @@ export default function AccessLogsPage() {
               <div>
                 {stats.topUsers.map((user, idx) => (
                   <div key={idx} style={styles.topItem}>
-                    <span style={styles.topItemName}>{user.username}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={styles.topItemName}>{user.username}</div>
+                      <div style={styles.topItemMeta}>
+                        E-mail: {getEmailForUsername(user.username) || 'não cadastrado'}
+                      </div>
+                    </div>
                     <span style={styles.topItemCount}>{user.count}</span>
                   </div>
                 ))}
@@ -373,6 +406,9 @@ export default function AccessLogsPage() {
                   <div style={styles.userInfo}>
                     <p style={styles.userName}>
                       {session.role === 'admin' ? '👤' : '👤'} {session.username}
+                    </p>
+                    <p style={styles.userEmail}>
+                      E-mail: {getEmailForUsername(session.username) || 'não cadastrado'}
                     </p>
                     <p style={styles.userMeta}>
                       <span style={{ ...styles.badge, background: session.role === 'admin' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)', color: session.role === 'admin' ? '#ef4444' : '#3b82f6' }}>
@@ -424,6 +460,7 @@ export default function AccessLogsPage() {
                 <thead style={styles.tableHeader}>
                   <tr>
                     <th style={styles.tableHeaderCell}>Usuário</th>
+                    <th style={styles.tableHeaderCell}>E-mail</th>
                     <th style={styles.tableHeaderCell}>Tipo</th>
                     <th style={styles.tableHeaderCell}>Página/Rota</th>
                     <th style={styles.tableHeaderCell}>Horário</th>
@@ -434,6 +471,9 @@ export default function AccessLogsPage() {
                     <tr key={log.id} style={styles.tableRow}>
                       <td style={styles.tableCell}>
                         <span style={styles.usernameBold}>{log.username}</span>
+                      </td>
+                      <td style={styles.tableCell}>
+                        {getEmailForUsername(log.username) || 'não cadastrado'}
                       </td>
                       <td style={styles.tableCell}>
                         <span

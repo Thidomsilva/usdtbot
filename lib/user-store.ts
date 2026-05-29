@@ -36,6 +36,7 @@ export type UserBackup = {
 
 export type PublicUser = {
   username: string
+  email: string | null
   role: UserRole
   active: boolean
   telegramChatId: string | null
@@ -221,6 +222,7 @@ function isValidEmail(value: string): boolean {
 function toPublicUser(user: StoredUser): PublicUser {
   return {
     username: user.username,
+    email: isValidEmail(user.username) ? user.username : null,
     role: user.role,
     active: user.active,
     telegramChatId: user.telegramChatId,
