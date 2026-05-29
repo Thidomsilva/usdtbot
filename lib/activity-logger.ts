@@ -34,6 +34,7 @@ const memoryCache = {
   logs: [] as ActivityLog[],
   sessions: [] as Array<{
     username: string
+    email: string | null
     role: 'admin' | 'user'
     loginAt: string
     lastActivityAt: string
@@ -145,7 +146,8 @@ export async function logActivity(
 export async function recordUserSession(
   username: string,
   userRole: 'admin' | 'user',
-  action: 'login' | 'logout' | 'activity'
+  action: 'login' | 'logout' | 'activity',
+  email?: string | null
 ): Promise<void> {
   try {
     const now = new Date().toISOString()
@@ -157,6 +159,7 @@ export async function recordUserSession(
       }
       memoryCache.sessions.push({
         username,
+        email: email ?? null,
         role: userRole,
         loginAt: now,
         lastActivityAt: now,
@@ -185,6 +188,7 @@ export async function recordUserSession(
         const sessionsData = JSON.parse(data) as {
           sessions: Array<{
             username: string
+            email?: string | null
             role: 'admin' | 'user'
             loginAt: string
             lastActivityAt: string
@@ -199,6 +203,7 @@ export async function recordUserSession(
           }
           sessionsData.sessions.push({
             username,
+            email: email ?? null,
             role: userRole,
             loginAt: now,
             lastActivityAt: now,

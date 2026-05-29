@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
   // Logar o logout se houver sessão (não bloquear se falhar)
   if (session) {
     try {
-      await recordUserSession(session.username, session.role, 'logout').catch((err) =>
+      await recordUserSession(session.username, session.role, 'logout', session.email ?? null).catch((err) =>
         console.error('[LOGOUT] Erro ao logar:', err)
       )
     } catch (err) {
