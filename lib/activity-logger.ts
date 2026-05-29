@@ -54,6 +54,15 @@ const canUseFsModule = (): boolean => {
 const LOGS_FILE = path.join(process.cwd(), 'data', 'activity-logs.json')
 const SESSIONS_FILE = path.join(process.cwd(), 'data', 'user-sessions.json')
 
+type SessionRecord = {
+  username: string
+  email: string | null
+  role: 'admin' | 'user'
+  loginAt: string
+  lastActivityAt: string
+  logoutAt?: string
+}
+
 async function buildEmailLookup(): Promise<Map<string, string>> {
   const lookup = new Map<string, string>()
 
@@ -278,16 +287,7 @@ export async function getActivityLogs(
 }
 
 export async function getUserSessions(): Promise<
-  Array<{
-    username: string
-    email: string | null
-    role: 'admin' | 'user'
-    loginAt: string
-    lastActivityAt: string
-    logoutAt?: string
-    isActive: boolean
-    sessionDuration: string
-  }>
+  Array<SessionRecord & { isActive: boolean; sessionDuration: string }>
 > {
   try {
     let sessions = [...memoryCache.sessions]
@@ -298,19 +298,20 @@ export async function getUserSessions(): Promise<
         await ensureSessionsFile()
         const data = await fs.readFile(SESSIONS_FILE, 'utf-8')
         const sessionsData = JSON.parse(data) as {
-          sessions: Array<{
-            username: string
-            email?: string | null
-            role: 'admin' | 'user'
-            loginAt: string
-            lastActivityAt: string
-            logoutAt?: string
-          }>
+          sessions: Array<Partial<SessionRecord> & { username: string; role: 'admin' | 'user'; loginAt: string; lastActivityAt: string }>
         }
+        const normalizedSessions: SessionRecord[] = sessionsData.sessions.map((session) => ({
+          username: session.username,
+          email: session.email ?? null,
+          role: session.role,
+          loginAt: session.loginAt,
+          lastActivityAt: session.lastActivityAt,
+          logoutAt: session.logoutAt,
+        }))
         // Mesclar e remover duplicatas (preferir dados mais recentes)
-        const sessionMap = new Map<string, typeof sessions[0]>()
-        sessionsData.sessions.forEach((s) => sessionMap.set(s.username, s))
-        memoryCache.sessions.forEach((s) => sessionMap.set(s.username, s))
+        const sessionMap = new Map<string, SessionRecord>()
+        normalizedSessions.forEach((s) => sessionMap.set(s.username, s))
+        memoryCache.sessions.forEach((s) => sessionMap.set(s.username, { ...s, email: s.email ?? null }))
         sessions = Array.from(sessionMap.values())
       } catch {
         // Usar apenas cache se falhar
