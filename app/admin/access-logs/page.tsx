@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 interface ActivityLog {
   id: string
   username: string
+  email?: string | null
   userRole: 'admin' | 'user'
   activityType: 'login' | 'logout' | 'page_access' | 'api_call'
   path: string
@@ -15,6 +16,7 @@ interface ActivityLog {
 
 interface UserSession {
   username: string
+  email?: string | null
   role: 'admin' | 'user'
   loginAt: string
   lastActivityAt: string
@@ -35,7 +37,7 @@ interface Statistics {
   accessByPage: Record<string, number>
   accessByUser: Record<string, number>
   topPages: Array<{ page: string; count: number }>
-  topUsers: Array<{ username: string; count: number }>
+  topUsers: Array<{ username: string; email?: string | null; count: number }>
 }
 
 export default function AccessLogsPage() {
@@ -381,7 +383,7 @@ export default function AccessLogsPage() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={styles.topItemName}>{user.username}</div>
                       <div style={styles.topItemMeta}>
-                        E-mail: {getEmailForUsername(user.username) || 'não cadastrado'}
+                        E-mail: {user.email || getEmailForUsername(user.username) || 'não cadastrado'}
                       </div>
                     </div>
                     <span style={styles.topItemCount}>{user.count}</span>
@@ -408,7 +410,7 @@ export default function AccessLogsPage() {
                       {session.role === 'admin' ? '👤' : '👤'} {session.username}
                     </p>
                     <p style={styles.userEmail}>
-                      E-mail: {getEmailForUsername(session.username) || 'não cadastrado'}
+                      E-mail: {session.email || getEmailForUsername(session.username) || 'não cadastrado'}
                     </p>
                     <p style={styles.userMeta}>
                       <span style={{ ...styles.badge, background: session.role === 'admin' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)', color: session.role === 'admin' ? '#ef4444' : '#3b82f6' }}>
@@ -473,7 +475,7 @@ export default function AccessLogsPage() {
                         <span style={styles.usernameBold}>{log.username}</span>
                       </td>
                       <td style={styles.tableCell}>
-                        {getEmailForUsername(log.username) || 'não cadastrado'}
+                        {log.email || getEmailForUsername(log.username) || 'não cadastrado'}
                       </td>
                       <td style={styles.tableCell}>
                         <span

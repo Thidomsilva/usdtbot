@@ -1,11 +1,13 @@
 import { promises as fs } from 'fs'
 import path from 'path'
+import { listUsers } from './user-store'
 
 export type ActivityType = 'login' | 'logout' | 'page_access' | 'api_call'
 
 export interface ActivityLog {
   id: string
   username: string
+  email?: string | null
   userRole: 'admin' | 'user'
   activityType: ActivityType
   path: string
@@ -50,6 +52,29 @@ const canUseFsModule = (): boolean => {
 
 const LOGS_FILE = path.join(process.cwd(), 'data', 'activity-logs.json')
 const SESSIONS_FILE = path.join(process.cwd(), 'data', 'user-sessions.json')
+
+async function buildEmailLookup(): Promise<Map<string, string>> {
+  const lookup = new Map<string, string>()
+
+  try {
+    const users = await listUsers()
+    const adminEmail = users.find((user) => user.role === 'admin' && user.email)?.email ?? null
+
+    if (adminEmail) {
+      lookup.set('admin', adminEmail)
+    }
+
+    for (const user of users) {
+      if (user.email) {
+        lookup.set(user.username, user.email)
+      }
+    }
+  } catch {
+    // Se o cadastro de usuários falhar, seguimos sem email resolvido.
+  }
+
+  return lookup
+}
 
 async function ensureLogsFile() {
   if (!canUseFsModule()) return
@@ -233,7 +258,15 @@ export async function getActivityLogs(
       logs = logs.filter((log) => log.username === username)
     }
 
-    return logs.slice(-limit).reverse()
+    const emailLookup = await buildEmailLookup()
+
+    return logs
+      .slice(-limit)
+      .reverse()
+      .map((log) => ({
+        ...log,
+        email: emailLookup.get(log.username) ?? log.email ?? null,
+      }))
   } catch {
     return []
   }
@@ -242,6 +275,7 @@ export async function getActivityLogs(
 export async function getUserSessions(): Promise<
   Array<{
     username: string
+    email: string | null
     role: 'admin' | 'user'
     loginAt: string
     lastActivityAt: string
@@ -279,6 +313,7 @@ export async function getUserSessions(): Promise<
 
     const now = Date.now()
     const THREE_HOURS = 3 * 60 * 60 * 1000
+    const emailLookup = await buildEmailLookup()
 
     return sessions.map((session) => {
       const loginTime = new Date(session.loginAt).getTime()
@@ -295,6 +330,7 @@ export async function getUserSessions(): Promise<
 
       return {
         ...session,
+        email: emailLookup.get(session.username) ?? null,
         isActive,
         sessionDuration: `${hours}h ${minutes}m ${seconds}s`,
       }
@@ -311,7 +347,7 @@ export async function getAccessStatistics(days: number = 7): Promise<{
   accessByPage: Record<string, number>
   accessByUser: Record<string, number>
   topPages: Array<{ page: string; count: number }>
-  topUsers: Array<{ username: string; count: number }>
+  topUsers: Array<{ username: string; email: string | null; count: number }>
 }> {
   try {
     let logs = [...memoryCache.logs]
@@ -353,8 +389,14 @@ export async function getAccessStatistics(days: number = 7): Promise<{
       .sort((a, b) => b.count - a.count)
       .slice(0, 10)
 
+    const emailLookup = await buildEmailLookup()
+
     const topUsers = Object.entries(accessByUser)
-      .map(([username, count]) => ({ username, count }))
+      .map(([username, count]) => ({
+        username,
+        email: emailLookup.get(username) ?? null,
+        count,
+      }))
       .sort((a, b) => b.count - a.count)
 
     return {
