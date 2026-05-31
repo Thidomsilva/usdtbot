@@ -8,9 +8,20 @@ const CACHE_TTL_MS = 2_000; // Cache curto para reduzir defasagem entre tela e m
 
 type FxBase = "EUR" | "BRL";
 type AssetSymbol = "USDT" | "USDC" | "DAI" | "BRLA" | "BRL1" | "BRZ";
-type QuoteAsset = "USDT" | "USDC" | "DAI" | "BRLA" | "BRL1" | "BRZ";
+type QuoteAsset = "USD" | "BRL" | "USDT" | "USDC" | "DAI" | "BRLA" | "BRL1" | "BRZ";
 type IdealType = "usd_peg" | "fx" | "cross_peg";
 type DirectionMode = "all" | "buy_discount" | "sell_premium";
+
+type MonitoredAsset = {
+  id: string;
+  label: string;
+  symbol: AssetSymbol;
+  pegReference: string;
+  pegCurrency: "USD" | "BRL";
+  coingeckoId: string;
+  coinmarketcapSlug: string;
+  defilamaSymbol?: string;
+};
 
 type PairConfig = {
   id: string;
@@ -103,6 +114,66 @@ const ASSET_METADATA: Record<AssetSymbol, { coingeckoId: string; coinmarketcapSl
   BRL1: { coingeckoId: "brl1", coinmarketcapSlug: "brl1" },
   BRZ: { coingeckoId: "brz", coinmarketcapSlug: "brz" },
 };
+
+const MONITORED_ASSETS: MonitoredAsset[] = [
+  {
+    id: "usdt",
+    label: "USDT",
+    symbol: "USDT",
+    pegReference: "USD stablecoin (1:1)",
+    pegCurrency: "USD",
+    coingeckoId: "tether",
+    coinmarketcapSlug: "tether",
+  },
+  {
+    id: "usdc",
+    label: "USDC",
+    symbol: "USDC",
+    pegReference: "USD stablecoin (1:1)",
+    pegCurrency: "USD",
+    coingeckoId: "usd-coin",
+    coinmarketcapSlug: "usd-coin",
+  },
+  {
+    id: "dai",
+    label: "DAI",
+    symbol: "DAI",
+    pegReference: "USD stablecoin (1:1)",
+    pegCurrency: "USD",
+    coingeckoId: "dai",
+    coinmarketcapSlug: "multi-collateral-dai",
+  },
+  {
+    id: "brla",
+    label: "BRLA",
+    symbol: "BRLA",
+    pegReference: "BRL stablecoin (1:1)",
+    pegCurrency: "BRL",
+    coingeckoId: "brla-digital-brla",
+    coinmarketcapSlug: "brla-digital-brl",
+    defilamaSymbol: "polygon:0xe6a537a407488807f0bbeb0038b79004f19dddfb",
+  },
+  {
+    id: "brl1",
+    label: "BRL1",
+    symbol: "BRL1",
+    pegReference: "BRL stablecoin (1:1)",
+    pegCurrency: "BRL",
+    coingeckoId: "brl1",
+    coinmarketcapSlug: "brl1",
+    defilamaSymbol: "polygon:0x5c067c80c00ecd2345b05e83a3e758ef799c40b5",
+  },
+  {
+    id: "brz",
+    label: "BRZ",
+    symbol: "BRZ",
+    pegReference: "BRL stablecoin (1:1)",
+    pegCurrency: "BRL",
+    coingeckoId: "brz",
+    coinmarketcapSlug: "brz",
+    defilamaSymbol: "polygon:0x4ed141110f6eeeaba9a1df36d8c26f684d2475dc",
+  },
+];
 
 const PAIRS: PairConfig[] = [
   {
@@ -342,22 +413,21 @@ const PAIRS: PairConfig[] = [
 ];
 
 function fallbackRows(reason: string): DepegRow[] {
-  return PAIRS.map((pair) => {
-    const hasFixedParity = pair.idealType === "usd_peg" || pair.idealType === "cross_peg";
+  return MONITORED_ASSETS.map((asset) => {
     return {
-      id: pair.id,
-      label: pair.label,
-      symbol: pair.symbol,
-      quote_asset: pair.quoteAsset,
+      id: asset.id,
+      label: asset.label,
+      symbol: `${asset.symbol}/${asset.pegCurrency}`,
+      quote_asset: asset.pegCurrency,
       status: "unavailable",
-      analyzed_on: "Binance Spot BookTicker",
-      peg_reference: pair.pegReference,
+      analyzed_on: "CoinGecko/CoinMarketCap/DefiLlama",
+      peg_reference: asset.pegReference,
       market_price: null,
       market_price_brl: null,
       bid_price: null,
       ask_price: null,
       orderbook_spread_pct: null,
-      ideal_price: hasFixedParity ? 1 : null,
+      ideal_price: 1,
       ideal_price_brl: null,
       depeg_pct: null,
       asymmetry_pct: null,
@@ -658,7 +728,7 @@ async function fetchTickerDefiLlama(coingeckoId: string, defilamaSymbol?: string
 
 async function fetchAggregatorRatio(pair: PairConfig): Promise<TickerResult | null> {
   const baseMeta = ASSET_METADATA[pair.baseAsset];
-  const quoteMeta = ASSET_METADATA[pair.quoteAsset];
+  const quoteMeta = ASSET_METADATA[pair.quoteAsset as AssetSymbol];
 
   try {
     const [baseTicker, quoteTicker] = await Promise.all([
@@ -857,6 +927,37 @@ async function fetchTickerWithFallback(pair: PairConfig): Promise<{ ticker: Tick
   return { ticker: null, reason: reason || null };
 }
 
+async function fetchStableAssetPrice(asset: MonitoredAsset): Promise<{ ticker: TickerResult | null; reason: string | null }> {
+  const errors: string[] = [];
+
+  try {
+    const ticker = await fetchTickerCoinGecko(asset.coingeckoId);
+    if (ticker) return { ticker, reason: null };
+    errors.push("Sem preco disponivel na CoinGecko");
+  } catch (err) {
+    errors.push(normalizeError(err));
+  }
+
+  try {
+    const ticker = await fetchTickerCoinMarketCap(asset.coinmarketcapSlug);
+    if (ticker) return { ticker, reason: null };
+    errors.push("Sem preco disponivel na CoinMarketCap");
+  } catch (err) {
+    errors.push(normalizeError(err));
+  }
+
+  try {
+    const ticker = await fetchTickerDefiLlama(asset.coingeckoId, asset.defilamaSymbol);
+    if (ticker) return { ticker, reason: null };
+    errors.push("Sem preco disponivel na DefiLlama");
+  } catch (err) {
+    errors.push(normalizeError(err));
+  }
+
+  const reason = [...new Set(errors)].join(" | ");
+  return { ticker: null, reason: reason || null };
+}
+
 async function fetchFxToUsd(base: FxBase): Promise<number> {
   const payload = await fetchJson(`https://api.frankfurter.app/latest?from=${base}&to=USD`);
   const rate = toNum(payload?.rates?.USD);
@@ -919,7 +1020,7 @@ function classify(asymmetryPct: number): { severity: DepegRow["severity"]; signa
 }
 
 function isBrlStableQuote(quoteAsset: QuoteAsset): boolean {
-  return quoteAsset === "BRLA" || quoteAsset === "BRL1" || quoteAsset === "BRZ";
+  return quoteAsset === "BRL" || quoteAsset === "BRLA" || quoteAsset === "BRL1" || quoteAsset === "BRZ";
 }
 
 function toBrlDisplay(value: number, quoteAsset: QuoteAsset, usdBrl: number): number | null {
@@ -964,110 +1065,100 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const fxNeeds = new Set<FxBase>();
-    for (const pair of PAIRS) {
-      if (pair.idealType === "fx" && pair.fxBase) {
-        fxNeeds.add(pair.fxBase);
-      }
-    }
-
-    const fxResults = await Promise.allSettled(
-      [...fxNeeds].map(async (base) => {
-        const value = await fetchFxToUsd(base);
-        return [base, value] as const;
-      })
-    );
-
-    const fxMap = new Map<FxBase, number>();
-    for (const result of fxResults) {
-      if (result.status === "fulfilled") {
-        fxMap.set(result.value[0], result.value[1]);
-      }
-    }
-
     let usdBrl = 0;
-    const needsUsdBrl = PAIRS.some((pair) => !isBrlStableQuote(pair.quoteAsset));
+    const needsUsdBrl = MONITORED_ASSETS.some((asset) => asset.pegCurrency === "USD");
     if (needsUsdBrl) {
-      const brlUsd = fxMap.get("BRL") ?? 0;
-      if (brlUsd > 0) {
-        usdBrl = 1 / brlUsd;
-      }
-      if (usdBrl <= 0) {
-        try {
-          usdBrl = await fetchUsdToBrl();
-        } catch {
-          usdBrl = 0;
-        }
+      try {
+        usdBrl = await fetchUsdToBrl();
+      } catch {
+        usdBrl = 0;
       }
     }
 
     const rawRows = await Promise.all(
-      PAIRS.map(async (pair) => {
-        const pegReference = pair.pegReference;
-        const idealPrice =
-          pair.idealType === "usd_peg" || pair.idealType === "cross_peg"
-            ? 1
-            : pair.fxBase
-              ? toNum(fxMap.get(pair.fxBase))
-              : 0;
+      MONITORED_ASSETS.map(async (asset) => {
+        const pegReference = asset.pegReference;
+        const idealPrice = 1;
 
         try {
-          const { ticker, reason } = await fetchTickerWithFallback(pair);
-          if (!ticker || idealPrice <= 0) {
+          const { ticker, reason } = await fetchStableAssetPrice(asset);
+          if (!ticker) {
             return {
-              id: pair.id,
-              label: pair.label,
-              symbol: pair.symbol,
-              quote_asset: pair.quoteAsset,
+              id: asset.id,
+              label: asset.label,
+              symbol: `${asset.symbol}/${asset.pegCurrency}`,
+              quote_asset: asset.pegCurrency,
               status: "unavailable",
-              analyzed_on: "Binance/Gate/KuCoin/OKX/CoinEx/Bybit/HTX/Kraken/Coinbase",
+              analyzed_on: "CoinGecko/CoinMarketCap/DefiLlama",
               peg_reference: pegReference,
               market_price: null,
               market_price_brl: null,
               bid_price: null,
               ask_price: null,
               orderbook_spread_pct: null,
-              ideal_price: idealPrice > 0 ? Number(idealPrice.toFixed(6)) : null,
-              ideal_price_brl: pair.displayBrl === false ? null : toBrlDisplay(idealPrice, pair.quoteAsset, usdBrl),
+              ideal_price: Number(idealPrice.toFixed(6)),
+              ideal_price_brl: asset.pegCurrency === "BRL" ? 1 : toBrlDisplay(idealPrice, "USD", usdBrl),
               depeg_pct: null,
               asymmetry_pct: null,
               direction: "below_peg",
               severity: "low",
               signal: "watch",
               notes: reason
-                ? `Par monitorado, mas sem cotacao disponivel neste ciclo (${reason}).`
-                : "Par monitorado, mas sem cotacao disponivel neste ciclo.",
+                ? `Ativo monitorado, mas sem cotacao disponivel neste ciclo (${reason}).`
+                : "Ativo monitorado, mas sem cotacao disponivel neste ciclo.",
             } as DepegRow;
           }
 
-          const depegPct = ((ticker.mid - idealPrice) / idealPrice) * 100;
+          const marketPriceInPeg = asset.pegCurrency === "BRL" ? ticker.mid * usdBrl : ticker.mid;
+          if (marketPriceInPeg <= 0) {
+            return {
+              id: asset.id,
+              label: asset.label,
+              symbol: `${asset.symbol}/${asset.pegCurrency}`,
+              quote_asset: asset.pegCurrency,
+              status: "unavailable",
+              analyzed_on: ticker.source,
+              peg_reference: pegReference,
+              market_price: null,
+              market_price_brl: null,
+              bid_price: null,
+              ask_price: null,
+              orderbook_spread_pct: null,
+              ideal_price: Number(idealPrice.toFixed(6)),
+              ideal_price_brl: asset.pegCurrency === "BRL" ? 1 : toBrlDisplay(idealPrice, "USD", usdBrl),
+              depeg_pct: null,
+              asymmetry_pct: null,
+              direction: "below_peg",
+              severity: "low",
+              signal: "watch",
+              notes: "Ativo monitorado, mas sem referencia valida para calcular de-peg neste ciclo.",
+            } as DepegRow;
+          }
+
+          const depegPct = ((marketPriceInPeg - idealPrice) / idealPrice) * 100;
           const asymmetryPct = Math.abs(depegPct);
           const direction: DepegRow["direction"] = depegPct >= 0 ? "above_peg" : "below_peg";
-          const orderbookSpreadPct = ((ticker.ask - ticker.bid) / ticker.mid) * 100;
           const { severity, signal } = classify(asymmetryPct);
 
-          const executableSource = hasExecutableOrderbookSource(ticker.source);
-          const notes = executableSource
-            ? direction === "below_peg"
-              ? "Ativo negociando abaixo da paridade teorica."
-              : "Ativo negociando acima da paridade teorica."
-            : "Fonte indicativa (ratio), pode divergir da execucao real no mesmo momento.";
+          const notes = direction === "below_peg"
+            ? "Ativo abaixo do peg teorico no momento."
+            : "Ativo acima do peg teorico no momento.";
 
           return {
-            id: pair.id,
-            label: pair.label,
-            symbol: pair.symbol,
-            quote_asset: pair.quoteAsset,
+            id: asset.id,
+            label: asset.label,
+            symbol: `${asset.symbol}/${asset.pegCurrency}`,
+            quote_asset: asset.pegCurrency,
             status: "ok",
             analyzed_on: ticker.source,
             peg_reference: pegReference,
-            market_price: Number(ticker.mid.toFixed(6)),
-            market_price_brl: pair.displayBrl === false ? null : toBrlDisplay(ticker.mid, pair.quoteAsset, usdBrl),
-            bid_price: executableSource ? Number(ticker.bid.toFixed(6)) : null,
-            ask_price: executableSource ? Number(ticker.ask.toFixed(6)) : null,
-            orderbook_spread_pct: executableSource ? Number(orderbookSpreadPct.toFixed(4)) : null,
+            market_price: Number(marketPriceInPeg.toFixed(6)),
+            market_price_brl: asset.pegCurrency === "BRL" ? Number(marketPriceInPeg.toFixed(6)) : toBrlDisplay(marketPriceInPeg, "USD", usdBrl),
+            bid_price: null,
+            ask_price: null,
+            orderbook_spread_pct: null,
             ideal_price: Number(idealPrice.toFixed(6)),
-            ideal_price_brl: pair.displayBrl === false ? null : toBrlDisplay(idealPrice, pair.quoteAsset, usdBrl),
+            ideal_price_brl: asset.pegCurrency === "BRL" ? 1 : toBrlDisplay(idealPrice, "USD", usdBrl),
             depeg_pct: Number(depegPct.toFixed(4)),
             asymmetry_pct: Number(asymmetryPct.toFixed(4)),
             direction,
@@ -1078,26 +1169,26 @@ export async function GET(request: NextRequest) {
         } catch (err) {
           const reason = normalizeError(err);
           return {
-            id: pair.id,
-            label: pair.label,
-            symbol: pair.symbol,
-            quote_asset: pair.quoteAsset,
+            id: asset.id,
+            label: asset.label,
+            symbol: `${asset.symbol}/${asset.pegCurrency}`,
+            quote_asset: asset.pegCurrency,
             status: "unavailable",
-            analyzed_on: "Binance/Gate/KuCoin/OKX/CoinEx/Bybit/HTX/Kraken/Coinbase",
+            analyzed_on: "CoinGecko/CoinMarketCap/DefiLlama",
             peg_reference: pegReference,
             market_price: null,
             market_price_brl: null,
             bid_price: null,
             ask_price: null,
             orderbook_spread_pct: null,
-            ideal_price: idealPrice > 0 ? Number(idealPrice.toFixed(6)) : null,
-            ideal_price_brl: pair.displayBrl === false ? null : toBrlDisplay(idealPrice, pair.quoteAsset, usdBrl),
+            ideal_price: Number(idealPrice.toFixed(6)),
+            ideal_price_brl: asset.pegCurrency === "BRL" ? 1 : toBrlDisplay(idealPrice, "USD", usdBrl),
             depeg_pct: null,
             asymmetry_pct: null,
             direction: "below_peg",
             severity: "low",
             signal: "watch",
-            notes: `Par monitorado, mas a consulta da cotacao falhou neste ciclo (${reason})`,
+            notes: `Ativo monitorado, mas a consulta da cotacao falhou neste ciclo (${reason})`,
           } as DepegRow;
         }
       })
@@ -1115,7 +1206,6 @@ export async function GET(request: NextRequest) {
       .filter(
         (row): row is DepegRow & { status: "ok"; asymmetry_pct: number } =>
           row.status === "ok" &&
-          hasExecutableOrderbookSource(row.analyzed_on) &&
           row.asymmetry_pct !== null &&
           row.asymmetry_pct >= thresholdPct &&
           row.depeg_pct !== null &&
@@ -1143,20 +1233,20 @@ export async function GET(request: NextRequest) {
     }, 0);
 
     const warningByDirection: Record<DirectionMode, string> = {
-      all: "Sem oportunidade acima do limiar na direcao selecionada (todas) no momento. Exibindo os valores atuais de todos os pares monitorados.",
-      buy_discount: "Sem oportunidade de compra em desconto acima do limiar no momento. Exibindo os valores atuais de todos os pares monitorados.",
-      sell_premium: "Sem oportunidade de venda em premium acima do limiar no momento. Exibindo os valores atuais de todos os pares monitorados.",
+      all: "Sem de-peg acima do limiar na direcao selecionada (todas) no momento. Exibindo os valores atuais de todos os ativos monitorados.",
+      buy_discount: "Sem de-peg abaixo da paridade acima do limiar no momento. Exibindo os valores atuais de todos os ativos monitorados.",
+      sell_premium: "Sem de-peg acima da paridade acima do limiar no momento. Exibindo os valores atuais de todos os ativos monitorados.",
     };
 
     const payload: DepegResponse = {
       timestamp: new Date().toISOString(),
-      source: "binance/gate/kucoin/okx/coinex/bybit/htx/kraken/coinbase + frankfurter-fx",
+      source: "coingecko/coinmarketcap/defillama + usd-brl",
       threshold_pct: Number(thresholdPct.toFixed(4)),
       usd_brl: usdBrl > 0 ? Number(usdBrl.toFixed(6)) : null,
       monitored_rows: opportunities,
       opportunities: aboveThreshold,
       summary: {
-        monitored_pairs: PAIRS.length,
+        monitored_pairs: MONITORED_ASSETS.length,
         above_threshold: aboveThreshold.length,
         max_asymmetry_pct: Number(maxAsymmetryPct.toFixed(4)),
         best_opportunity: best
@@ -1174,7 +1264,7 @@ export async function GET(request: NextRequest) {
       warning:
         aboveThreshold.length === 0
           ? warningByDirection[directionMode]
-          : "Sinal baseado em fontes executaveis (orderbook). Valide liquidez real, slippage e custo operacional antes de executar.",
+          : "Sinal baseado no preco do ativo contra seu peg teorico. Valide liquidez e custo operacional antes de executar qualquer operacao.",
     };
 
     cache.set(cacheKey, {
@@ -1186,13 +1276,13 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     const payload: DepegResponse = {
       timestamp: new Date().toISOString(),
-      source: "binance/gate/kucoin/okx/coinex/bybit/htx/kraken/coinbase + frankfurter-fx",
+      source: "coingecko/coinmarketcap/defillama + usd-brl",
       threshold_pct: Number(thresholdPct.toFixed(4)),
       usd_brl: null,
-      monitored_rows: fallbackRows("Par monitorado, mas a atualizacao geral da API falhou neste ciclo."),
+      monitored_rows: fallbackRows("Ativo monitorado, mas a atualizacao geral da API falhou neste ciclo."),
       opportunities: [],
       summary: {
-        monitored_pairs: PAIRS.length,
+        monitored_pairs: MONITORED_ASSETS.length,
         above_threshold: 0,
         max_asymmetry_pct: 0,
         best_opportunity: null,
