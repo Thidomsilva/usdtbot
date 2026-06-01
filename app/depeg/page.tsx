@@ -37,6 +37,7 @@ type DepegResponse = {
   threshold_pct: number;
   usd_brl: number | null;
   monitored_rows: DepegRow[];
+  contract_rows?: DepegContractRow[];
   opportunities: DepegRow[];
   summary: {
     monitored_pairs: number;
@@ -54,6 +55,13 @@ type DepegResponse = {
   };
   warning?: string;
   error?: string;
+};
+
+type DepegContractRow = DepegRow & {
+  asset_id: string;
+  network: string;
+  contract: string;
+  contract_symbol: string | null;
 };
 
 type DepegHistoryPoint = {
@@ -466,8 +474,6 @@ const STABLECOIN_CATALOG: StablecoinCatalogItem[] = [
   },
 ];
 
-const STABLECOIN_BY_TOKEN = new Map(STABLECOIN_CATALOG.map((item) => [item.token.toLowerCase(), item]));
-
 function pct(value: number | null): string {
   if (value === null) return "--";
   return `${value >= 0 ? "+" : ""}${value.toFixed(4)}%`;
@@ -585,6 +591,7 @@ export default function DepegArbitragePage() {
         threshold_pct: thresholdNum,
         usd_brl: null,
         monitored_rows: fallbackRows,
+        contract_rows: [],
         opportunities: [],
         summary: {
           monitored_pairs: fallbackRows.length,
@@ -725,8 +732,56 @@ export default function DepegArbitragePage() {
 
   const activeThresholdPct = data?.threshold_pct ?? thresholdNum;
 
+  const filteredContractRows = useMemo(() => {
+    const sourceRows = data?.contract_rows ?? [];
+
+    return sourceRows.filter((row) => {
+      if (!matchesMagnitude(row.asymmetry_pct, magnitudeFilter)) return false;
+
+      if (directionMode === "all") return true;
+      if (directionMode === "buy_discount") {
+        return row.status === "ok" && row.depeg_pct !== null && row.depeg_pct < 0;
+      }
+      return row.status === "ok" && row.depeg_pct !== null && row.depeg_pct > 0;
+    });
+  }, [data?.contract_rows, directionMode, magnitudeFilter]);
+
+  const rankedContractRows = useMemo(() => {
+    const copy = [...filteredContractRows];
+
+    copy.sort((a, b) => {
+      if (orderMode === "label_asc") {
+        return `${a.label}-${a.network}`.localeCompare(`${b.label}-${b.network}`, "pt-BR");
+      }
+
+      if (orderMode === "price_desc") {
+        const av = a.market_price_brl ?? Number.NEGATIVE_INFINITY;
+        const bv = b.market_price_brl ?? Number.NEGATIVE_INFINITY;
+        return bv - av;
+      }
+
+      if (orderMode === "depeg_asc") {
+        const av = a.depeg_pct ?? Number.POSITIVE_INFINITY;
+        const bv = b.depeg_pct ?? Number.POSITIVE_INFINITY;
+        return av - bv;
+      }
+
+      if (orderMode === "depeg_desc") {
+        const av = a.depeg_pct ?? Number.NEGATIVE_INFINITY;
+        const bv = b.depeg_pct ?? Number.NEGATIVE_INFINITY;
+        return bv - av;
+      }
+
+      const av = a.asymmetry_pct ?? Number.NEGATIVE_INFINITY;
+      const bv = b.asymmetry_pct ?? Number.NEGATIVE_INFINITY;
+      return bv - av;
+    });
+
+    return copy;
+  }, [filteredContractRows, orderMode]);
+
   const discountedOpportunities = useMemo(() => {
-    return rankedRows.filter(
+    return rankedContractRows.filter(
       (row) =>
         row.status === "ok" &&
         row.depeg_pct !== null &&
@@ -734,31 +789,7 @@ export default function DepegArbitragePage() {
         row.depeg_pct < 0 &&
         row.asymmetry_pct >= activeThresholdPct
     );
-  }, [rankedRows, activeThresholdPct]);
-
-  const networkRows = useMemo(() => {
-    return rankedRows.flatMap((row) => {
-      const catalogItem = STABLECOIN_BY_TOKEN.get(row.label.toLowerCase());
-
-      if (!catalogItem || catalogItem.contracts.length === 0) {
-        return [
-          {
-            row,
-            network: "Rede nao catalogada",
-            contract: "Sem contrato oficial mapeado",
-            warning: catalogItem?.warning,
-          },
-        ];
-      }
-
-      return catalogItem.contracts.map((entry) => ({
-        row,
-        network: entry.network,
-        contract: entry.contract,
-        warning: catalogItem.warning,
-      }));
-    });
-  }, [rankedRows]);
+  }, [rankedContractRows, activeThresholdPct]);
 
   const historyRows = useMemo(() => {
     return history
@@ -946,19 +977,16 @@ export default function DepegArbitragePage() {
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
             <h2 style={{ margin: 0, fontSize: 18 }}>Oportunidades de compra com desconto</h2>
             <div style={{ fontSize: 12, color: "var(--muted)" }}>
-              {discountedOpportunities.length} ativo(s) com desconto acima do limiar
+              {discountedOpportunities.length} contrato(s) com desconto acima do limiar
             </div>
           </div>
 
           {discountedOpportunities.length > 0 ? (
             <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
               {discountedOpportunities.map((row) => {
-                const catalogItem = STABLECOIN_BY_TOKEN.get(row.label.toLowerCase());
-                const networkCount = catalogItem?.contracts.length ?? 0;
-
                 return (
                   <article
-                    key={`opportunity-${row.id}`}
+                    key={`opportunity-${row.id}-${row.network}`}
                     style={{
                       border: "1px solid rgba(34,197,94,0.55)",
                       borderRadius: 14,
@@ -970,7 +998,7 @@ export default function DepegArbitragePage() {
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
                       <div>
                         <div style={{ fontWeight: 800, fontSize: 17 }}>{row.label}</div>
-                        <div style={{ fontSize: 12, color: "var(--muted)" }}>{row.symbol}</div>
+                        <div style={{ fontSize: 12, color: "var(--muted)" }}>{row.symbol} · {row.network}</div>
                       </div>
                       <span
                         style={{
@@ -1006,7 +1034,10 @@ export default function DepegArbitragePage() {
                     </div>
 
                     <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)" }}>
-                      Fonte: {row.analyzed_on} · redes monitoradas: {networkCount}
+                      Fonte: {row.analyzed_on}
+                    </div>
+                    <div style={{ marginTop: 4, fontSize: 12, color: "var(--muted)", overflowWrap: "anywhere" }}>
+                      Contrato: {row.contract}
                     </div>
                     <div style={{ marginTop: 6, fontSize: 12, color: "var(--muted)" }}>{row.notes}</div>
                   </article>
@@ -1050,8 +1081,7 @@ export default function DepegArbitragePage() {
               </tr>
             </thead>
             <tbody>
-              {networkRows.map((networkRow, idx) => {
-                const row = networkRow.row;
+              {rankedContractRows.map((row, idx) => {
                 const signal = actionSignal(row, activeThresholdPct);
                 const isOpportunity =
                   row.status === "ok" &&
@@ -1062,7 +1092,7 @@ export default function DepegArbitragePage() {
 
                 return (
                   <tr
-                    key={`${row.id}-${networkRow.network}-${idx}`}
+                    key={`${row.id}-${row.network}-${idx}`}
                     style={{
                       borderBottom: "1px solid var(--card-border)",
                       fontSize: 13,
@@ -1079,14 +1109,9 @@ export default function DepegArbitragePage() {
                       <div style={{ fontWeight: 700 }}>{row.label}</div>
                       <div style={{ fontSize: 11, color: "var(--muted)" }}>{row.symbol}</div>
                     </td>
-                    <td style={{ padding: "10px 8px", whiteSpace: "nowrap" }}>{networkRow.network}</td>
+                    <td style={{ padding: "10px 8px", whiteSpace: "nowrap" }}>{row.network}</td>
                     <td style={{ padding: "10px 8px", maxWidth: 230, overflowWrap: "anywhere", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12 }}>
-                      {networkRow.contract}
-                      {networkRow.warning && (
-                        <div style={{ marginTop: 6, color: "#f59e0b", fontFamily: "DM Sans, sans-serif", fontSize: 11 }}>
-                          {networkRow.warning}
-                        </div>
-                      )}
+                      {row.contract}
                     </td>
                     <td style={{ padding: "10px 8px" }}>
                       <span
@@ -1153,10 +1178,10 @@ export default function DepegArbitragePage() {
                   </tr>
                 );
               })}
-              {(!data || rankedRows.length === 0) && (
+              {(!data || rankedContractRows.length === 0) && (
                 <tr>
                   <td colSpan={14} style={{ padding: "14px 8px", color: "var(--muted)", fontSize: 13 }}>
-                    Nenhum ativo disponivel neste momento.
+                    Nenhum contrato disponivel neste momento.
                   </td>
                 </tr>
               )}

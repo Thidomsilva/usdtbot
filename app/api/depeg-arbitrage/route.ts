@@ -96,12 +96,20 @@ type DepegRow = {
   notes: string;
 };
 
+type DepegContractRow = DepegRow & {
+  asset_id: string;
+  network: string;
+  contract: string;
+  contract_symbol: string | null;
+};
+
 type DepegResponse = {
   timestamp: string;
   source: string;
   threshold_pct: number;
   usd_brl: number | null;
   monitored_rows: DepegRow[];
+  contract_rows: DepegContractRow[];
   opportunities: DepegRow[];
   summary: {
     monitored_pairs: number;
@@ -115,6 +123,12 @@ type DepegResponse = {
   };
   warning?: string;
   error?: string;
+};
+
+type ContractFeed = {
+  assetId: string;
+  network: string;
+  contract: string;
 };
 
 type CacheEntry = {
@@ -299,6 +313,47 @@ const MONITORED_ASSETS: MonitoredAsset[] = [
     coingeckoId: "tether-gold",
     coinmarketcapSlug: "tether-gold",
   },
+];
+
+const CONTRACT_FEEDS: ContractFeed[] = [
+  { assetId: "usdt", network: "Ethereum", contract: "0xdac17f958d2ee523a2206206994597c13d831ec7" },
+  { assetId: "usdt", network: "Tron", contract: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t" },
+  { assetId: "usdt", network: "BSC", contract: "0x55d398326f99059ff775485246999027b3197955" },
+  { assetId: "usdt", network: "Polygon", contract: "0xc2132d05d31c914a87c6611c10748aeb04b58e8f" },
+  { assetId: "usdt", network: "Arbitrum", contract: "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9" },
+  { assetId: "usdt", network: "Avalanche", contract: "0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7" },
+  { assetId: "usdc", network: "Ethereum", contract: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48" },
+  { assetId: "usdc", network: "Solana", contract: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" },
+  { assetId: "usdc", network: "BSC", contract: "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d" },
+  { assetId: "usdc", network: "Polygon", contract: "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359" },
+  { assetId: "usdc", network: "Arbitrum", contract: "0xaf88d065e77c8cc2239327c5edb3a432268e5831" },
+  { assetId: "usdc", network: "Base", contract: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913" },
+  { assetId: "usdc", network: "Avalanche", contract: "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e" },
+  { assetId: "dai", network: "Ethereum", contract: "0x6b175474e89094c44da98b954eedeac495271d0f" },
+  { assetId: "usds", network: "Ethereum", contract: "0xdc035d45d973e3ec169d2276ddab16f1e407384f" },
+  { assetId: "usds", network: "Solana", contract: "USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA" },
+  { assetId: "pyusd", network: "Ethereum", contract: "0x6c3ea9036406852006290770bedfcaba0e23a0e8" },
+  { assetId: "pyusd", network: "Solana", contract: "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo" },
+  { assetId: "fdusd", network: "Ethereum", contract: "0xc5f0f7b66764f6ec8c8dff7ba683102295e16409" },
+  { assetId: "fdusd", network: "BSC", contract: "0xc5f0f7b66764f6ec8c8dff7ba683102295e16409" },
+  { assetId: "fdusd", network: "Arbitrum", contract: "0x93c9932e4afa59201f0b5e63f7d816516f1669fe" },
+  { assetId: "fdusd", network: "Solana", contract: "9zNQRsGLjNKwCUU5Gq5LR8beUCPzQMVMqKAi3SSZh54u" },
+  { assetId: "gusd", network: "Ethereum", contract: "0x056fd409e1d7a124bd7017459dfea2f387b6d5cd" },
+  { assetId: "usdp", network: "Ethereum", contract: "0x8e870d67f660d95d5be530380d0ec0bd388289e1" },
+  { assetId: "rlusd", network: "Ethereum", contract: "0x8292bb45bf1ee4d140127049757c2e0ff06317ed" },
+  { assetId: "usdr", network: "Ethereum", contract: "0x7b43e3875440b44613dc3bc08e7763e6da63c8f8" },
+  { assetId: "eurc", network: "Ethereum", contract: "0x1abaea1f7c830bd89acc67ec4af516284b1bc33c" },
+  { assetId: "eurc", network: "Solana", contract: "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr" },
+  { assetId: "eurr", network: "Ethereum", contract: "0x50753cfaf86c094925bf976f218d043f8791e408" },
+  { assetId: "brz", network: "Ethereum", contract: "0x01d33fd36ec67c6ada32cf36b31e88ee190b1839" },
+  { assetId: "brz", network: "Polygon", contract: "0x4ed141110f6d2506c98d1f86ca92d2b1577c9275" },
+  { assetId: "brz", network: "BSC", contract: "0x71be881e9c5d4465b3fff61e89c6f3651e69b5bb" },
+  { assetId: "brz", network: "Arbitrum", contract: "0xa8940698fda5a07abaef4a5ccdf2f1bb525b47a2" },
+  { assetId: "brz", network: "Avalanche", contract: "0x491a4eb4f1fc3bff8e1d2fc856a6a46663ad556f" },
+  { assetId: "brl1", network: "Polygon", contract: "0x5c067c80c00ecd2345b05e83a3e758ef799c40b5" },
+  { assetId: "brla", network: "Polygon", contract: "0xe6a537a407488807f0bbeb0038b79004f19dddfb" },
+  { assetId: "paxg", network: "Ethereum", contract: "0x45804880de22913dafe09f4980848ece6ecbaf78" },
+  { assetId: "xaut", network: "Ethereum", contract: "0x68749665ff8d2d112fa859aa293f07a622782f38" },
 ];
 
 const PAIRS: PairConfig[] = [
@@ -594,6 +649,203 @@ function normalizeError(err: unknown): string {
   if (msg.includes("HTTP 403")) return "Bloqueado para esta regiao";
   if (msg.toLowerCase().includes("timeout")) return "Timeout na consulta";
   return msg;
+}
+
+function toDefiLlamaChain(network: string): string | null {
+  const value = network.toLowerCase();
+  if (value.includes("ethereum")) return "ethereum";
+  if (value.includes("bsc") || value.includes("bnb")) return "bsc";
+  if (value.includes("polygon")) return "polygon";
+  if (value.includes("arbitrum")) return "arbitrum";
+  if (value.includes("avalanche")) return "avax";
+  if (value.includes("base")) return "base";
+  if (value.includes("gnosis")) return "gnosis";
+  if (value.includes("solana")) return "solana";
+  if (value.includes("tron")) return "tron";
+  return null;
+}
+
+function toDefiLlamaSymbolFromContract(network: string, contract: string): string | null {
+  const chain = toDefiLlamaChain(network);
+  if (!chain) return null;
+
+  const trimmed = contract.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.startsWith("0x") && trimmed.length === 42) {
+    return `${chain}:${trimmed.toLowerCase()}`;
+  }
+
+  // Solana/Tron and other non-EVM formats
+  if (/^[A-Za-z0-9]{24,}$/.test(trimmed)) {
+    return `${chain}:${trimmed}`;
+  }
+
+  return null;
+}
+
+async function buildContractRows(ctx: PricingContext): Promise<DepegContractRow[]> {
+  const assetsById = new Map(MONITORED_ASSETS.map((asset) => [asset.id, asset]));
+
+  const rows = await Promise.all(
+    CONTRACT_FEEDS.map(async (feed) => {
+      const asset = assetsById.get(feed.assetId);
+      if (!asset) return null;
+
+      const contractSymbol = toDefiLlamaSymbolFromContract(feed.network, feed.contract);
+      if (!contractSymbol) {
+        return {
+          id: `${asset.id}:${feed.network}`,
+          asset_id: asset.id,
+          network: feed.network,
+          contract: feed.contract,
+          contract_symbol: null,
+          label: asset.label,
+          symbol: `${asset.symbol}/${asset.pegCurrency}`,
+          quote_asset: asset.pegCurrency,
+          status: "unavailable",
+          analyzed_on: "DefiLlama",
+          peg_reference: asset.pegReference,
+          market_price: null,
+          market_price_brl: null,
+          bid_price: null,
+          ask_price: null,
+          orderbook_spread_pct: null,
+          ideal_price: 1,
+          ideal_price_brl: toBrlDisplay(1, asset.pegCurrency, ctx),
+          depeg_pct: null,
+          asymmetry_pct: null,
+          direction: "below_peg",
+          severity: "low",
+          signal: "watch",
+          notes: "Contrato sem simbolo compativel para consulta por endereco.",
+        } as DepegContractRow;
+      }
+
+      try {
+        const ticker = await fetchTickerDefiLlama(asset.coingeckoId, contractSymbol);
+        if (!ticker || ticker.mid <= 0) {
+          return {
+            id: `${asset.id}:${feed.network}`,
+            asset_id: asset.id,
+            network: feed.network,
+            contract: feed.contract,
+            contract_symbol: contractSymbol,
+            label: asset.label,
+            symbol: `${asset.symbol}/${asset.pegCurrency}`,
+            quote_asset: asset.pegCurrency,
+            status: "unavailable",
+            analyzed_on: "DefiLlama",
+            peg_reference: asset.pegReference,
+            market_price: null,
+            market_price_brl: null,
+            bid_price: null,
+            ask_price: null,
+            orderbook_spread_pct: null,
+            ideal_price: 1,
+            ideal_price_brl: toBrlDisplay(1, asset.pegCurrency, ctx),
+            depeg_pct: null,
+            asymmetry_pct: null,
+            direction: "below_peg",
+            severity: "low",
+            signal: "watch",
+            notes: "Sem preco por contrato retornado pela DefiLlama neste ciclo.",
+          } as DepegContractRow;
+        }
+
+        const marketPriceInPeg = toPegPriceFromUsd(ticker.mid, asset.pegCurrency, ctx);
+        if (marketPriceInPeg <= 0) {
+          return {
+            id: `${asset.id}:${feed.network}`,
+            asset_id: asset.id,
+            network: feed.network,
+            contract: feed.contract,
+            contract_symbol: contractSymbol,
+            label: asset.label,
+            symbol: `${asset.symbol}/${asset.pegCurrency}`,
+            quote_asset: asset.pegCurrency,
+            status: "unavailable",
+            analyzed_on: `DefiLlama (${feed.network})`,
+            peg_reference: asset.pegReference,
+            market_price: null,
+            market_price_brl: null,
+            bid_price: null,
+            ask_price: null,
+            orderbook_spread_pct: null,
+            ideal_price: 1,
+            ideal_price_brl: toBrlDisplay(1, asset.pegCurrency, ctx),
+            depeg_pct: null,
+            asymmetry_pct: null,
+            direction: "below_peg",
+            severity: "low",
+            signal: "watch",
+            notes: "Preco USD valido, mas sem referencia de conversao para moeda do peg.",
+          } as DepegContractRow;
+        }
+
+        const depegPct = ((marketPriceInPeg - 1) / 1) * 100;
+        const asymmetryPct = Math.abs(depegPct);
+        const direction: DepegContractRow["direction"] = depegPct >= 0 ? "above_peg" : "below_peg";
+        const { severity, signal } = classify(asymmetryPct);
+
+        return {
+          id: `${asset.id}:${feed.network}`,
+          asset_id: asset.id,
+          network: feed.network,
+          contract: feed.contract,
+          contract_symbol: contractSymbol,
+          label: asset.label,
+          symbol: `${asset.symbol}/${asset.pegCurrency}`,
+          quote_asset: asset.pegCurrency,
+          status: "ok",
+          analyzed_on: `DefiLlama (${feed.network})`,
+          peg_reference: asset.pegReference,
+          market_price: Number(marketPriceInPeg.toFixed(6)),
+          market_price_brl: toBrlDisplay(marketPriceInPeg, asset.pegCurrency, ctx),
+          bid_price: null,
+          ask_price: null,
+          orderbook_spread_pct: null,
+          ideal_price: 1,
+          ideal_price_brl: toBrlDisplay(1, asset.pegCurrency, ctx),
+          depeg_pct: Number(depegPct.toFixed(4)),
+          asymmetry_pct: Number(asymmetryPct.toFixed(4)),
+          direction,
+          severity,
+          signal,
+          notes: "Monitoramento por contrato/rede via DefiLlama.",
+        } as DepegContractRow;
+      } catch (err) {
+        return {
+          id: `${asset.id}:${feed.network}`,
+          asset_id: asset.id,
+          network: feed.network,
+          contract: feed.contract,
+          contract_symbol: contractSymbol,
+          label: asset.label,
+          symbol: `${asset.symbol}/${asset.pegCurrency}`,
+          quote_asset: asset.pegCurrency,
+          status: "unavailable",
+          analyzed_on: `DefiLlama (${feed.network})`,
+          peg_reference: asset.pegReference,
+          market_price: null,
+          market_price_brl: null,
+          bid_price: null,
+          ask_price: null,
+          orderbook_spread_pct: null,
+          ideal_price: 1,
+          ideal_price_brl: toBrlDisplay(1, asset.pegCurrency, ctx),
+          depeg_pct: null,
+          asymmetry_pct: null,
+          direction: "below_peg",
+          severity: "low",
+          signal: "watch",
+          notes: `Falha na consulta por contrato: ${normalizeError(err)}`,
+        } as DepegContractRow;
+      }
+    })
+  );
+
+  return rows.filter((row): row is DepegContractRow => row !== null);
 }
 
 async function fetchJson(url: string): Promise<any> {
@@ -1399,6 +1651,31 @@ export async function GET(request: NextRequest) {
         return bVal - aVal;
       });
 
+    const contractRows = await buildContractRows(pricingContext);
+
+    const contractOpportunities = contractRows
+      .filter(
+        (row): row is DepegContractRow & { status: "ok"; asymmetry_pct: number } =>
+          row.status === "ok" &&
+          row.asymmetry_pct !== null &&
+          row.asymmetry_pct >= thresholdPct &&
+          row.depeg_pct !== null &&
+          (
+            directionMode === "all" ||
+            (directionMode === "buy_discount" && row.depeg_pct < 0) ||
+            (directionMode === "sell_premium" && row.depeg_pct > 0)
+          )
+      )
+      .sort((a, b) => {
+        const aNet = netMarginPct(a);
+        const bNet = netMarginPct(b);
+        if (aNet === null && bNet === null) return b.asymmetry_pct - a.asymmetry_pct;
+        if (aNet === null) return 1;
+        if (bNet === null) return -1;
+        if (bNet !== aNet) return bNet - aNet;
+        return b.asymmetry_pct - a.asymmetry_pct;
+      });
+
     const aboveThreshold = opportunities
       .filter(
         (row): row is DepegRow & { status: "ok"; asymmetry_pct: number } =>
@@ -1422,9 +1699,9 @@ export async function GET(request: NextRequest) {
         return b.asymmetry_pct - a.asymmetry_pct;
       });
 
-    const best = aboveThreshold[0] ?? null;
+    const best = contractOpportunities[0] ?? aboveThreshold[0] ?? null;
     const bestNetMargin = best ? netMarginPct(best) : null;
-    const maxAsymmetryPct = opportunities.reduce((max, row) => {
+    const maxAsymmetryPct = (contractRows.length > 0 ? contractRows : opportunities).reduce((max, row) => {
       if (row.status !== "ok" || row.asymmetry_pct === null) return max;
       return Math.max(max, row.asymmetry_pct);
     }, 0);
@@ -1441,10 +1718,11 @@ export async function GET(request: NextRequest) {
       threshold_pct: Number(thresholdPct.toFixed(4)),
       usd_brl: usdBrl > 0 ? Number(usdBrl.toFixed(6)) : null,
       monitored_rows: opportunities,
-      opportunities: aboveThreshold,
+      contract_rows: contractRows,
+      opportunities: contractOpportunities,
       summary: {
-        monitored_pairs: MONITORED_ASSETS.length,
-        above_threshold: aboveThreshold.length,
+        monitored_pairs: contractRows.length > 0 ? contractRows.length : MONITORED_ASSETS.length,
+        above_threshold: contractRows.length > 0 ? contractOpportunities.length : aboveThreshold.length,
         max_asymmetry_pct: Number(maxAsymmetryPct.toFixed(4)),
         best_opportunity: best
           ? {
@@ -1477,6 +1755,7 @@ export async function GET(request: NextRequest) {
       threshold_pct: Number(thresholdPct.toFixed(4)),
       usd_brl: null,
       monitored_rows: fallbackRows("Ativo monitorado, mas a atualizacao geral da API falhou neste ciclo."),
+      contract_rows: [],
       opportunities: [],
       summary: {
         monitored_pairs: MONITORED_ASSETS.length,
