@@ -7,8 +7,26 @@ const TIMEOUT_MS = 9_000;
 const CACHE_TTL_MS = 2_000; // Cache curto para reduzir defasagem entre tela e mercado
 
 type FxBase = "EUR" | "BRL";
-type AssetSymbol = "USDT" | "USDC" | "DAI" | "BRLA" | "BRL1" | "BRZ";
-type QuoteAsset = "USD" | "BRL" | "USDT" | "USDC" | "DAI" | "BRLA" | "BRL1" | "BRZ";
+type AssetSymbol =
+  | "USDT"
+  | "USDC"
+  | "DAI"
+  | "USDS"
+  | "PYUSD"
+  | "FDUSD"
+  | "GUSD"
+  | "USDP"
+  | "RLUSD"
+  | "USDR"
+  | "EURC"
+  | "EURR"
+  | "BRLA"
+  | "BRL1"
+  | "BRZ"
+  | "WBRL"
+  | "PAXG"
+  | "XAUT";
+type QuoteAsset = "USD" | "BRL" | "EUR" | "XAU" | "USDT" | "USDC" | "DAI" | "BRLA" | "BRL1" | "BRZ";
 type IdealType = "usd_peg" | "fx" | "cross_peg";
 type DirectionMode = "all" | "buy_discount" | "sell_premium";
 
@@ -17,7 +35,7 @@ type MonitoredAsset = {
   label: string;
   symbol: AssetSymbol;
   pegReference: string;
-  pegCurrency: "USD" | "BRL";
+  pegCurrency: "USD" | "BRL" | "EUR" | "XAU";
   coingeckoId: string;
   coinmarketcapSlug: string;
   defilamaSymbol?: string;
@@ -106,7 +124,7 @@ type CacheEntry = {
 
 const cache = new Map<string, CacheEntry>();
 
-const ASSET_METADATA: Record<AssetSymbol, { coingeckoId: string; coinmarketcapSlug: string }> = {
+const ASSET_METADATA: Partial<Record<AssetSymbol, { coingeckoId: string; coinmarketcapSlug: string }>> = {
   USDT: { coingeckoId: "tether", coinmarketcapSlug: "tether" },
   USDC: { coingeckoId: "usd-coin", coinmarketcapSlug: "usd-coin" },
   DAI: { coingeckoId: "dai", coinmarketcapSlug: "multi-collateral-dai" },
@@ -144,6 +162,87 @@ const MONITORED_ASSETS: MonitoredAsset[] = [
     coinmarketcapSlug: "multi-collateral-dai",
   },
   {
+    id: "usds",
+    label: "USDS",
+    symbol: "USDS",
+    pegReference: "USD stablecoin (1:1)",
+    pegCurrency: "USD",
+    coingeckoId: "usds",
+    coinmarketcapSlug: "usds",
+  },
+  {
+    id: "pyusd",
+    label: "PYUSD",
+    symbol: "PYUSD",
+    pegReference: "USD stablecoin (1:1)",
+    pegCurrency: "USD",
+    coingeckoId: "paypal-usd",
+    coinmarketcapSlug: "paypal-usd",
+  },
+  {
+    id: "fdusd",
+    label: "FDUSD",
+    symbol: "FDUSD",
+    pegReference: "USD stablecoin (1:1)",
+    pegCurrency: "USD",
+    coingeckoId: "first-digital-usd",
+    coinmarketcapSlug: "first-digital-usd",
+  },
+  {
+    id: "gusd",
+    label: "GUSD",
+    symbol: "GUSD",
+    pegReference: "USD stablecoin (1:1)",
+    pegCurrency: "USD",
+    coingeckoId: "gemini-dollar",
+    coinmarketcapSlug: "gemini-dollar",
+  },
+  {
+    id: "usdp",
+    label: "USDP",
+    symbol: "USDP",
+    pegReference: "USD stablecoin (1:1)",
+    pegCurrency: "USD",
+    coingeckoId: "pax-dollar",
+    coinmarketcapSlug: "usdp",
+  },
+  {
+    id: "rlusd",
+    label: "RLUSD",
+    symbol: "RLUSD",
+    pegReference: "USD stablecoin (1:1)",
+    pegCurrency: "USD",
+    coingeckoId: "ripple-usd",
+    coinmarketcapSlug: "ripple-usd",
+  },
+  {
+    id: "usdr",
+    label: "USDR",
+    symbol: "USDR",
+    pegReference: "USD stablecoin (1:1)",
+    pegCurrency: "USD",
+    coingeckoId: "stablr-usd",
+    coinmarketcapSlug: "stablr-usd",
+  },
+  {
+    id: "eurc",
+    label: "EURC",
+    symbol: "EURC",
+    pegReference: "EUR stablecoin (1:1)",
+    pegCurrency: "EUR",
+    coingeckoId: "euro-coin",
+    coinmarketcapSlug: "euro-coin",
+  },
+  {
+    id: "eurr",
+    label: "EURR",
+    symbol: "EURR",
+    pegReference: "EUR stablecoin (1:1)",
+    pegCurrency: "EUR",
+    coingeckoId: "stablr-euro",
+    coinmarketcapSlug: "stablr-euro",
+  },
+  {
     id: "brla",
     label: "BRLA",
     symbol: "BRLA",
@@ -172,6 +271,33 @@ const MONITORED_ASSETS: MonitoredAsset[] = [
     coingeckoId: "brz",
     coinmarketcapSlug: "brz",
     defilamaSymbol: "polygon:0x4ed141110f6eeeaba9a1df36d8c26f684d2475dc",
+  },
+  {
+    id: "wbrl",
+    label: "WBRL",
+    symbol: "WBRL",
+    pegReference: "BRL stablecoin (1:1)",
+    pegCurrency: "BRL",
+    coingeckoId: "brazilian-real",
+    coinmarketcapSlug: "wrapped-brazilian-real",
+  },
+  {
+    id: "paxg",
+    label: "PAXG",
+    symbol: "PAXG",
+    pegReference: "Gold token (1 troy oz)",
+    pegCurrency: "XAU",
+    coingeckoId: "pax-gold",
+    coinmarketcapSlug: "pax-gold",
+  },
+  {
+    id: "xaut",
+    label: "XAUT",
+    symbol: "XAUT",
+    pegReference: "Gold token (1 troy oz)",
+    pegCurrency: "XAU",
+    coingeckoId: "tether-gold",
+    coinmarketcapSlug: "tether-gold",
   },
 ];
 
@@ -730,6 +856,10 @@ async function fetchAggregatorRatio(pair: PairConfig): Promise<TickerResult | nu
   const baseMeta = ASSET_METADATA[pair.baseAsset];
   const quoteMeta = ASSET_METADATA[pair.quoteAsset as AssetSymbol];
 
+  if (!baseMeta || !quoteMeta) {
+    return null;
+  }
+
   try {
     const [baseTicker, quoteTicker] = await Promise.all([
       fetchTickerCoinGecko(baseMeta.coingeckoId),
@@ -1023,11 +1153,54 @@ function isBrlStableQuote(quoteAsset: QuoteAsset): boolean {
   return quoteAsset === "BRL" || quoteAsset === "BRLA" || quoteAsset === "BRL1" || quoteAsset === "BRZ";
 }
 
-function toBrlDisplay(value: number, quoteAsset: QuoteAsset, usdBrl: number): number | null {
+type PegCurrency = MonitoredAsset["pegCurrency"];
+type PricingContext = {
+  usdBrl: number;
+  eurUsd: number;
+  xauUsd: number;
+};
+
+function toBrlDisplay(value: number, pegCurrency: PegCurrency, ctx: PricingContext): number | null {
   if (value <= 0) return null;
-  if (isBrlStableQuote(quoteAsset)) return Number(value.toFixed(6));
-  if (usdBrl <= 0) return null;
-  return Number((value * usdBrl).toFixed(6));
+  if (pegCurrency === "BRL") return Number(value.toFixed(6));
+  if (ctx.usdBrl <= 0) return null;
+
+  if (pegCurrency === "USD") {
+    return Number((value * ctx.usdBrl).toFixed(6));
+  }
+
+  if (pegCurrency === "EUR") {
+    if (ctx.eurUsd <= 0) return null;
+    return Number((value * ctx.eurUsd * ctx.usdBrl).toFixed(6));
+  }
+
+  if (pegCurrency === "XAU") {
+    if (ctx.xauUsd <= 0) return null;
+    return Number((value * ctx.xauUsd * ctx.usdBrl).toFixed(6));
+  }
+
+  return null;
+}
+
+function toPegPriceFromUsd(priceUsd: number, pegCurrency: PegCurrency, ctx: PricingContext): number {
+  if (priceUsd <= 0) return 0;
+
+  if (pegCurrency === "USD") {
+    return priceUsd;
+  }
+
+  if (pegCurrency === "BRL") {
+    if (ctx.usdBrl <= 0) return 0;
+    return priceUsd * ctx.usdBrl;
+  }
+
+  if (pegCurrency === "EUR") {
+    if (ctx.eurUsd <= 0) return 0;
+    return priceUsd / ctx.eurUsd;
+  }
+
+  if (ctx.xauUsd <= 0) return 0;
+  return priceUsd / ctx.xauUsd;
 }
 
 function estimatedFeePct(quoteAsset: DepegRow["quote_asset"]): number {
@@ -1066,7 +1239,10 @@ export async function GET(request: NextRequest) {
 
   try {
     let usdBrl = 0;
-    const needsUsdBrl = MONITORED_ASSETS.some((asset) => asset.pegCurrency === "USD");
+    let eurUsd = 0;
+    let xauUsd = 0;
+
+    const needsUsdBrl = MONITORED_ASSETS.some((asset) => asset.pegCurrency !== "BRL");
     if (needsUsdBrl) {
       try {
         usdBrl = await fetchUsdToBrl();
@@ -1074,6 +1250,27 @@ export async function GET(request: NextRequest) {
         usdBrl = 0;
       }
     }
+
+    const needsEurUsd = MONITORED_ASSETS.some((asset) => asset.pegCurrency === "EUR");
+    if (needsEurUsd) {
+      try {
+        eurUsd = await fetchFxToUsd("EUR");
+      } catch {
+        eurUsd = 0;
+      }
+    }
+
+    const needsXauUsd = MONITORED_ASSETS.some((asset) => asset.pegCurrency === "XAU");
+    if (needsXauUsd) {
+      try {
+        const xauTicker = await fetchTickerCoinGecko("pax-gold");
+        xauUsd = xauTicker?.mid && xauTicker.mid > 0 ? xauTicker.mid : 0;
+      } catch {
+        xauUsd = 0;
+      }
+    }
+
+    const pricingContext: PricingContext = { usdBrl, eurUsd, xauUsd };
 
     const rawRows = await Promise.all(
       MONITORED_ASSETS.map(async (asset) => {
@@ -1097,7 +1294,7 @@ export async function GET(request: NextRequest) {
               ask_price: null,
               orderbook_spread_pct: null,
               ideal_price: Number(idealPrice.toFixed(6)),
-              ideal_price_brl: asset.pegCurrency === "BRL" ? 1 : toBrlDisplay(idealPrice, "USD", usdBrl),
+              ideal_price_brl: toBrlDisplay(idealPrice, asset.pegCurrency, pricingContext),
               depeg_pct: null,
               asymmetry_pct: null,
               direction: "below_peg",
@@ -1109,7 +1306,7 @@ export async function GET(request: NextRequest) {
             } as DepegRow;
           }
 
-          const marketPriceInPeg = asset.pegCurrency === "BRL" ? ticker.mid * usdBrl : ticker.mid;
+          const marketPriceInPeg = toPegPriceFromUsd(ticker.mid, asset.pegCurrency, pricingContext);
           if (marketPriceInPeg <= 0) {
             return {
               id: asset.id,
@@ -1125,7 +1322,7 @@ export async function GET(request: NextRequest) {
               ask_price: null,
               orderbook_spread_pct: null,
               ideal_price: Number(idealPrice.toFixed(6)),
-              ideal_price_brl: asset.pegCurrency === "BRL" ? 1 : toBrlDisplay(idealPrice, "USD", usdBrl),
+              ideal_price_brl: toBrlDisplay(idealPrice, asset.pegCurrency, pricingContext),
               depeg_pct: null,
               asymmetry_pct: null,
               direction: "below_peg",
@@ -1153,12 +1350,12 @@ export async function GET(request: NextRequest) {
             analyzed_on: ticker.source,
             peg_reference: pegReference,
             market_price: Number(marketPriceInPeg.toFixed(6)),
-            market_price_brl: asset.pegCurrency === "BRL" ? Number(marketPriceInPeg.toFixed(6)) : toBrlDisplay(marketPriceInPeg, "USD", usdBrl),
+            market_price_brl: toBrlDisplay(marketPriceInPeg, asset.pegCurrency, pricingContext),
             bid_price: null,
             ask_price: null,
             orderbook_spread_pct: null,
             ideal_price: Number(idealPrice.toFixed(6)),
-            ideal_price_brl: asset.pegCurrency === "BRL" ? 1 : toBrlDisplay(idealPrice, "USD", usdBrl),
+            ideal_price_brl: toBrlDisplay(idealPrice, asset.pegCurrency, pricingContext),
             depeg_pct: Number(depegPct.toFixed(4)),
             asymmetry_pct: Number(asymmetryPct.toFixed(4)),
             direction,
@@ -1182,7 +1379,7 @@ export async function GET(request: NextRequest) {
             ask_price: null,
             orderbook_spread_pct: null,
             ideal_price: Number(idealPrice.toFixed(6)),
-            ideal_price_brl: asset.pegCurrency === "BRL" ? 1 : toBrlDisplay(idealPrice, "USD", usdBrl),
+            ideal_price_brl: toBrlDisplay(idealPrice, asset.pegCurrency, pricingContext),
             depeg_pct: null,
             asymmetry_pct: null,
             direction: "below_peg",
