@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 
 type QuoteAsset = "USD" | "BRL" | "EUR" | "XAU";
 type DirectionMode = "all" | "buy_discount" | "sell_premium";
+type MagnitudeFilter = "all" | "micro" | "small" | "medium" | "large";
+type OrderMode = "asymmetry_desc" | "depeg_asc" | "depeg_desc" | "price_desc" | "label_asc";
 
 type DepegRow = {
   id: string;
@@ -464,6 +466,8 @@ const STABLECOIN_CATALOG: StablecoinCatalogItem[] = [
   },
 ];
 
+const STABLECOIN_BY_TOKEN = new Map(STABLECOIN_CATALOG.map((item) => [item.token.toLowerCase(), item]));
+
 function pct(value: number | null): string {
   if (value === null) return "--";
   return `${value >= 0 ? "+" : ""}${value.toFixed(4)}%`;
@@ -512,6 +516,17 @@ function actionSignal(row: DepegRow, activeThresholdPct: number): { label: strin
   return { label: "PREMIO", color: "#ef4444" };
 }
 
+function matchesMagnitude(asymmetryPct: number | null, filter: MagnitudeFilter): boolean {
+  if (filter === "all") return true;
+  if (asymmetryPct === null) return false;
+
+  const abs = Math.abs(asymmetryPct);
+  if (filter === "micro") return abs < 0.01;
+  if (filter === "small") return abs >= 0.01 && abs < 0.1;
+  if (filter === "medium") return abs >= 0.1 && abs < 1;
+  return abs >= 1;
+}
+
 function buildUnavailableRow(asset: (typeof DEFAULT_MONITORED_ASSETS)[number]): DepegRow {
   return {
     id: asset.id,
@@ -543,8 +558,11 @@ export default function DepegArbitragePage() {
   const [countdown, setCountdown] = useState(REFRESH_SECONDS);
   const [thresholdInput, setThresholdInput] = useState("0.35");
   const [directionMode, setDirectionMode] = useState<DirectionMode>("all");
+  const [magnitudeFilter, setMagnitudeFilter] = useState<MagnitudeFilter>("all");
+  const [orderMode, setOrderMode] = useState<OrderMode>("asymmetry_desc");
   const [history, setHistory] = useState<DepegHistoryPoint[]>([]);
   const [catalogFilter, setCatalogFilter] = useState<"ALL" | StablecoinCategory>("ALL");
+  const [showCatalog, setShowCatalog] = useState(false);
 
   const thresholdNum = useMemo(() => {
     const parsed = Number(thresholdInput.replace(",", "."));
@@ -661,17 +679,86 @@ export default function DepegArbitragePage() {
 
   const filteredRows = useMemo(() => {
     return rowsToRender.filter((row) => {
+      if (!matchesMagnitude(row.asymmetry_pct, magnitudeFilter)) return false;
+
       if (directionMode === "all") return true;
       if (directionMode === "buy_discount") {
         return row.status === "ok" && row.depeg_pct !== null && row.depeg_pct < 0;
       }
       return row.status === "ok" && row.depeg_pct !== null && row.depeg_pct > 0;
     });
-  }, [directionMode, rowsToRender]);
+  }, [directionMode, magnitudeFilter, rowsToRender]);
 
-  const rankedRows = filteredRows;
+  const rankedRows = useMemo(() => {
+    const copy = [...filteredRows];
+
+    copy.sort((a, b) => {
+      if (orderMode === "label_asc") {
+        return a.label.localeCompare(b.label, "pt-BR");
+      }
+
+      if (orderMode === "price_desc") {
+        const av = a.market_price_brl ?? Number.NEGATIVE_INFINITY;
+        const bv = b.market_price_brl ?? Number.NEGATIVE_INFINITY;
+        return bv - av;
+      }
+
+      if (orderMode === "depeg_asc") {
+        const av = a.depeg_pct ?? Number.POSITIVE_INFINITY;
+        const bv = b.depeg_pct ?? Number.POSITIVE_INFINITY;
+        return av - bv;
+      }
+
+      if (orderMode === "depeg_desc") {
+        const av = a.depeg_pct ?? Number.NEGATIVE_INFINITY;
+        const bv = b.depeg_pct ?? Number.NEGATIVE_INFINITY;
+        return bv - av;
+      }
+
+      const av = a.asymmetry_pct ?? Number.NEGATIVE_INFINITY;
+      const bv = b.asymmetry_pct ?? Number.NEGATIVE_INFINITY;
+      return bv - av;
+    });
+
+    return copy;
+  }, [filteredRows, orderMode]);
 
   const activeThresholdPct = data?.threshold_pct ?? thresholdNum;
+
+  const discountedOpportunities = useMemo(() => {
+    return rankedRows.filter(
+      (row) =>
+        row.status === "ok" &&
+        row.depeg_pct !== null &&
+        row.asymmetry_pct !== null &&
+        row.depeg_pct < 0 &&
+        row.asymmetry_pct >= activeThresholdPct
+    );
+  }, [rankedRows, activeThresholdPct]);
+
+  const networkRows = useMemo(() => {
+    return rankedRows.flatMap((row) => {
+      const catalogItem = STABLECOIN_BY_TOKEN.get(row.label.toLowerCase());
+
+      if (!catalogItem || catalogItem.contracts.length === 0) {
+        return [
+          {
+            row,
+            network: "Rede nao catalogada",
+            contract: "Sem contrato oficial mapeado",
+            warning: catalogItem?.warning,
+          },
+        ];
+      }
+
+      return catalogItem.contracts.map((entry) => ({
+        row,
+        network: entry.network,
+        contract: entry.contract,
+        warning: catalogItem.warning,
+      }));
+    });
+  }, [rankedRows]);
 
   const historyRows = useMemo(() => {
     return history
@@ -780,6 +867,48 @@ export default function DepegArbitragePage() {
                 })}
               </div>
             </div>
+
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>Filtro por ordem de grandeza (assimetria)</span>
+              <select
+                value={magnitudeFilter}
+                onChange={(e) => setMagnitudeFilter(e.target.value as MagnitudeFilter)}
+                style={{
+                  border: "1px solid var(--card-border)",
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  background: "rgba(255,255,255,0.04)",
+                  color: "var(--text)",
+                }}
+              >
+                <option value="all">Todas faixas</option>
+                <option value="micro">Micro (&lt; 0,01%)</option>
+                <option value="small">Pequena (0,01% a 0,0999%)</option>
+                <option value="medium">Media (0,1% a 0,9999%)</option>
+                <option value="large">Alta (>= 1%)</option>
+              </select>
+            </label>
+
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>Ordenacao</span>
+              <select
+                value={orderMode}
+                onChange={(e) => setOrderMode(e.target.value as OrderMode)}
+                style={{
+                  border: "1px solid var(--card-border)",
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  background: "rgba(255,255,255,0.04)",
+                  color: "var(--text)",
+                }}
+              >
+                <option value="asymmetry_desc">Maior assimetria primeiro</option>
+                <option value="depeg_asc">Maior desconto primeiro</option>
+                <option value="depeg_desc">Maior premio primeiro</option>
+                <option value="price_desc">Maior preco BRL primeiro</option>
+                <option value="label_asc">Ativo (A-Z)</option>
+              </select>
+            </label>
           </div>
 
           <div style={{ fontSize: 13, color: "var(--muted)", display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -812,13 +941,101 @@ export default function DepegArbitragePage() {
             border: "1px solid var(--card-border)",
             borderRadius: 16,
             padding: 12,
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+            <h2 style={{ margin: 0, fontSize: 18 }}>Oportunidades de compra com desconto</h2>
+            <div style={{ fontSize: 12, color: "var(--muted)" }}>
+              {discountedOpportunities.length} ativo(s) com desconto acima do limiar
+            </div>
+          </div>
+
+          {discountedOpportunities.length > 0 ? (
+            <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+              {discountedOpportunities.map((row) => {
+                const catalogItem = STABLECOIN_BY_TOKEN.get(row.label.toLowerCase());
+                const networkCount = catalogItem?.contracts.length ?? 0;
+
+                return (
+                  <article
+                    key={`opportunity-${row.id}`}
+                    style={{
+                      border: "1px solid rgba(34,197,94,0.55)",
+                      borderRadius: 14,
+                      background: "linear-gradient(135deg, rgba(34,197,94,0.16), rgba(34,197,94,0.06))",
+                      padding: 12,
+                      boxShadow: "0 12px 26px rgba(34,197,94,0.12)",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                      <div>
+                        <div style={{ fontWeight: 800, fontSize: 17 }}>{row.label}</div>
+                        <div style={{ fontSize: 12, color: "var(--muted)" }}>{row.symbol}</div>
+                      </div>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          borderRadius: 999,
+                          border: "1px solid #22c55e",
+                          color: "#22c55e",
+                          padding: "3px 10px",
+                          fontWeight: 800,
+                        }}
+                      >
+                        OPORTUNIDADE
+                      </span>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginTop: 10, fontSize: 13 }}>
+                      <div>
+                        <div style={{ color: "var(--muted)", fontSize: 11 }}>De-peg</div>
+                        <div style={{ color: "#ef4444", fontWeight: 800 }}>{pct(row.depeg_pct)}</div>
+                      </div>
+                      <div>
+                        <div style={{ color: "var(--muted)", fontSize: 11 }}>Assimetria</div>
+                        <div style={{ fontWeight: 800 }}>{row.asymmetry_pct?.toFixed(4)}%</div>
+                      </div>
+                      <div>
+                        <div style={{ color: "var(--muted)", fontSize: 11 }}>Preco atual</div>
+                        <div style={{ fontWeight: 700 }}>{price(row.market_price, row.quote_asset)}</div>
+                      </div>
+                      <div>
+                        <div style={{ color: "var(--muted)", fontSize: 11 }}>Peg ideal</div>
+                        <div style={{ fontWeight: 700 }}>{price(row.ideal_price, row.quote_asset)}</div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)" }}>
+                      Fonte: {row.analyzed_on} · redes monitoradas: {networkCount}
+                    </div>
+                    <div style={{ marginTop: 6, fontSize: 12, color: "var(--muted)" }}>{row.notes}</div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: "var(--muted)" }}>
+              Nenhuma oportunidade de compra descontada acima do limiar atual.
+            </div>
+          )}
+        </section>
+
+        <section
+          style={{
+            marginTop: 12,
+            background: "var(--card)",
+            border: "1px solid var(--card-border)",
+            borderRadius: 16,
+            padding: 12,
             overflowX: "auto",
           }}
         >
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 980 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1180 }}>
             <thead>
               <tr style={{ textAlign: "left", borderBottom: "1px solid var(--card-border)", color: "var(--muted)", fontSize: 12 }}>
                 <th style={{ padding: "10px 8px" }}>Ativo</th>
+                <th style={{ padding: "10px 8px" }}>Rede</th>
+                <th style={{ padding: "10px 8px" }}>Contrato</th>
                 <th style={{ padding: "10px 8px" }}>Status</th>
                 <th style={{ padding: "10px 8px" }}>Fonte</th>
                 <th style={{ padding: "10px 8px" }}>Preco atual</th>
@@ -833,24 +1050,43 @@ export default function DepegArbitragePage() {
               </tr>
             </thead>
             <tbody>
-              {rankedRows.map((row) => {
+              {networkRows.map((networkRow, idx) => {
+                const row = networkRow.row;
                 const signal = actionSignal(row, activeThresholdPct);
+                const isOpportunity =
+                  row.status === "ok" &&
+                  row.depeg_pct !== null &&
+                  row.asymmetry_pct !== null &&
+                  row.depeg_pct < 0 &&
+                  row.asymmetry_pct >= activeThresholdPct;
 
                 return (
                   <tr
-                    key={row.id}
+                    key={`${row.id}-${networkRow.network}-${idx}`}
                     style={{
                       borderBottom: "1px solid var(--card-border)",
                       fontSize: 13,
                       background:
-                        row.status === "ok" && row.asymmetry_pct !== null && row.asymmetry_pct >= activeThresholdPct
-                          ? "rgba(245, 158, 11, 0.08)"
+                        isOpportunity
+                          ? "rgba(34, 197, 94, 0.12)"
+                          : row.status === "ok" && row.asymmetry_pct !== null && row.asymmetry_pct >= activeThresholdPct
+                            ? "rgba(245, 158, 11, 0.08)"
                           : "transparent",
+                      boxShadow: isOpportunity ? "inset 4px 0 0 #22c55e, inset 0 0 0 1px rgba(34, 197, 94, 0.35)" : "none",
                     }}
                   >
                     <td style={{ padding: "10px 8px" }}>
                       <div style={{ fontWeight: 700 }}>{row.label}</div>
                       <div style={{ fontSize: 11, color: "var(--muted)" }}>{row.symbol}</div>
+                    </td>
+                    <td style={{ padding: "10px 8px", whiteSpace: "nowrap" }}>{networkRow.network}</td>
+                    <td style={{ padding: "10px 8px", maxWidth: 230, overflowWrap: "anywhere", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12 }}>
+                      {networkRow.contract}
+                      {networkRow.warning && (
+                        <div style={{ marginTop: 6, color: "#f59e0b", fontFamily: "DM Sans, sans-serif", fontSize: 11 }}>
+                          {networkRow.warning}
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: "10px 8px" }}>
                       <span
@@ -897,15 +1133,15 @@ export default function DepegArbitragePage() {
                       {row.status === "ok" ? (
                         <span
                           style={{
-                            border: `1px solid ${signal.color}`,
-                            color: signal.color,
+                            border: `1px solid ${isOpportunity ? "#22c55e" : signal.color}`,
+                            color: isOpportunity ? "#22c55e" : signal.color,
                             borderRadius: 999,
                             padding: "2px 10px",
                             fontSize: 11,
                             fontWeight: 700,
                           }}
                         >
-                          {signal.label}
+                          {isOpportunity ? "COMPRA DESCONTADA" : signal.label}
                         </span>
                       ) : (
                         <span style={{ fontSize: 11, color: "var(--muted)" }} title={row.notes}>
@@ -919,7 +1155,7 @@ export default function DepegArbitragePage() {
               })}
               {(!data || rankedRows.length === 0) && (
                 <tr>
-                  <td colSpan={12} style={{ padding: "14px 8px", color: "var(--muted)", fontSize: 13 }}>
+                  <td colSpan={14} style={{ padding: "14px 8px", color: "var(--muted)", fontSize: 13 }}>
                     Nenhum ativo disponivel neste momento.
                   </td>
                 </tr>
@@ -1011,86 +1247,110 @@ export default function DepegArbitragePage() {
             overflowX: "auto",
           }}
         >
-          <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <h2 style={{ margin: 0, fontSize: 18 }}>Tabela completa de stablecoins</h2>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {[
-                { value: "ALL", label: "Todos" },
-                { value: "USD", label: "USD" },
-                { value: "EUR", label: "EUR" },
-                { value: "BRL", label: "BRL" },
-                { value: "XAU", label: "Ouro" },
-              ].map((option) => {
-                const active = catalogFilter === option.value;
-                return (
-                  <button
-                    key={option.value}
-                    onClick={() => setCatalogFilter(option.value as "ALL" | StablecoinCategory)}
-                    style={{
-                      border: "1px solid var(--card-border)",
-                      borderRadius: 999,
-                      padding: "6px 12px",
-                      background: active ? "rgba(14, 165, 233, 0.18)" : "rgba(255,255,255,0.04)",
-                      color: active ? "var(--text)" : "var(--muted)",
-                      fontWeight: active ? 700 : 500,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-            <div style={{ fontSize: 13, color: "var(--muted)" }}>{filteredCatalog.length} tokens exibidos</div>
+            <button
+              onClick={() => setShowCatalog((prev) => !prev)}
+              style={{
+                border: "1px solid var(--card-border)",
+                borderRadius: 10,
+                padding: "8px 12px",
+                background: "rgba(255,255,255,0.04)",
+                color: "var(--text)",
+                cursor: "pointer",
+                fontWeight: 700,
+              }}
+            >
+              {showCatalog ? "Ocultar tabela" : "Mostrar tabela"}
+            </button>
           </div>
 
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100, marginTop: 10 }}>
-            <thead>
-              <tr style={{ textAlign: "left", borderBottom: "1px solid var(--card-border)", color: "var(--muted)", fontSize: 12 }}>
-                <th style={{ padding: "10px 8px" }}>Token</th>
-                <th style={{ padding: "10px 8px" }}>Emissor</th>
-                <th style={{ padding: "10px 8px" }}>Paridade</th>
-                <th style={{ padding: "10px 8px" }}>Rede + Contrato oficial</th>
-                <th style={{ padding: "10px 8px" }}>API / Docs oficiais</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredCatalog.map((item) => (
-                <tr key={item.token} style={{ borderBottom: "1px solid var(--card-border)", fontSize: 13, verticalAlign: "top" }}>
-                  <td style={{ padding: "10px 8px" }}>
-                    <div style={{ fontWeight: 800 }}>{item.token}</div>
-                    {item.warning && (
-                      <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 4 }}>{item.warning}</div>
-                    )}
-                  </td>
-                  <td style={{ padding: "10px 8px" }}>{item.issuer}</td>
-                  <td style={{ padding: "10px 8px" }}>{item.parity}</td>
-                  <td style={{ padding: "10px 8px" }}>
-                    <div style={{ display: "grid", gap: 6 }}>
-                      {item.contracts.map((entry) => (
-                        <div key={`${item.token}-${entry.network}`}>
-                          <div style={{ fontSize: 12, color: "var(--muted)" }}>{entry.network}</div>
-                          <div style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12, overflowWrap: "anywhere" }}>
-                            {entry.contract}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </td>
-                  <td style={{ padding: "10px 8px" }}>
-                    <a
-                      href={item.docsUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: "#38bdf8", textDecoration: "none" }}
+          {showCatalog ? (
+            <>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                {[
+                  { value: "ALL", label: "Todos" },
+                  { value: "USD", label: "USD" },
+                  { value: "EUR", label: "EUR" },
+                  { value: "BRL", label: "BRL" },
+                  { value: "XAU", label: "Ouro" },
+                ].map((option) => {
+                  const active = catalogFilter === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      onClick={() => setCatalogFilter(option.value as "ALL" | StablecoinCategory)}
+                      style={{
+                        border: "1px solid var(--card-border)",
+                        borderRadius: 999,
+                        padding: "6px 12px",
+                        background: active ? "rgba(14, 165, 233, 0.18)" : "rgba(255,255,255,0.04)",
+                        color: active ? "var(--text)" : "var(--muted)",
+                        fontWeight: active ? 700 : 500,
+                        cursor: "pointer",
+                      }}
                     >
-                      {item.docsUrl}
-                    </a>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 8 }}>{filteredCatalog.length} tokens exibidos</div>
+
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100, marginTop: 10 }}>
+                <thead>
+                  <tr style={{ textAlign: "left", borderBottom: "1px solid var(--card-border)", color: "var(--muted)", fontSize: 12 }}>
+                    <th style={{ padding: "10px 8px" }}>Token</th>
+                    <th style={{ padding: "10px 8px" }}>Emissor</th>
+                    <th style={{ padding: "10px 8px" }}>Paridade</th>
+                    <th style={{ padding: "10px 8px" }}>Rede + Contrato oficial</th>
+                    <th style={{ padding: "10px 8px" }}>API / Docs oficiais</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredCatalog.map((item) => (
+                    <tr key={item.token} style={{ borderBottom: "1px solid var(--card-border)", fontSize: 13, verticalAlign: "top" }}>
+                      <td style={{ padding: "10px 8px" }}>
+                        <div style={{ fontWeight: 800 }}>{item.token}</div>
+                        {item.warning && (
+                          <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 4 }}>{item.warning}</div>
+                        )}
+                      </td>
+                      <td style={{ padding: "10px 8px" }}>{item.issuer}</td>
+                      <td style={{ padding: "10px 8px" }}>{item.parity}</td>
+                      <td style={{ padding: "10px 8px" }}>
+                        <div style={{ display: "grid", gap: 6 }}>
+                          {item.contracts.map((entry) => (
+                            <div key={`${item.token}-${entry.network}`}>
+                              <div style={{ fontSize: 12, color: "var(--muted)" }}>{entry.network}</div>
+                              <div style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12, overflowWrap: "anywhere" }}>
+                                {entry.contract}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                      <td style={{ padding: "10px 8px" }}>
+                        <a
+                          href={item.docsUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: "#38bdf8", textDecoration: "none" }}
+                        >
+                          {item.docsUrl}
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          ) : (
+            <div style={{ marginTop: 10, fontSize: 13, color: "var(--muted)" }}>
+              Tabela completa oculta para manter o foco no monitoramento operacional.
+            </div>
+          )}
         </section>
       </div>
     </main>
