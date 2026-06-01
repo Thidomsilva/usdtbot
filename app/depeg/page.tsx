@@ -885,7 +885,7 @@ export default function DepegArbitragePage() {
                 <option value="micro">Micro (&lt; 0,01%)</option>
                 <option value="small">Pequena (0,01% a 0,0999%)</option>
                 <option value="medium">Media (0,1% a 0,9999%)</option>
-                <option value="large">Alta (>= 1%)</option>
+                <option value="large">Alta (&gt;= 1%)</option>
               </select>
             </label>
 
