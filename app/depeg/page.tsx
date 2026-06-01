@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-type QuoteAsset = "USD" | "BRL";
+type QuoteAsset = "USD" | "BRL" | "EUR" | "XAU";
 type DirectionMode = "all" | "buy_discount" | "sell_premium";
 
 type DepegRow = {
@@ -91,15 +91,176 @@ const REFRESH_SECONDS = 5;
 const MAX_HISTORY_POINTS = 240;
 
 const DEFAULT_MONITORED_ASSETS: Array<
-  Pick<DepegRow, "id" | "label" | "symbol" | "quote_asset" | "peg_reference"> & { ideal_price: number }
+  Pick<DepegRow, "id" | "label" | "symbol" | "quote_asset" | "peg_reference"> & {
+    ideal_price: number;
+    analyzed_on: string;
+  }
 > = [
-  { id: "usdt", label: "USDT", symbol: "USDT/USD", quote_asset: "USD", peg_reference: "USD stablecoin (1:1)", ideal_price: 1 },
-  { id: "usdc", label: "USDC", symbol: "USDC/USD", quote_asset: "USD", peg_reference: "USD stablecoin (1:1)", ideal_price: 1 },
-  { id: "dai", label: "DAI", symbol: "DAI/USD", quote_asset: "USD", peg_reference: "USD stablecoin (1:1)", ideal_price: 1 },
-  { id: "brla", label: "BRLA", symbol: "BRLA/BRL", quote_asset: "BRL", peg_reference: "BRL stablecoin (1:1)", ideal_price: 1 },
-  { id: "brl1", label: "BRL1", symbol: "BRL1/BRL", quote_asset: "BRL", peg_reference: "BRL stablecoin (1:1)", ideal_price: 1 },
-  { id: "brz", label: "BRZ", symbol: "BRZ/BRL", quote_asset: "BRL", peg_reference: "BRL stablecoin (1:1)", ideal_price: 1 },
+  {
+    id: "brz",
+    label: "BRZ",
+    symbol: "BRZ/BRL",
+    quote_asset: "BRL",
+    peg_reference: "BRL stablecoin (1:1)",
+    ideal_price: 1,
+    analyzed_on: "CoinMarketCap",
+  },
+  {
+    id: "brla",
+    label: "BRLA",
+    symbol: "BRLA/BRL",
+    quote_asset: "BRL",
+    peg_reference: "BRL stablecoin (1:1)",
+    ideal_price: 1,
+    analyzed_on: "DefiLlama",
+  },
+  {
+    id: "usds",
+    label: "USDS",
+    symbol: "USDS/USD",
+    quote_asset: "USD",
+    peg_reference: "USD stablecoin (1:1)",
+    ideal_price: 1,
+    analyzed_on: "CoinMarketCap",
+  },
+  {
+    id: "pyusd",
+    label: "PYUSD",
+    symbol: "PYUSD/USD",
+    quote_asset: "USD",
+    peg_reference: "USD stablecoin (1:1)",
+    ideal_price: 1,
+    analyzed_on: "CoinMarketCap",
+  },
+  {
+    id: "fdusd",
+    label: "FDUSD",
+    symbol: "FDUSD/USD",
+    quote_asset: "USD",
+    peg_reference: "USD stablecoin (1:1)",
+    ideal_price: 1,
+    analyzed_on: "CoinMarketCap",
+  },
+  {
+    id: "gusd",
+    label: "GUSD",
+    symbol: "GUSD/USD",
+    quote_asset: "USD",
+    peg_reference: "USD stablecoin (1:1)",
+    ideal_price: 1,
+    analyzed_on: "CoinMarketCap",
+  },
+  {
+    id: "usdp",
+    label: "USDP",
+    symbol: "USDP/USD",
+    quote_asset: "USD",
+    peg_reference: "USD stablecoin (1:1)",
+    ideal_price: 1,
+    analyzed_on: "CoinMarketCap",
+  },
+  {
+    id: "rlusd",
+    label: "RLUSD",
+    symbol: "RLUSD/USD",
+    quote_asset: "USD",
+    peg_reference: "USD stablecoin (1:1)",
+    ideal_price: 1,
+    analyzed_on: "CoinMarketCap",
+  },
+  {
+    id: "usdr",
+    label: "USDR",
+    symbol: "USDR/USD",
+    quote_asset: "USD",
+    peg_reference: "USD stablecoin (1:1)",
+    ideal_price: 1,
+    analyzed_on: "CoinMarketCap",
+  },
+  {
+    id: "eurc",
+    label: "EURC",
+    symbol: "EURC/EUR",
+    quote_asset: "EUR",
+    peg_reference: "EUR stablecoin (1:1)",
+    ideal_price: 1,
+    analyzed_on: "CoinMarketCap",
+  },
+  {
+    id: "eurr",
+    label: "EURR",
+    symbol: "EURR/EUR",
+    quote_asset: "EUR",
+    peg_reference: "EUR stablecoin (1:1)",
+    ideal_price: 1,
+    analyzed_on: "CoinMarketCap",
+  },
+  {
+    id: "wbrl",
+    label: "WBRL",
+    symbol: "WBRL/BRL",
+    quote_asset: "BRL",
+    peg_reference: "BRL stablecoin (1:1)",
+    ideal_price: 1,
+    analyzed_on: "CoinMarketCap",
+  },
+  {
+    id: "paxg",
+    label: "PAXG",
+    symbol: "PAXG/XAU",
+    quote_asset: "XAU",
+    peg_reference: "Gold token (1 troy oz)",
+    ideal_price: 1,
+    analyzed_on: "CoinMarketCap",
+  },
+  {
+    id: "xaut",
+    label: "XAUT",
+    symbol: "XAUT/XAU",
+    quote_asset: "XAU",
+    peg_reference: "Gold token (1 troy oz)",
+    ideal_price: 1,
+    analyzed_on: "CoinMarketCap",
+  },
+  {
+    id: "usdt",
+    label: "USDT",
+    symbol: "USDT/USD",
+    quote_asset: "USD",
+    peg_reference: "USD stablecoin (1:1)",
+    ideal_price: 1,
+    analyzed_on: "CoinMarketCap",
+  },
+  {
+    id: "brl1",
+    label: "BRL1",
+    symbol: "BRL1/BRL",
+    quote_asset: "BRL",
+    peg_reference: "BRL stablecoin (1:1)",
+    ideal_price: 1,
+    analyzed_on: "CoinMarketCap",
+  },
+  {
+    id: "dai",
+    label: "DAI",
+    symbol: "DAI/USD",
+    quote_asset: "USD",
+    peg_reference: "USD stablecoin (1:1)",
+    ideal_price: 1,
+    analyzed_on: "CoinMarketCap",
+  },
+  {
+    id: "usdc",
+    label: "USDC",
+    symbol: "USDC/USD",
+    quote_asset: "USD",
+    peg_reference: "USD stablecoin (1:1)",
+    ideal_price: 1,
+    analyzed_on: "CoinMarketCap",
+  },
 ];
+
+const MONITORED_ASSET_ORDER = DEFAULT_MONITORED_ASSETS.map((asset) => asset.id);
 
 const STABLECOIN_CATALOG: StablecoinCatalogItem[] = [
   {
@@ -351,6 +512,31 @@ function actionSignal(row: DepegRow, activeThresholdPct: number): { label: strin
   return { label: "PREMIO", color: "#ef4444" };
 }
 
+function buildUnavailableRow(asset: (typeof DEFAULT_MONITORED_ASSETS)[number]): DepegRow {
+  return {
+    id: asset.id,
+    label: asset.label,
+    symbol: asset.symbol,
+    quote_asset: asset.quote_asset,
+    status: "unavailable",
+    analyzed_on: asset.analyzed_on,
+    peg_reference: asset.peg_reference,
+    market_price: null,
+    market_price_brl: null,
+    bid_price: null,
+    ask_price: null,
+    orderbook_spread_pct: null,
+    ideal_price: asset.ideal_price,
+    ideal_price_brl: asset.quote_asset === "BRL" ? 1 : null,
+    depeg_pct: null,
+    asymmetry_pct: null,
+    direction: "below_peg",
+    severity: "low",
+    signal: "watch",
+    notes: "Ativo monitorado, sem dados retornados neste ciclo.",
+  };
+}
+
 export default function DepegArbitragePage() {
   const [data, setData] = useState<DepegResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -373,28 +559,7 @@ export default function DepegArbitragePage() {
       const json = (await res.json()) as DepegResponse;
       setData(json);
     } catch (err) {
-      const fallbackRows: DepegRow[] = DEFAULT_MONITORED_ASSETS.map((asset) => ({
-        id: asset.id,
-        label: asset.label,
-        symbol: asset.symbol,
-        quote_asset: asset.quote_asset,
-        status: "unavailable",
-        analyzed_on: "CoinGecko/CoinMarketCap/DefiLlama",
-        peg_reference: asset.peg_reference,
-        market_price: null,
-        market_price_brl: null,
-        bid_price: null,
-        ask_price: null,
-        orderbook_spread_pct: null,
-        ideal_price: asset.ideal_price,
-        ideal_price_brl: asset.quote_asset === "BRL" ? 1 : null,
-        depeg_pct: null,
-        asymmetry_pct: null,
-        direction: "below_peg",
-        severity: "low",
-        signal: "watch",
-        notes: "Ativo monitorado, sem dados retornados neste ciclo.",
-      }));
+      const fallbackRows: DepegRow[] = DEFAULT_MONITORED_ASSETS.map(buildUnavailableRow);
 
       setData({
         timestamp: new Date().toISOString(),
@@ -432,36 +597,22 @@ export default function DepegArbitragePage() {
   const rowsToRender = useMemo(() => {
     if (!data) return [] as DepegRow[];
 
-    if (Array.isArray(data.monitored_rows) && data.monitored_rows.length > 0) {
-      return data.monitored_rows;
-    }
+    const apiRows = Array.isArray(data.monitored_rows) && data.monitored_rows.length > 0
+      ? data.monitored_rows
+      : Array.isArray(data.opportunities) && data.opportunities.length > 0
+        ? data.opportunities
+        : [];
 
-    if (Array.isArray(data.opportunities) && data.opportunities.length > 0) {
-      return data.opportunities;
-    }
+    const apiRowsById = new Map(apiRows.map((row) => [row.id, row]));
 
-    return DEFAULT_MONITORED_ASSETS.map((asset) => ({
-      id: asset.id,
-      label: asset.label,
-      symbol: asset.symbol,
-      quote_asset: asset.quote_asset,
-      status: "unavailable" as const,
-      analyzed_on: "CoinGecko/CoinMarketCap/DefiLlama",
-      peg_reference: asset.peg_reference,
-      market_price: null,
-      market_price_brl: null,
-      bid_price: null,
-      ask_price: null,
-      orderbook_spread_pct: null,
-      ideal_price: asset.ideal_price,
-      ideal_price_brl: asset.quote_asset === "BRL" ? 1 : null,
-      depeg_pct: null,
-      asymmetry_pct: null,
-      direction: "below_peg" as const,
-      severity: "low" as const,
-      signal: "watch" as const,
-      notes: "Ativo monitorado, sem dados retornados neste ciclo.",
-    }));
+    // Sempre renderiza a lista monitorada nessa ordem fixa.
+    return MONITORED_ASSET_ORDER.map((assetId) => {
+      const apiRow = apiRowsById.get(assetId);
+      if (apiRow) return apiRow;
+
+      const fallbackAsset = DEFAULT_MONITORED_ASSETS.find((asset) => asset.id === assetId);
+      return fallbackAsset ? buildUnavailableRow(fallbackAsset) : null;
+    }).filter((row): row is DepegRow => row !== null);
   }, [data]);
 
   useEffect(() => {
@@ -518,14 +669,7 @@ export default function DepegArbitragePage() {
     });
   }, [directionMode, rowsToRender]);
 
-  const rankedRows = useMemo(() => {
-    return [...filteredRows].sort((a, b) => {
-      const aVal = a.asymmetry_pct ?? Number.NEGATIVE_INFINITY;
-      const bVal = b.asymmetry_pct ?? Number.NEGATIVE_INFINITY;
-      if (bVal !== aVal) return bVal - aVal;
-      return a.label.localeCompare(b.label);
-    });
-  }, [filteredRows]);
+  const rankedRows = filteredRows;
 
   const activeThresholdPct = data?.threshold_pct ?? thresholdNum;
 
