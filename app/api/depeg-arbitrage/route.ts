@@ -723,7 +723,7 @@ async function buildContractRows(ctx: PricingContext): Promise<DepegContractRow[
       }
 
       try {
-        const ticker = await fetchTickerDefiLlama(asset.coingeckoId, contractSymbol);
+        const ticker = await fetchTickerDefiLlama(asset.coingeckoId, contractSymbol, false);
         if (!ticker || ticker.mid <= 0) {
           return {
             id: `${asset.id}:${feed.network}`,
@@ -1054,7 +1054,11 @@ async function fetchTickerCoinMarketCap(slug: string): Promise<TickerResult | nu
   }
 }
 
-async function fetchTickerDefiLlama(coingeckoId: string, defilamaSymbol?: string): Promise<TickerResult | null> {
+async function fetchTickerDefiLlama(
+  coingeckoId: string,
+  defilamaSymbol?: string,
+  allowCoingeckoFallback = true
+): Promise<TickerResult | null> {
   try {
     // Tenta primeiro com o símbolo customizado se fornecido (ex: ethereum:0x...)
     if (defilamaSymbol) {
@@ -1073,6 +1077,10 @@ async function fetchTickerDefiLlama(coingeckoId: string, defilamaSymbol?: string
           return { bid, ask, mid: price, source: "DefiLlama" };
         }
       }
+    }
+
+    if (!allowCoingeckoFallback) {
+      return null;
     }
 
     // Tenta com o CoinGecko ID
