@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { readSessionFromRequest } from '@/lib/session'
-import { recordUserSession } from '@/lib/activity-logger'
+import { logActivity, recordUserSession } from '@/lib/activity-logger'
 
 export const runtime = 'nodejs'
 
@@ -12,7 +12,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    await recordUserSession(session.username, session.role, 'activity', session.email ?? null)
+    await Promise.all([
+      recordUserSession(session.username, session.role, 'activity', session.email ?? null),
+      logActivity(session.username, session.role, 'api_call', '/api/auth/ping', 'POST'),
+    ])
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro desconhecido'
     console.error('[PING] Erro ao registrar atividade:', message)

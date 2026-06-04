@@ -1,5 +1,6 @@
 import { promises as fs } from 'fs'
 import path from 'path'
+import { Redis } from '@upstash/redis'
 import { listUsers } from './user-store'
 
 export type ActivityType = 'login' | 'logout' | 'page_access' | 'api_call'
@@ -42,6 +43,9 @@ const memoryCache = {
   }>,
 }
 
+type ActivityStorePayload = { logs: ActivityLog[] }
+type SessionStorePayload = { sessions: SessionRecord[] }
+
 // Verificar se estamos em um ambiente onde fs está disponível (Node.js)
 const canUseFsModule = (): boolean => {
   try {
@@ -51,8 +55,15 @@ const canUseFsModule = (): boolean => {
   }
 }
 
-const LOGS_FILE = path.join(process.cwd(), 'data', 'activity-logs.json')
-const SESSIONS_FILE = path.join(process.cwd(), 'data', 'user-sessions.json')
+const DATA_DIR = process.env.VERCEL
+  ? path.join('/tmp', 'usdtbot')
+  : path.join(process.cwd(), 'data')
+const LOGS_FILE = path.join(DATA_DIR, 'activity-logs.json')
+const SESSIONS_FILE = path.join(DATA_DIR, 'user-sessions.json')
+const KV_LOGS_KEY = 'usdtbot:activity-logs:v1'
+const KV_SESSIONS_KEY = 'usdtbot:user-sessions:v1'
+
+let redisClient: Redis | null = null
 
 type SessionRecord = {
   username: string
@@ -61,6 +72,132 @@ type SessionRecord = {
   loginAt: string
   lastActivityAt: string
   logoutAt?: string
+}
+
+function getFirstEnv(keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = process.env[key]?.trim()
+    if (value) {
+      return value
+    }
+  }
+
+  return undefined
+}
+
+function getRestUrl(): string | undefined {
+  return getFirstEnv([
+    'KV_REST_API_URL',
+    'UPSTASH_REDIS_REST_URL',
+    'STORAGE_REST_URL',
+    'REDIS_REST_URL',
+  ])
+}
+
+function getRestToken(): string | undefined {
+  return getFirstEnv([
+    'KV_REST_API_TOKEN',
+    'UPSTASH_REDIS_REST_TOKEN',
+    'STORAGE_REST_TOKEN',
+    'REDIS_REST_TOKEN',
+  ])
+}
+
+function canUseKvRest(): boolean {
+  return Boolean(getRestUrl() && getRestToken())
+}
+
+function getRedisClient(): Redis {
+  if (!redisClient) {
+    const restUrl = getRestUrl()
+    const restToken = getRestToken()
+    if (!restUrl || !restToken) {
+      throw new Error('KV REST nao configurado')
+    }
+    redisClient = new Redis({ url: restUrl, token: restToken })
+  }
+
+  return redisClient
+}
+
+function dedupeLogs(logs: ActivityLog[]): ActivityLog[] {
+  const seen = new Set<string>()
+  return logs.filter((log) => {
+    if (seen.has(log.id)) return false
+    seen.add(log.id)
+    return true
+  })
+}
+
+function dedupeSessions(sessions: SessionRecord[]): SessionRecord[] {
+  const sessionMap = new Map<string, SessionRecord>()
+  sessions.forEach((session) => {
+    const key = `${session.username}:${session.loginAt}`
+    sessionMap.set(key, session)
+  })
+  return Array.from(sessionMap.values())
+}
+
+function findLatestOpenSession(sessions: SessionRecord[], username: string): SessionRecord | undefined {
+  return sessions
+    .filter((session) => session.username === username && !session.logoutAt)
+    .sort((a, b) => new Date(b.loginAt).getTime() - new Date(a.loginAt).getTime())[0]
+}
+
+async function loadLogsFromStore(): Promise<ActivityLog[]> {
+  if (canUseKvRest()) {
+    const data = await getRedisClient().get<ActivityStorePayload>(KV_LOGS_KEY)
+    return Array.isArray(data?.logs) ? data.logs : []
+  }
+
+  if (canUseFsModule()) {
+    await ensureLogsFile()
+    const data = await fs.readFile(LOGS_FILE, 'utf-8')
+    const parsed = JSON.parse(data) as ActivityStorePayload
+    return Array.isArray(parsed.logs) ? parsed.logs : []
+  }
+
+  return []
+}
+
+async function saveLogsToStore(logs: ActivityLog[]): Promise<void> {
+  if (canUseKvRest()) {
+    await getRedisClient().set(KV_LOGS_KEY, { logs })
+    return
+  }
+
+  if (canUseFsModule()) {
+    await ensureLogsFile()
+    await fs.writeFile(LOGS_FILE, JSON.stringify({ logs }, null, 2))
+  }
+}
+
+async function loadSessionsFromStore(): Promise<SessionRecord[]> {
+  if (canUseKvRest()) {
+    const data = await getRedisClient().get<SessionStorePayload>(KV_SESSIONS_KEY)
+    return Array.isArray(data?.sessions) ? data.sessions : []
+  }
+
+  if (canUseFsModule()) {
+    await ensureSessionsFile()
+    const data = await fs.readFile(SESSIONS_FILE, 'utf-8')
+    const parsed = JSON.parse(data) as SessionStorePayload
+    return Array.isArray(parsed.sessions) ? parsed.sessions : []
+  }
+
+  return []
+}
+
+async function saveSessionsToStore(sessions: SessionRecord[]): Promise<void> {
+  if (canUseKvRest()) {
+    await getRedisClient().set(KV_SESSIONS_KEY, { sessions })
+    return
+  }
+
+  if (canUseFsModule()) {
+    await ensureSessionsFile()
+    await fs.writeFile(SESSIONS_FILE, JSON.stringify({ sessions }, null, 2))
+  }
 }
 
 async function buildEmailLookup(): Promise<Map<string, string>> {
@@ -132,20 +269,12 @@ export async function logActivity(
       memoryCache.logs = memoryCache.logs.slice(-10000)
     }
 
-    // Se fs disponível, também salvar em arquivo
-    if (canUseFsModule()) {
-      try {
-        await ensureLogsFile()
-        const data = await fs.readFile(LOGS_FILE, 'utf-8')
-        const logsData = JSON.parse(data) as { logs: ActivityLog[] }
-        logsData.logs.push(activity)
-        if (logsData.logs.length > 10000) {
-          logsData.logs = logsData.logs.slice(-10000)
-        }
-        await fs.writeFile(LOGS_FILE, JSON.stringify(logsData, null, 2))
-      } catch (error) {
-        console.error('[ACTIVITY LOG] Erro ao salvar em arquivo:', error)
-      }
+    try {
+      const storedLogs = await loadLogsFromStore()
+      const nextLogs = dedupeLogs([...storedLogs, activity]).slice(-10000)
+      await saveLogsToStore(nextLogs)
+    } catch (error) {
+      console.error('[ACTIVITY LOG] Erro ao salvar em storage:', error)
     }
   } catch (error) {
     console.error('[ACTIVITY LOG] Erro ao registrar atividade:', error)
@@ -162,10 +291,6 @@ export async function recordUserSession(
     const now = new Date().toISOString()
 
     if (action === 'login') {
-      const existingSession = memoryCache.sessions.find((s) => s.username === username && !s.logoutAt)
-      if (existingSession) {
-        existingSession.logoutAt = now
-      }
       memoryCache.sessions.push({
         username,
         email: email ?? null,
@@ -174,12 +299,12 @@ export async function recordUserSession(
         lastActivityAt: now,
       })
     } else if (action === 'logout') {
-      const session = memoryCache.sessions.find((s) => s.username === username && !s.logoutAt)
+      const session = findLatestOpenSession(memoryCache.sessions, username)
       if (session) {
         session.logoutAt = now
       }
     } else if (action === 'activity') {
-      const session = memoryCache.sessions.find((s) => s.username === username && !s.logoutAt)
+      const session = findLatestOpenSession(memoryCache.sessions, username)
       if (session) {
         session.lastActivityAt = now
       }
@@ -189,54 +314,34 @@ export async function recordUserSession(
       memoryCache.sessions = memoryCache.sessions.slice(-1000)
     }
 
-    // Se fs disponível, também salvar em arquivo
-    if (canUseFsModule()) {
-      try {
-        await ensureSessionsFile()
-        const data = await fs.readFile(SESSIONS_FILE, 'utf-8')
-        const sessionsData = JSON.parse(data) as {
-          sessions: Array<{
-            username: string
-            email?: string | null
-            role: 'admin' | 'user'
-            loginAt: string
-            lastActivityAt: string
-            logoutAt?: string
-          }>
-        }
+    try {
+      const storedSessions = await loadSessionsFromStore()
+      const nextSessions = [...storedSessions]
 
-        if (action === 'login') {
-          const existingSession = sessionsData.sessions.find((s) => s.username === username && !s.logoutAt)
-          if (existingSession) {
-            existingSession.logoutAt = now
-          }
-          sessionsData.sessions.push({
-            username,
-            email: email ?? null,
-            role: userRole,
-            loginAt: now,
-            lastActivityAt: now,
-          })
-        } else if (action === 'logout') {
-          const session = sessionsData.sessions.find((s) => s.username === username && !s.logoutAt)
-          if (session) {
-            session.logoutAt = now
-          }
-        } else if (action === 'activity') {
-          const session = sessionsData.sessions.find((s) => s.username === username && !s.logoutAt)
-          if (session) {
-            session.lastActivityAt = now
-          }
+      if (action === 'login') {
+        nextSessions.push({
+          username,
+          email: email ?? null,
+          role: userRole,
+          loginAt: now,
+          lastActivityAt: now,
+        })
+      } else if (action === 'logout') {
+        const session = findLatestOpenSession(nextSessions, username)
+        if (session) {
+          session.logoutAt = now
         }
-
-        if (sessionsData.sessions.length > 1000) {
-          sessionsData.sessions = sessionsData.sessions.slice(-1000)
+      } else if (action === 'activity') {
+        const session = findLatestOpenSession(nextSessions, username)
+        if (session) {
+          session.lastActivityAt = now
         }
-
-        await fs.writeFile(SESSIONS_FILE, JSON.stringify(sessionsData, null, 2))
-      } catch (error) {
-        console.error('[SESSION LOG] Erro ao salvar em arquivo:', error)
       }
+
+      const compactedSessions = dedupeSessions(nextSessions).slice(-1000)
+      await saveSessionsToStore(compactedSessions)
+    } catch (error) {
+      console.error('[SESSION LOG] Erro ao salvar em storage:', error)
     }
   } catch (error) {
     console.error('[SESSION LOG] Erro ao registrar sessão:', error)
@@ -250,22 +355,11 @@ export async function getActivityLogs(
   try {
     let logs = [...memoryCache.logs]
 
-    // Se fs disponível, tentar carregar do arquivo também
-    if (canUseFsModule()) {
-      try {
-        await ensureLogsFile()
-        const data = await fs.readFile(LOGS_FILE, 'utf-8')
-        const logsData = JSON.parse(data) as { logs: ActivityLog[] }
-        const merged = [...logsData.logs, ...memoryCache.logs]
-        const seen = new Set<string>()
-        logs = merged.filter((log) => {
-          if (seen.has(log.id)) return false
-          seen.add(log.id)
-          return true
-        })
-      } catch {
-        // Usar apenas cache se falhar
-      }
+    try {
+      const storedLogs = await loadLogsFromStore()
+      logs = dedupeLogs([...storedLogs, ...memoryCache.logs])
+    } catch {
+      // Usar apenas cache se falhar
     }
 
     if (username) {
@@ -292,30 +386,22 @@ export async function getUserSessions(): Promise<
   try {
     let sessions = [...memoryCache.sessions]
 
-    // Se fs disponível, tentar carregar do arquivo também
-    if (canUseFsModule()) {
-      try {
-        await ensureSessionsFile()
-        const data = await fs.readFile(SESSIONS_FILE, 'utf-8')
-        const sessionsData = JSON.parse(data) as {
-          sessions: Array<Partial<SessionRecord> & { username: string; role: 'admin' | 'user'; loginAt: string; lastActivityAt: string }>
-        }
-        const normalizedSessions: SessionRecord[] = sessionsData.sessions.map((session) => ({
-          username: session.username,
-          email: session.email ?? null,
-          role: session.role,
-          loginAt: session.loginAt,
-          lastActivityAt: session.lastActivityAt,
-          logoutAt: session.logoutAt,
-        }))
-        // Mesclar e remover duplicatas (preferir dados mais recentes)
-        const sessionMap = new Map<string, SessionRecord>()
-        normalizedSessions.forEach((s) => sessionMap.set(s.username, s))
-        memoryCache.sessions.forEach((s) => sessionMap.set(s.username, { ...s, email: s.email ?? null }))
-        sessions = Array.from(sessionMap.values())
-      } catch {
-        // Usar apenas cache se falhar
-      }
+    try {
+      const storedSessions = await loadSessionsFromStore()
+      const normalizedSessions: SessionRecord[] = storedSessions.map((session) => ({
+        username: session.username,
+        email: session.email ?? null,
+        role: session.role,
+        loginAt: session.loginAt,
+        lastActivityAt: session.lastActivityAt,
+        logoutAt: session.logoutAt,
+      }))
+      sessions = dedupeSessions([
+        ...normalizedSessions,
+        ...memoryCache.sessions.map((s) => ({ ...s, email: s.email ?? null })),
+      ])
+    } catch {
+      // Usar apenas cache se falhar
     }
 
     const now = Date.now()
@@ -359,22 +445,11 @@ export async function getAccessStatistics(days: number = 7): Promise<{
   try {
     let logs = [...memoryCache.logs]
 
-    // Se fs disponível, tentar carregar do arquivo também
-    if (canUseFsModule()) {
-      try {
-        await ensureLogsFile()
-        const data = await fs.readFile(LOGS_FILE, 'utf-8')
-        const logsData = JSON.parse(data) as { logs: ActivityLog[] }
-        const merged = [...logsData.logs, ...memoryCache.logs]
-        const seen = new Set<string>()
-        logs = merged.filter((log) => {
-          if (seen.has(log.id)) return false
-          seen.add(log.id)
-          return true
-        })
-      } catch {
-        // Usar apenas cache se falhar
-      }
+    try {
+      const storedLogs = await loadLogsFromStore()
+      logs = dedupeLogs([...storedLogs, ...memoryCache.logs])
+    } catch {
+      // Usar apenas cache se falhar
     }
 
     const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).getTime()
