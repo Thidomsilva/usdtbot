@@ -6,6 +6,7 @@ import {
 	buildPauseMenuMarkup,
 	buildMonitoringStatusMarkup,
 	buildMonitoringStatusMessage,
+	buildDepegSignalMessage,
 	buildScannerSignalMessage,
 	buildTelegramHelpMessage,
 	buildTelegramMenuMarkup,
@@ -75,6 +76,7 @@ function formatTrackList(settings: TelegramUserSettings): string {
 	if (settings.alertTracks.a) tracks.push("A");
 	if (settings.alertTracks.b) tracks.push("B");
 	if (settings.alertTracks.c) tracks.push("C");
+	if (settings.alertTracks.d) tracks.push("D");
 	return tracks.length > 0 ? tracks.join(" · ") : "nenhuma";
 }
 
@@ -89,7 +91,7 @@ function buildCleanSettingsConfirmation(
 	return [
 		"✅ Configuracoes salvas!",
 		...extraLines,
-		`📊 Spread minimo: A ${settings.minSpreadA.toFixed(2)}% · B ${settings.minSpreadB.toFixed(2)}% · C ${settings.minSpreadC.toFixed(2)}%`,
+		`📊 Spread minimo: A ${settings.minSpreadA.toFixed(2)}% · B ${settings.minSpreadB.toFixed(2)}% · C ${settings.minSpreadC.toFixed(2)}% · D ${settings.minSpreadD.toFixed(2)}%`,
 		`💰 Valor simulado: R$ ${settings.simCapital.toLocaleString("pt-BR")}`,
 		`🔕 Silencio: ${silence}`,
 		`📡 Trilhas ativas: ${formatTrackList(settings)}`,
@@ -116,11 +118,11 @@ function spreadLabelByTrack(track: "a" | "b" | "c"): string {
 }
 
 function tracksByAutoMode(mode: "off" | "usdt" | "scanner" | "usdt_defi" | "all") {
-	if (mode === "usdt") return { a: true, b: false, c: false };
-	if (mode === "scanner") return { a: false, b: true, c: false };
-	if (mode === "usdt_defi") return { a: false, b: false, c: true };
-	if (mode === "all") return { a: true, b: true, c: true };
-	return { a: false, b: false, c: false };
+	if (mode === "usdt") return { a: true, b: false, c: false, d: false };
+	if (mode === "scanner") return { a: false, b: true, c: false, d: false };
+	if (mode === "usdt_defi") return { a: false, b: false, c: true, d: false };
+	if (mode === "all") return { a: true, b: true, c: true, d: true };
+	return { a: false, b: false, c: false, d: false };
 }
 
 async function saveSpreadWithAutoMonitoring(
@@ -240,7 +242,7 @@ async function confirmAndBackToMenu(chatId: number | string, message: string): P
 }
 
 async function handleAction(
-	action: "menu" | "settings" | "help" | "usdt" | "usdt_defi" | "scanner" | "status",
+	action: "menu" | "settings" | "help" | "usdt" | "usdt_defi" | "scanner" | "depeg" | "status",
 	baseUrl: string,
 	chatId: number | string
 ) {
@@ -314,6 +316,21 @@ async function handleAction(
 		await sendTelegramMessage(chatId, await buildUsdtDefiSignalMessage(baseUrl), {
 			reply_markup: buildTelegramSignalMarkup("usdt_defi"),
 		});
+		return;
+	}
+
+	if (action === "depeg") {
+		const settings = await setTelegramUserSettings(chatId, {
+			autoSignalsMode: "all",
+			alertsEnabled: true,
+			alertTracks: { a: false, b: false, c: false, d: true },
+			pausedUntil: null,
+			pendingSpreadTrack: null,
+		});
+		await sendTelegramMessage(chatId, await buildDepegSignalMessage(baseUrl), {
+			reply_markup: buildTelegramSignalMarkup("depeg"),
+		});
+		await sendMonitoringStatus(chatId, settings);
 		return;
 	}
 
@@ -618,7 +635,7 @@ export async function POST(request: NextRequest) {
 			await setTelegramUserSettings(effectiveChatId, {
 				autoSignalsMode: "off",
 				alertsEnabled: false,
-				alertTracks: { a: false, b: false, c: false },
+				alertTracks: { a: false, b: false, c: false, d: false },
 				suppressDispatchUntilAuth: true,
 				pausedUntil: PAUSE_FOREVER,
 				pendingSpreadTrack: null,
@@ -683,7 +700,7 @@ export async function POST(request: NextRequest) {
 
 		// --- mode: actions (signal views) ---
 		if (callbackData.startsWith("mode:")) {
-			const modeAction = callbackData.slice("mode:".length) as "menu" | "usdt" | "usdt_defi" | "scanner";
+			const modeAction = callbackData.slice("mode:".length) as "menu" | "usdt" | "usdt_defi" | "scanner" | "depeg";
 			await handleAction(modeAction, request.nextUrl.origin, effectiveChatId);
 			return NextResponse.json({ ok: true });
 		}
@@ -701,7 +718,7 @@ export async function POST(request: NextRequest) {
 			await setTelegramUserSettings(effectiveChatId, {
 				autoSignalsMode: "off",
 				alertsEnabled: false,
-				alertTracks: { a: false, b: false, c: false },
+				alertTracks: { a: false, b: false, c: false, d: false },
 				suppressDispatchUntilAuth: true,
 				pausedUntil: PAUSE_FOREVER,
 				pendingSpreadTrack: null,
@@ -803,10 +820,13 @@ export async function POST(request: NextRequest) {
 			return NextResponse.json({ ok: true });
 		}
 
-		// --- track:a_on/off, track:b_on/off, track:c_on/off ---
+		// --- track:a_on/off, track:b_on/off, track:c_on/off, track:d_on/off ---
 		if (callbackData.startsWith("track:")) {
 			const parts = callbackData.slice("track:".length).split("_");
-			const trackKey = parts[0] as "a" | "b" | "c";
+			const trackKey = parts[0] as "a" | "b" | "c" | "d";
+			if (!["a", "b", "c", "d"].includes(trackKey)) {
+				return NextResponse.json({ ok: true });
+			}
 			const on = parts[1] === "on";
 			const current = await getTelegramUserSettings(effectiveChatId);
 			const updatedTracks = { ...current.alertTracks, [trackKey]: on };

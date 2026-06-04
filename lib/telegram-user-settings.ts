@@ -5,7 +5,7 @@ import { Redis } from "@upstash/redis";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createClient as createRedisClient, type RedisClientType } from "redis";
 
-export type AlertTracks = { a: boolean; b: boolean; c: boolean };
+export type AlertTracks = { a: boolean; b: boolean; c: boolean; d: boolean };
 export type DispatchTrackStatus = "sent" | "skipped" | "failed" | null;
 export type { UserPlan };
 
@@ -23,6 +23,7 @@ export type TelegramUserSettings = {
 	minSpreadA: number;
 	minSpreadB: number;
 	minSpreadC: number;
+	minSpreadD: number;
 	simCapital: number;
 	silentNight: boolean;
 	silentStart: string;
@@ -39,15 +40,19 @@ export type TelegramUserSettings = {
 	lastAlertA: number | null;
 	lastAlertB: Record<string, number>;
 	lastAlertC: number | null;
+	lastAlertD: number | null;
 	lastDispatchAtA: number | null;
 	lastDispatchAtB: number | null;
 	lastDispatchAtC: number | null;
+	lastDispatchAtD: number | null;
 	lastDispatchStatusA: DispatchTrackStatus;
 	lastDispatchStatusB: DispatchTrackStatus;
 	lastDispatchStatusC: DispatchTrackStatus;
+	lastDispatchStatusD: DispatchTrackStatus;
 	lastDispatchReasonA: string | null;
 	lastDispatchReasonB: string | null;
 	lastDispatchReasonC: string | null;
+	lastDispatchReasonD: string | null;
 	lastCronAt: number | null;
 	plan: UserPlan;
 	// extended plan fields
@@ -72,10 +77,11 @@ const DEFAULT_SETTINGS: TelegramUserSettings = {
 	lastUsdtDefiDigest: null,
 
 	alertsEnabled: false,
-	alertTracks: { a: true, b: true, c: true },
+	alertTracks: { a: true, b: true, c: true, d: false },
 	minSpreadA: 0.5,
 	minSpreadB: 2.0,
 	minSpreadC: 0.1,
+	minSpreadD: 0.3,
 	simCapital: 1000,
 	silentNight: false,
 	silentStart: "23:00",
@@ -92,15 +98,19 @@ const DEFAULT_SETTINGS: TelegramUserSettings = {
 	lastAlertA: null,
 	lastAlertB: {},
 	lastAlertC: null,
+	lastAlertD: null,
 	lastDispatchAtA: null,
 	lastDispatchAtB: null,
 	lastDispatchAtC: null,
+	lastDispatchAtD: null,
 	lastDispatchStatusA: null,
 	lastDispatchStatusB: null,
 	lastDispatchStatusC: null,
+	lastDispatchStatusD: null,
 	lastDispatchReasonA: null,
 	lastDispatchReasonB: null,
 	lastDispatchReasonC: null,
+	lastDispatchReasonD: null,
 	lastCronAt: null,
 	plan: "free",
 	planActive: true,
@@ -249,13 +259,14 @@ function cloneDefaultSettings(): TelegramUserSettings {
 
 function normalizeAlertTracks(value: unknown): AlertTracks {
 	if (!value || typeof value !== "object") {
-		return { a: true, b: true, c: true };
+		return { a: true, b: true, c: true, d: false };
 	}
 	const t = value as Partial<AlertTracks>;
 	return {
 		a: t.a !== false,
 		b: t.b !== false,
 		c: t.c !== false,
+		d: t.d === true,
 	};
 }
 
@@ -299,6 +310,7 @@ function normalizeSettings(value: unknown): TelegramUserSettings {
 		minSpreadA: normalizePositiveNumber(c["minSpreadA"], DEFAULT_SETTINGS.minSpreadA),
 		minSpreadB: normalizePositiveNumber(c["minSpreadB"], DEFAULT_SETTINGS.minSpreadB),
 		minSpreadC: normalizePositiveNumber(c["minSpreadC"], DEFAULT_SETTINGS.minSpreadC),
+		minSpreadD: normalizePositiveNumber(c["minSpreadD"], DEFAULT_SETTINGS.minSpreadD),
 		simCapital: normalizePositiveNumber(c["simCapital"], DEFAULT_SETTINGS.simCapital),
 		silentNight: c["silentNight"] === true,
 		silentStart: typeof c["silentStart"] === "string" ? c["silentStart"] : DEFAULT_SETTINGS.silentStart,
@@ -326,15 +338,19 @@ function normalizeSettings(value: unknown): TelegramUserSettings {
 			? (c["lastAlertB"] as Record<string, number>)
 			: {},
 		lastAlertC: typeof c["lastAlertC"] === "number" ? c["lastAlertC"] : null,
+		lastAlertD: typeof c["lastAlertD"] === "number" ? c["lastAlertD"] : null,
 		lastDispatchAtA: typeof c["lastDispatchAtA"] === "number" ? c["lastDispatchAtA"] : null,
 		lastDispatchAtB: typeof c["lastDispatchAtB"] === "number" ? c["lastDispatchAtB"] : null,
 		lastDispatchAtC: typeof c["lastDispatchAtC"] === "number" ? c["lastDispatchAtC"] : null,
+		lastDispatchAtD: typeof c["lastDispatchAtD"] === "number" ? c["lastDispatchAtD"] : null,
 		lastDispatchStatusA: normalizeDispatchStatus(c["lastDispatchStatusA"]),
 		lastDispatchStatusB: normalizeDispatchStatus(c["lastDispatchStatusB"]),
 		lastDispatchStatusC: normalizeDispatchStatus(c["lastDispatchStatusC"]),
+		lastDispatchStatusD: normalizeDispatchStatus(c["lastDispatchStatusD"]),
 		lastDispatchReasonA: typeof c["lastDispatchReasonA"] === "string" ? c["lastDispatchReasonA"] : null,
 		lastDispatchReasonB: typeof c["lastDispatchReasonB"] === "string" ? c["lastDispatchReasonB"] : null,
 		lastDispatchReasonC: typeof c["lastDispatchReasonC"] === "string" ? c["lastDispatchReasonC"] : null,
+		lastDispatchReasonD: typeof c["lastDispatchReasonD"] === "string" ? c["lastDispatchReasonD"] : null,
 		lastCronAt: typeof c["lastCronAt"] === "number" ? c["lastCronAt"] : null,
 		plan: c["plan"] === "pro" ? "pro" : c["plan"] === "admin" ? "admin" : "free",
 		planActive: c["planActive"] !== false,
@@ -496,6 +512,7 @@ export async function setTelegramUserSettings(
 		minSpreadA: typeof next.minSpreadA === "number" && next.minSpreadA > 0 ? next.minSpreadA : current.minSpreadA,
 		minSpreadB: typeof next.minSpreadB === "number" && next.minSpreadB > 0 ? next.minSpreadB : current.minSpreadB,
 		minSpreadC: typeof next.minSpreadC === "number" && next.minSpreadC > 0 ? next.minSpreadC : current.minSpreadC,
+		minSpreadD: typeof next.minSpreadD === "number" && next.minSpreadD > 0 ? next.minSpreadD : current.minSpreadD,
 		simCapital: typeof next.simCapital === "number" && next.simCapital > 0 ? next.simCapital : current.simCapital,
 		silentNight: typeof next.silentNight === "boolean" ? next.silentNight : current.silentNight,
 		silentStart: typeof next.silentStart === "string" ? next.silentStart : current.silentStart,
@@ -531,9 +548,11 @@ export async function setTelegramUserSettings(
 		lastAlertA: "lastAlertA" in next ? (next.lastAlertA ?? null) : current.lastAlertA,
 		lastAlertB: next.lastAlertB !== undefined ? { ...current.lastAlertB, ...next.lastAlertB } : current.lastAlertB,
 		lastAlertC: "lastAlertC" in next ? (next.lastAlertC ?? null) : current.lastAlertC,
+		lastAlertD: "lastAlertD" in next ? (next.lastAlertD ?? null) : current.lastAlertD,
 		lastDispatchAtA: "lastDispatchAtA" in next ? (next.lastDispatchAtA ?? null) : current.lastDispatchAtA,
 		lastDispatchAtB: "lastDispatchAtB" in next ? (next.lastDispatchAtB ?? null) : current.lastDispatchAtB,
 		lastDispatchAtC: "lastDispatchAtC" in next ? (next.lastDispatchAtC ?? null) : current.lastDispatchAtC,
+		lastDispatchAtD: "lastDispatchAtD" in next ? (next.lastDispatchAtD ?? null) : current.lastDispatchAtD,
 		lastDispatchStatusA:
 			next.lastDispatchStatusA === "sent" || next.lastDispatchStatusA === "skipped" || next.lastDispatchStatusA === "failed"
 				? next.lastDispatchStatusA
@@ -552,6 +571,12 @@ export async function setTelegramUserSettings(
 				: "lastDispatchStatusC" in next
 					? null
 					: current.lastDispatchStatusC,
+		lastDispatchStatusD:
+			next.lastDispatchStatusD === "sent" || next.lastDispatchStatusD === "skipped" || next.lastDispatchStatusD === "failed"
+				? next.lastDispatchStatusD
+				: "lastDispatchStatusD" in next
+					? null
+					: current.lastDispatchStatusD,
 		lastDispatchReasonA:
 			typeof next.lastDispatchReasonA === "string" || next.lastDispatchReasonA === null
 				? (next.lastDispatchReasonA ?? null)
@@ -564,6 +589,10 @@ export async function setTelegramUserSettings(
 			typeof next.lastDispatchReasonC === "string" || next.lastDispatchReasonC === null
 				? (next.lastDispatchReasonC ?? null)
 				: current.lastDispatchReasonC,
+		lastDispatchReasonD:
+			typeof next.lastDispatchReasonD === "string" || next.lastDispatchReasonD === null
+				? (next.lastDispatchReasonD ?? null)
+				: current.lastDispatchReasonD,
 		lastCronAt: "lastCronAt" in next ? (next.lastCronAt ?? null) : current.lastCronAt,
 		plan: next.plan === "free" || next.plan === "pro" || next.plan === "admin" ? next.plan : current.plan,
 		planActive: typeof next.planActive === "boolean" ? next.planActive : current.planActive,
@@ -597,6 +626,7 @@ const MAX_ALERTS_PER_HOUR = 10;
 export const COOLDOWN_A_MS = 10 * 60 * 1000;    // 10 min
 export const COOLDOWN_B_MS = 15 * 60 * 1000;    // 15 min
 export const COOLDOWN_C_MS = 10 * 60 * 1000;    // 10 min
+export const COOLDOWN_D_MS = 10 * 60 * 1000;    // 10 min
 export const PAUSE_SPAM_MS = 30 * 60 * 1000;    // auto-pause 30min when limit hit
 export const PAUSE_FOREVER = -1;
 
@@ -627,7 +657,7 @@ export type AlertCheckResult =
 
 export function checkAlertEligibility(
 	settings: TelegramUserSettings,
-	track: "a" | "b" | "c",
+	track: "a" | "b" | "c" | "d",
 	scannerKey?: string
 ): AlertCheckResult {
 	const now = Date.now();
@@ -640,7 +670,7 @@ export function checkAlertEligibility(
 
 	// Plan check via central temAcesso
 	const planInfo = { plan: settings.plan, planActive: settings.planActive, planExpiresAt: settings.planExpiresAt, trialUsed: settings.trialUsed };
-	const funcMap = { a: "trilha_a", b: "trilha_b", c: "trilha_c" } as const;
+	const funcMap = { a: "trilha_a", b: "trilha_b", c: "trilha_c", d: "trilha_b" } as const;
 	if (!temAcesso(planInfo, funcMap[track])) return { allowed: false, reason: "plan" };
 
 	// Track enabled check
@@ -656,6 +686,10 @@ export function checkAlertEligibility(
 		}
 	} else if (track === "c") {
 		if (settings.lastAlertC !== null && now - settings.lastAlertC < COOLDOWN_C_MS) {
+			return { allowed: false, reason: "cooldown" };
+		}
+	} else if (track === "d") {
+		if (settings.lastAlertD !== null && now - settings.lastAlertD < COOLDOWN_D_MS) {
 			return { allowed: false, reason: "cooldown" };
 		}
 	} else if (track === "b" && scannerKey) {
@@ -701,6 +735,8 @@ export function checkAlertEligibility(
 		updates.lastAlertA = now;
 	} else if (track === "c") {
 		updates.lastAlertC = now;
+	} else if (track === "d") {
+		updates.lastAlertD = now;
 	} else if (track === "b" && scannerKey) {
 		updates.lastAlertB = { [scannerKey]: now };
 	}

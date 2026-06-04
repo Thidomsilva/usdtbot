@@ -20,7 +20,7 @@ const DEFI_BRLA_TIMEOUT_MS = 3_000;
 const SIM_CAPITAL_BRL = 1000;
 const MAX_CEX_ROUTES_IN_MESSAGE = 5;
 
-type TelegramAction = "menu" | "settings" | "usdt" | "usdt_defi" | "scanner" | "help" | "status";
+type TelegramAction = "menu" | "settings" | "usdt" | "usdt_defi" | "scanner" | "depeg" | "help" | "status";
 
 type TelegramCallbackAction = "menu" | TelegramAction;
 
@@ -368,6 +368,10 @@ export function parseTelegramAction(text: string | undefined): TelegramAction | 
 		return "scanner";
 	}
 
+	if (["/depeg", "/signal_depeg", "depeg"].includes(command)) {
+		return "depeg";
+	}
+
 	if (["/status", "status"].includes(command) || command.startsWith("/status@")) {
 		return "status";
 	}
@@ -386,6 +390,7 @@ export function buildTelegramHelpMessage(): string {
 		"/usdt - usdt entre CEXs (compra e venda entre corretoras)",
 		"/usdt_defi - compra em CEX e venda no DeFiLlama (BRLA)",
 		"/scanner - envia o melhor sinal do scanner completo de moedas",
+		"/depeg - monitora oportunidades de depeg",
 		"/settings - configura o monitor por usuario",
 		"/status - mostra o status atual do monitoramento",
 		"/start - abre o menu com os tres modos",
@@ -474,6 +479,9 @@ export function buildTelegramMenuMessage(): string {
 		"<b>C) USDT -> DeFiLlama (BRLA)</b>",
 		"Compra em CEX e simula venda no DeFi (pool BRLA/USDT).",
 		"",
+		"<b>D) Depeg monitor</b>",
+		"Monitora stablecoins fora da paridade e destaca oportunidades.",
+		"",
 		"Toque em um botao para receber o sinal na hora.",
 	].join("\n");
 }
@@ -489,6 +497,9 @@ export function buildTelegramMenuMarkup(): Record<string, unknown> {
 			],
 			[
 				{ text: "🔗 C) CEX→DeFi", callback_data: "mode:usdt_defi" },
+			],
+			[
+				{ text: "🧨 D) Depeg", callback_data: "mode:depeg" },
 			],
 			[
 				{ text: "⚙️ Configurar", callback_data: "settings:open" },
@@ -528,7 +539,7 @@ function formatDispatchTime(epochMs: number): string {
 
 function simplifyDispatchReason(reason: string | null): string {
 	if (!reason) return "sem detalhes";
-	const normalized = reason.replace(/^track_[abc]_/, "");
+	const normalized = reason.replace(/^track_[abcd]_/, "");
 
 	if (normalized === "no_spread_or_data") return "sem oportunidade acima do minimo";
 	if (normalized === "cooldown") return "aguardando cooldown";
@@ -545,7 +556,7 @@ function simplifyDispatchReason(reason: string | null): string {
 }
 
 function buildTrackDispatchStatusLine(params: {
-	label: "A" | "B" | "C";
+	label: "A" | "B" | "C" | "D";
 	enabled: boolean;
 	hasAccess: boolean;
 	at: number | null;
@@ -596,10 +607,11 @@ export function buildTelegramSettingsMessage(options: TelegramUserSettings): str
 		"",
 		`Plano: ${planLabel}`,
 		`Alertas automaticos: ${alertIcon}${pausedMsg}`,
-		`Trilhas ativas: ${tracks.a ? "💱A" : "━A"} ${tracks.b ? "✅B" : "━B"} ${tracks.c ? "🔗C" : "━C"}`,
+		`Trilhas ativas: ${tracks.a ? "💱A" : "━A"} ${tracks.b ? "✅B" : "━B"} ${tracks.c ? "🔗C" : "━C"} ${tracks.d ? "🧨D" : "━D"}`,
 		`Spread minimo A: ${options.minSpreadA.toFixed(2)}%`,
 		`Spread minimo B: ${options.minSpreadB.toFixed(2)}%`,
 		`Spread minimo C: ${options.minSpreadC.toFixed(2)}%`,
+		`Spread minimo D: ${options.minSpreadD.toFixed(2)}%`,
 		`Capital simulado: R$ ${options.simCapital.toLocaleString("pt-BR")}`,
 		`Silencio noturno: ${silentIcon} ${options.silentStart}–${options.silentEnd}`,
 		"",
@@ -626,6 +638,9 @@ export function buildTelegramSettingsMarkup(options: TelegramUserSettings): Reco
 				{ text: alertTracks.a ? "💱A ✅" : "💱A ❌", callback_data: alertTracks.a ? "track:a_off" : "track:a_on" },
 				{ text: alertTracks.b ? "📡B ✅" : "📡B ❌", callback_data: alertTracks.b ? "track:b_off" : "track:b_on" },
 				{ text: alertTracks.c ? "🔗C ✅" : "🔗C ❌", callback_data: alertTracks.c ? "track:c_off" : "track:c_on" },
+			],
+			[
+				{ text: alertTracks.d ? "🧨D ✅" : "🧨D ❌", callback_data: alertTracks.d ? "track:d_off" : "track:d_on" },
 			],
 			// row 3: capital presets
 			[
@@ -670,7 +685,7 @@ export function buildSignalDigest(message: string): string {
 	return createHash("sha256").update(normalized).digest("hex");
 }
 
-export function buildTelegramSignalMarkup(action: "usdt" | "scanner" | "usdt_defi"): Record<string, unknown> {
+export function buildTelegramSignalMarkup(action: "usdt" | "scanner" | "usdt_defi" | "depeg"): Record<string, unknown> {
 	return {
 		inline_keyboard: [
 			[
@@ -680,7 +695,9 @@ export function buildTelegramSignalMarkup(action: "usdt" | "scanner" | "usdt_def
 							? "🔄 Atualizar A) CEX↔CEX"
 							: action === "usdt_defi"
 								? "🔄 Atualizar C) CEX→DeFi"
-								: "🔄 Atualizar B) Scanner",
+								: action === "depeg"
+									? "🔄 Atualizar D) Depeg"
+									: "🔄 Atualizar B) Scanner",
 					callback_data: `mode:${action}`,
 				},
 			],
@@ -690,6 +707,7 @@ export function buildTelegramSignalMarkup(action: "usdt" | "scanner" | "usdt_def
 			],
 			[
 				{ text: "🔗 C) CEX→DeFi", callback_data: "mode:usdt_defi" },
+				{ text: "🧨 D) Depeg", callback_data: "mode:depeg" },
 			],
 			[
 				{ text: "⚙️ Configurar", callback_data: "settings:open" },
@@ -750,6 +768,7 @@ export function buildMonitoringStatusMessage(settings: TelegramUserSettings): st
 	const hasAccessA = temAcesso(planInfo, "trilha_a");
 	const hasAccessB = temAcesso(planInfo, "trilha_b");
 	const hasAccessC = temAcesso(planInfo, "trilha_c");
+	const hasAccessD = temAcesso(planInfo, "trilha_b");
 	const effectiveMinSpreadA = spreadMinimoEfetivo(planInfo, settings.minSpreadA);
 	const dispatchLines = [
 		buildTrackDispatchStatusLine({
@@ -776,6 +795,14 @@ export function buildMonitoringStatusMessage(settings: TelegramUserSettings): st
 			status: settings.lastDispatchStatusC,
 			reason: settings.lastDispatchReasonC,
 		}),
+		buildTrackDispatchStatusLine({
+			label: "D",
+			enabled: settings.alertTracks.d,
+			hasAccess: hasAccessD,
+			at: settings.lastDispatchAtD,
+			status: settings.lastDispatchStatusD,
+			reason: settings.lastDispatchReasonD,
+		}),
 	].filter((line): line is string => Boolean(line));
 
 	if (paused) {
@@ -788,6 +815,7 @@ export function buildMonitoringStatusMessage(settings: TelegramUserSettings): st
 			`Trilha A CEX→CEX    ${hasAccessA ? "⏸ pausado" : "🔒 indisponivel no plano"}`,
 			`Trilha B Scanner    ${hasAccessB ? "⏸ pausado" : "🔒 indisponivel no plano"}`,
 			`Trilha C CEX→DeFi   ${hasAccessC ? "⏸ pausado" : "🔒 indisponivel no plano"}`,
+			`Trilha D Depeg      ${hasAccessD ? "⏸ pausado" : "🔒 indisponivel no plano"}`,
 			"",
 			`Retoma em: ${resume}`,
 		].join("\n");
@@ -800,6 +828,7 @@ export function buildMonitoringStatusMessage(settings: TelegramUserSettings): st
 			"Trilha A CEX→CEX    ❌ desativada",
 			"Trilha B Scanner    ❌ desativada",
 			"Trilha C CEX→DeFi   ❌ desativada",
+			"Trilha D Depeg      ❌ desativada",
 			"",
 			"Ative os alertas para iniciar o monitoramento.",
 		].join("\n");
@@ -821,6 +850,7 @@ export function buildMonitoringStatusMessage(settings: TelegramUserSettings): st
 		`Trilha A CEX→CEX    ${!hasAccessA ? "🔒 indisponivel no plano" : settings.alertTracks.a ? `✅ ${effectiveMinSpreadA.toFixed(2)}% mín` : "❌ desativada"}`,
 		`Trilha B Scanner    ${!hasAccessB ? "🔒 indisponivel no plano" : settings.alertTracks.b ? `✅ ${settings.minSpreadB.toFixed(2)}% mín` : "❌ desativada"}`,
 		`Trilha C CEX→DeFi   ${!hasAccessC ? "🔒 indisponivel no plano" : settings.alertTracks.c ? `✅ ${settings.minSpreadC.toFixed(2)}% mín` : "❌ desativada"}`,
+		`Trilha D Depeg      ${!hasAccessD ? "🔒 indisponivel no plano" : settings.alertTracks.d ? `✅ ${settings.minSpreadD.toFixed(2)}% mín` : "❌ desativada"}`,
 		"",
 		`💰 Simulando R$ ${settings.simCapital.toLocaleString("pt-BR")}`,
 		`🔕 Silencio: ${silence}`,
@@ -1214,6 +1244,95 @@ export async function buildScannerSignalMessage(baseUrl: string): Promise<string
 			const medal = index === 0 ? "🥇" : index === 1 ? "🥈" : "🥉";
 			return `${medal} <b>${escapeHtml(token.symbol)}</b> · ${escapeHtml(arb.buy_exchange_label)} -> ${escapeHtml(arb.sell_exchange_label)}\n📈 ${formatPct(arb.spread_pct, 2)} bruto · ${formatPct(arb.net_spread_pct, 2)} liquido`;
 		}),
+	].join("\n");
+}
+
+export async function buildAlertDepegMessage(baseUrl: string, settings: TelegramUserSettings): Promise<string | null> {
+	const threshold = Number.isFinite(settings.minSpreadD) ? settings.minSpreadD : 0.3;
+	const url = new URL("/api/depeg-arbitrage", baseUrl);
+	url.searchParams.set("min_depeg_pct", threshold.toFixed(2));
+	url.searchParams.set("direction_mode", "all");
+
+	const payload = await fetchJson<{
+		timestamp: string;
+		threshold_pct: number;
+		opportunities: Array<{
+			label: string;
+			symbol: string;
+			depeg_pct: number | null;
+			asymmetry_pct: number | null;
+			direction: "above_peg" | "below_peg";
+			signal: "watch" | "opportunity" | "stress";
+		}>;
+		summary: {
+			above_threshold: number;
+		};
+	}>(url);
+
+	const top = payload.opportunities?.[0] ?? null;
+	if (!top || top.depeg_pct === null || top.asymmetry_pct === null) {
+		return null;
+	}
+
+	const directionLabel = top.direction === "below_peg" ? "abaixo da paridade" : "acima da paridade";
+	const risk = top.signal === "stress" ? "🔴 stress" : top.signal === "opportunity" ? "🟡 oportunidade" : "🔵 watch";
+	const { time } = buildDateAndTime(payload.timestamp);
+
+	return [
+		"🧨 <b>D) Depeg Monitor</b>",
+		"",
+		`Ativo: <b>${escapeHtml(top.label)}</b> (${escapeHtml(top.symbol)})`,
+		`Desvio: ${formatSignedPct(top.depeg_pct, 3)} (${directionLabel})`,
+		`Assimetria: ${formatPct(top.asymmetry_pct, 3)} · ${risk}`,
+		`Limiar: ${formatPct(payload.threshold_pct, 2)} · Oportunidades: ${payload.summary.above_threshold}`,
+		"",
+		`⏱ ${time}`,
+	].join("\n");
+}
+
+export async function buildDepegSignalMessage(baseUrl: string): Promise<string> {
+	const url = new URL("/api/depeg-arbitrage", baseUrl);
+	url.searchParams.set("min_depeg_pct", "0.30");
+	url.searchParams.set("direction_mode", "all");
+
+	const payload = await fetchJson<{
+		timestamp: string;
+		threshold_pct: number;
+		opportunities: Array<{
+			label: string;
+			symbol: string;
+			depeg_pct: number | null;
+			asymmetry_pct: number | null;
+			direction: "above_peg" | "below_peg";
+			signal: "watch" | "opportunity" | "stress";
+		}>;
+		summary: {
+			above_threshold: number;
+			max_asymmetry_pct: number;
+		};
+	}>(url);
+
+	const top = payload.opportunities?.[0] ?? null;
+	if (!top || top.depeg_pct === null || top.asymmetry_pct === null) {
+		return [
+			`<b>🧨 DEPEG · ${formatTimestamp(payload.timestamp)}</b>`,
+			"",
+			"Sem oportunidade acima do limiar no momento.",
+			`Limiar: ${formatPct(payload.threshold_pct, 2)} · Max: ${formatPct(payload.summary.max_asymmetry_pct, 3)}`,
+		].join("\n");
+	}
+
+	const directionLabel = top.direction === "below_peg" ? "abaixo da paridade" : "acima da paridade";
+	const risk = top.signal === "stress" ? "🔴 stress" : top.signal === "opportunity" ? "🟡 oportunidade" : "🔵 watch";
+	const { date, time } = buildDateAndTime(payload.timestamp);
+
+	return [
+		`<b>🧨 DEPEG · ${date} · ${time}</b>`,
+		"",
+		`Ativo: <b>${escapeHtml(top.label)}</b> (${escapeHtml(top.symbol)})`,
+		`Desvio: ${formatSignedPct(top.depeg_pct, 3)} (${directionLabel})`,
+		`Assimetria: ${formatPct(top.asymmetry_pct, 3)} · ${risk}`,
+		`Limiar: ${formatPct(payload.threshold_pct, 2)} · Oportunidades: ${payload.summary.above_threshold}`,
 	].join("\n");
 }
 

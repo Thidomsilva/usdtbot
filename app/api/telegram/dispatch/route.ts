@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+	buildAlertDepegMessage,
 	buildAlertScannerMessage,
 	buildAlertUsdtDefiMessage,
 	buildAlertUsdtMessage,
@@ -35,15 +36,15 @@ function isAuthorized(request: NextRequest): boolean {
 }
 
 function tracksByAutoMode(mode: "off" | "usdt" | "scanner" | "usdt_defi" | "all") {
-	if (mode === "usdt") return { a: true, b: false, c: false };
-	if (mode === "scanner") return { a: false, b: true, c: false };
-	if (mode === "usdt_defi") return { a: false, b: false, c: true };
-	if (mode === "all") return { a: true, b: true, c: true };
-	return { a: false, b: false, c: false };
+	if (mode === "usdt") return { a: true, b: false, c: false, d: false };
+	if (mode === "scanner") return { a: false, b: true, c: false, d: false };
+	if (mode === "usdt_defi") return { a: false, b: false, c: true, d: false };
+	if (mode === "all") return { a: true, b: true, c: true, d: true };
+	return { a: false, b: false, c: false, d: false };
 }
 
 function buildDispatchTrackPatch(
-	track: "a" | "b" | "c",
+	track: "a" | "b" | "c" | "d",
 	status: DispatchTrackStatus,
 	reason?: string
 ) {
@@ -66,10 +67,18 @@ function buildDispatchTrackPatch(
 		};
 	}
 
+	if (track === "c") {
+		return {
+			lastDispatchAtC: now,
+			lastDispatchStatusC: status,
+			lastDispatchReasonC: normalizedReason,
+		};
+	}
+
 	return {
-		lastDispatchAtC: now,
-		lastDispatchStatusC: status,
-		lastDispatchReasonC: normalizedReason,
+		lastDispatchAtD: now,
+		lastDispatchStatusD: status,
+		lastDispatchReasonD: normalizedReason,
 	};
 }
 
@@ -77,7 +86,7 @@ async function dispatchAlert(
 	chatId: string,
 	origin: string,
 	settings: Awaited<ReturnType<typeof getTelegramUserSettings>>,
-	track: "a" | "b" | "c"
+	track: "a" | "b" | "c" | "d"
 ): Promise<{
 	status: "sent" | "skipped" | "failed";
 	reason?: string;
@@ -131,13 +140,30 @@ async function dispatchAlert(
 					`⚠️ Limite de alertas atingido. Pausando por 30 min.\n${buildPauseConfirmMessage(pausedUntil)}`
 				);
 			}
-		} else {
+		} else if (track === "c") {
 			// track C
 			const check = checkAlertEligibility(nextSettings, "c");
 			if (!check.allowed) return { status: "skipped", reason: `track_c_${check.reason}`, settings: nextSettings };
 
 			messageText = await buildAlertUsdtDefiMessage(origin, nextSettings);
 			if (!messageText) return { status: "skipped", reason: "track_c_no_spread_or_data", settings: nextSettings }; // returns null when spread <= 0
+
+			nextSettings = await setTelegramUserSettings(chatId, { ...check.updates, alertsEnabled: true });
+			if (check.autoSpamPause) {
+				const pausedUntil = Date.now() + PAUSE_SPAM_MS;
+				nextSettings = await setTelegramUserSettings(chatId, { pausedUntil });
+				await sendTelegramMessage(
+					chatId,
+					`⚠️ Limite de alertas atingido. Pausando por 30 min.\n${buildPauseConfirmMessage(pausedUntil)}`
+				);
+			}
+		} else {
+			// track D
+			const check = checkAlertEligibility(nextSettings, "d");
+			if (!check.allowed) return { status: "skipped", reason: `track_d_${check.reason}`, settings: nextSettings };
+
+			messageText = await buildAlertDepegMessage(origin, nextSettings);
+			if (!messageText) return { status: "skipped", reason: "track_d_no_spread_or_data", settings: nextSettings };
 
 			nextSettings = await setTelegramUserSettings(chatId, { ...check.updates, alertsEnabled: true });
 			if (check.autoSpamPause) {
@@ -169,10 +195,11 @@ async function markTracksSkippedBeforeDispatch(
 	reason: string
 ): Promise<Awaited<ReturnType<typeof getTelegramUserSettings>>> {
 	let nextSettings = settings;
-	const tracks: Array<"a" | "b" | "c"> = [];
+	const tracks: Array<"a" | "b" | "c" | "d"> = [];
 	if (settings.alertTracks.a) tracks.push("a");
 	if (settings.alertTracks.b) tracks.push("b");
 	if (settings.alertTracks.c) tracks.push("c");
+	if (settings.alertTracks.d) tracks.push("d");
 
 	for (const track of tracks) {
 		nextSettings = await setTelegramUserSettings(chatId, {
@@ -286,6 +313,9 @@ export async function GET(request: NextRequest) {
 							lastDispatchAtC: null,
 							lastDispatchStatusC: null,
 							lastDispatchReasonC: null,
+							lastDispatchAtD: null,
+							lastDispatchStatusD: null,
+							lastDispatchReasonD: null,
 						};
 						await setTelegramUserSettings(chatId, patch);
 						effectiveSettings = { ...effectiveSettings, ...patch };
@@ -298,10 +328,11 @@ export async function GET(request: NextRequest) {
 					}
 				}
 
-				const tracks: Array<"a" | "b" | "c"> = [];
+				const tracks: Array<"a" | "b" | "c" | "d"> = [];
 				if (effectiveSettings.alertTracks.a) tracks.push("a");
 				if (effectiveSettings.alertTracks.b) tracks.push("b");
 				if (effectiveSettings.alertTracks.c) tracks.push("c");
+				if (effectiveSettings.alertTracks.d) tracks.push("d");
 
 				if (tracks.length === 0) {
 					skipped++;
