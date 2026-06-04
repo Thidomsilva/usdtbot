@@ -307,6 +307,15 @@ export async function recordUserSession(
       const session = findLatestOpenSession(memoryCache.sessions, username)
       if (session) {
         session.lastActivityAt = now
+      } else {
+        // Recupera sessao quando o usuario ja estava autenticado, mas sem registro local.
+        memoryCache.sessions.push({
+          username,
+          email: email ?? null,
+          role: userRole,
+          loginAt: now,
+          lastActivityAt: now,
+        })
       }
     }
 
@@ -335,6 +344,15 @@ export async function recordUserSession(
         const session = findLatestOpenSession(nextSessions, username)
         if (session) {
           session.lastActivityAt = now
+        } else {
+          // Se nao houver sessao aberta no storage, cria uma para manter online em sincronia.
+          nextSessions.push({
+            username,
+            email: email ?? null,
+            role: userRole,
+            loginAt: now,
+            lastActivityAt: now,
+          })
         }
       }
 
