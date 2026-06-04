@@ -1,6 +1,7 @@
 import { promises as fs } from 'fs'
 import path from 'path'
 import { Redis } from '@upstash/redis'
+import { createClient as createRedisClient, type RedisClientType } from 'redis'
 import { listUsers } from './user-store'
 
 export type ActivityType = 'login' | 'logout' | 'page_access' | 'api_call'
@@ -45,6 +46,7 @@ const memoryCache = {
 
 type ActivityStorePayload = { logs: ActivityLog[] }
 type SessionStorePayload = { sessions: SessionRecord[] }
+type ActivityStorageBackend = 'kv-rest' | 'kv-redis-url' | 'file'
 
 // Verificar se estamos em um ambiente onde fs está disponível (Node.js)
 const canUseFsModule = (): boolean => {
@@ -64,6 +66,8 @@ const KV_LOGS_KEY = 'usdtbot:activity-logs:v1'
 const KV_SESSIONS_KEY = 'usdtbot:user-sessions:v1'
 
 let redisClient: Redis | null = null
+let redisUrlClient: RedisClientType | null = null
+let redisUrlConnecting: Promise<RedisClientType> | null = null
 
 type SessionRecord = {
   username: string
@@ -107,6 +111,32 @@ function canUseKvRest(): boolean {
   return Boolean(getRestUrl() && getRestToken())
 }
 
+function getRedisConnectionUrl(): string | undefined {
+  return getFirstEnv([
+    'KV_REST_API_REDIS_URL',
+    'REDIS_URL',
+    'KV_URL',
+    'UPSTASH_REDIS_URL',
+    'STORAGE_URL',
+  ])
+}
+
+function canUseRedisUrl(): boolean {
+  return Boolean(getRedisConnectionUrl())
+}
+
+function getStorageBackend(): ActivityStorageBackend {
+  if (canUseKvRest()) {
+    return 'kv-rest'
+  }
+
+  if (canUseRedisUrl()) {
+    return 'kv-redis-url'
+  }
+
+  return 'file'
+}
+
 function getRedisClient(): Redis {
   if (!redisClient) {
     const restUrl = getRestUrl()
@@ -118,6 +148,28 @@ function getRedisClient(): Redis {
   }
 
   return redisClient
+}
+
+async function getRedisUrlClient(): Promise<RedisClientType> {
+  if (!redisUrlClient) {
+    const redisUrl = getRedisConnectionUrl()
+    if (!redisUrl) {
+      throw new Error('REDIS URL nao configurada')
+    }
+
+    redisUrlClient = createRedisClient({ url: redisUrl })
+  }
+
+  if (!redisUrlClient.isOpen) {
+    if (!redisUrlConnecting) {
+      redisUrlConnecting = redisUrlClient.connect().then(() => redisUrlClient as RedisClientType).finally(() => {
+        redisUrlConnecting = null
+      })
+    }
+    await redisUrlConnecting
+  }
+
+  return redisUrlClient
 }
 
 function dedupeLogs(logs: ActivityLog[]): ActivityLog[] {
@@ -145,9 +197,19 @@ function findLatestOpenSession(sessions: SessionRecord[], username: string): Ses
 }
 
 async function loadLogsFromStore(): Promise<ActivityLog[]> {
-  if (canUseKvRest()) {
+  const backend = getStorageBackend()
+
+  if (backend === 'kv-rest') {
     const data = await getRedisClient().get<ActivityStorePayload>(KV_LOGS_KEY)
     return Array.isArray(data?.logs) ? data.logs : []
+  }
+
+  if (backend === 'kv-redis-url') {
+    const client = await getRedisUrlClient()
+    const raw = await client.get(KV_LOGS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as ActivityStorePayload
+    return Array.isArray(parsed.logs) ? parsed.logs : []
   }
 
   if (canUseFsModule()) {
@@ -161,8 +223,16 @@ async function loadLogsFromStore(): Promise<ActivityLog[]> {
 }
 
 async function saveLogsToStore(logs: ActivityLog[]): Promise<void> {
-  if (canUseKvRest()) {
+  const backend = getStorageBackend()
+
+  if (backend === 'kv-rest') {
     await getRedisClient().set(KV_LOGS_KEY, { logs })
+    return
+  }
+
+  if (backend === 'kv-redis-url') {
+    const client = await getRedisUrlClient()
+    await client.set(KV_LOGS_KEY, JSON.stringify({ logs }))
     return
   }
 
@@ -173,9 +243,19 @@ async function saveLogsToStore(logs: ActivityLog[]): Promise<void> {
 }
 
 async function loadSessionsFromStore(): Promise<SessionRecord[]> {
-  if (canUseKvRest()) {
+  const backend = getStorageBackend()
+
+  if (backend === 'kv-rest') {
     const data = await getRedisClient().get<SessionStorePayload>(KV_SESSIONS_KEY)
     return Array.isArray(data?.sessions) ? data.sessions : []
+  }
+
+  if (backend === 'kv-redis-url') {
+    const client = await getRedisUrlClient()
+    const raw = await client.get(KV_SESSIONS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as SessionStorePayload
+    return Array.isArray(parsed.sessions) ? parsed.sessions : []
   }
 
   if (canUseFsModule()) {
@@ -189,8 +269,16 @@ async function loadSessionsFromStore(): Promise<SessionRecord[]> {
 }
 
 async function saveSessionsToStore(sessions: SessionRecord[]): Promise<void> {
-  if (canUseKvRest()) {
+  const backend = getStorageBackend()
+
+  if (backend === 'kv-rest') {
     await getRedisClient().set(KV_SESSIONS_KEY, { sessions })
+    return
+  }
+
+  if (backend === 'kv-redis-url') {
+    const client = await getRedisUrlClient()
+    await client.set(KV_SESSIONS_KEY, JSON.stringify({ sessions }))
     return
   }
 
