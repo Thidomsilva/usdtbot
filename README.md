@@ -130,8 +130,42 @@ Configuracao por usuario (Telegram):
 Envio automatico:
 
 - O projeto possui um despachante em `GET /api/telegram/dispatch`
-- Na Vercel, o `vercel.json` agenda cron a cada 1 minuto para enviar sinais novos automaticamente
+- Neste repositorio, o cron da Vercel foi desativado para evitar envio duplicado
+- O envio automatico deve ser feito por cron externo (no seu servidor ja existente)
 - Para proteger o endpoint, defina `CRON_SECRET` na Vercel (o cron envia `Authorization: Bearer <CRON_SECRET>`)
+
+### Configuracao recomendada com dominio atual
+
+Dominio de producao:
+
+- `https://usdtbot.vercel.app`
+
+Webhook do Telegram:
+
+```bash
+curl -X POST "https://api.telegram.org/botSEU_TOKEN/setWebhook" \
+	-H "Content-Type: application/json" \
+	-d '{
+		"url": "https://usdtbot.vercel.app/api/telegram",
+		"secret_token": "SEU_TELEGRAM_WEBHOOK_SECRET"
+	}'
+```
+
+Teste manual de dispatch:
+
+```bash
+curl -H "Authorization: Bearer SEU_CRON_SECRET" \
+	"https://usdtbot.vercel.app/api/telegram/dispatch?source=manual"
+```
+
+Cron externo (servidor compartilhado):
+
+1. Exporte `CRON_SECRET` no servidor.
+2. Adicione no crontab:
+
+```bash
+* * * * * /caminho/do/projeto/scripts/cron-telegram-dispatch.sh
+```
 
 ### Variaveis de ambiente
 
