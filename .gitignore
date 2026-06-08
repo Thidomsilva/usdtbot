@@ -2,6 +2,8 @@ node_modules/
 .next/
 out/
 .vercel/
+.env
+.env.local
 .env*
 *.log
 usdt-tracker.zip

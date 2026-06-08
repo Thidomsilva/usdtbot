@@ -43,9 +43,13 @@ export interface MPPaymentData {
 }
 
 function getMPAccessToken(): string {
-  const token = process.env.MERCADOPAGO_ACCESS_TOKEN?.trim()
+  const token =
+    process.env.MERCADOPAGO_ACCESS_TOKEN?.trim() ||
+    process.env.MERCADOPAGO_ACESS_TOKEN?.trim()
   if (!token) {
-    throw new Error('MERCADOPAGO_ACCESS_TOKEN não configurado')
+    throw new Error(
+      'MERCADOPAGO_ACCESS_TOKEN não configurado. Defina no .env.local e reinicie o servidor.'
+    )
   }
   return token
 }
