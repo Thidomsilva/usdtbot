@@ -199,3 +199,19 @@ Depois disso, mande `/usdt` ou `/scanner` para o bot e ele responde no mesmo cha
 - `/p2p` monitor de arbitragem P2P (USDT/BRL)
 - `/login` autenticacao do sistema
 - `/admin` inclusao/exclusao de usuarios
+
+## Mercado Pago
+
+Para os fluxos de pagamento, configure no ambiente local ou no painel da Vercel:
+
+```bash
+MERCADOPAGO_ACCESS_TOKEN="seu_access_token"
+NEXT_PUBLIC_MERCADOPAGO_PUBLIC_KEY="sua_public_key"
+NEXT_PUBLIC_APP_URL="https://seu-dominio"
+```
+
+Observacoes:
+
+- No desenvolvimento local, use `.env.local` na raiz do projeto.
+- Depois de alterar variaveis de ambiente, reinicie o servidor Next.js.
+- Em producao na Vercel, as variaveis precisam ser cadastradas no painel do projeto; `.env.local` nao vai para o deploy.
