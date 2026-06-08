@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 const PLANOS = [
@@ -43,16 +43,64 @@ const PLANOS = [
 export default function PlanosPage() {
   const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState<"weekly" | "monthly" | null>(null);
+  const [sessionUser, setSessionUser] = useState<{ username: string; email: string | null; role: "admin" | "user" } | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [isNewUser] = useState(true); // Nesta página assumimos novo usuário
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSession() {
+      try {
+        const response = await fetch("/api/auth/me", { credentials: "same-origin" });
+        const payload = await response.json().catch(() => ({}));
+
+        if (cancelled) {
+          return;
+        }
+
+        if (response.ok && payload?.authenticated && payload?.user) {
+          setSessionUser({
+            username: String(payload.user.username ?? ""),
+            email: payload.user.email ?? null,
+            role: payload.user.role === "admin" ? "admin" : "user",
+          });
+        } else {
+          setSessionUser(null);
+        }
+      } catch {
+        if (!cancelled) {
+          setSessionUser(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setSessionLoading(false);
+        }
+      }
+    }
+
+    loadSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const isExistingUser = Boolean(sessionUser);
+  const isNewUser = !isExistingUser;
 
   async function handleCheckout() {
     if (!selectedPlan) {
       setError("Selecione um plano para continuar.");
+      return;
+    }
+
+    if (sessionLoading) {
+      setError("Aguardando validação da sua sessão. Tente novamente em instantes.");
       return;
     }
 
@@ -170,8 +218,27 @@ export default function PlanosPage() {
           maxWidth: 520,
           lineHeight: 1.6,
         }}>
-          Acesse o scanner de arbitragem em tempo real, oportunidades P2P, Spot-Futures e muito mais.
+          {isExistingUser
+            ? "Sua conta já está reconhecida. Selecione o plano para renovar o acesso sem criar outro cadastro."
+            : "Acesse o scanner de arbitragem em tempo real, oportunidades P2P, Spot-Futures e muito mais."}
         </p>
+        {isExistingUser && (
+          <div style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            marginTop: 16,
+            padding: "8px 14px",
+            borderRadius: 999,
+            border: "1px solid rgba(34, 197, 94, 0.25)",
+            background: "rgba(34, 197, 94, 0.08)",
+            color: "#22c55e",
+            fontSize: 13,
+            fontWeight: 600,
+          }}>
+            Conta detectada: {sessionUser?.username}
+          </div>
+        )}
       </div>
 
       {/* Cards de Planos */}
@@ -274,82 +341,103 @@ export default function PlanosPage() {
         animation: "fadeIn 1s ease-out",
       }}>
         <h3 style={{ margin: "0 0 8px", fontSize: 18, fontWeight: 700, color: "var(--text)" }}>
-          Criar sua conta
+          {isExistingUser ? "Renovar acesso" : "Criar sua conta"}
         </h3>
         <p style={{ margin: "0 0 24px", fontSize: 14, color: "var(--muted)" }}>
-          Seu email será usado para acessar a plataforma após o pagamento.
+          {isExistingUser
+            ? "Você já está autenticado. Escolha o plano desejado e siga para o pagamento."
+            : "Seu email será usado para acessar a plataforma após o pagamento."}
         </p>
 
-        <div style={{ display: "grid", gap: 14 }}>
-          <label style={{ display: "grid", gap: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-              Email
-            </span>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="seu@email.com"
-              autoComplete="email"
-              style={{
-                border: "1.5px solid var(--card-border)",
-                background: "var(--bg)",
-                borderRadius: 12,
-                padding: "12px 14px",
-                fontSize: 15,
-                color: "var(--text)",
-                fontFamily: "inherit",
-                transition: "all 0.3s ease",
-              }}
-            />
-          </label>
+        {isExistingUser ? (
+          <div style={{
+            display: "grid",
+            gap: 12,
+            padding: 16,
+            borderRadius: 14,
+            border: "1px solid rgba(14, 165, 233, 0.15)",
+            background: "rgba(14, 165, 233, 0.04)",
+            marginBottom: 6,
+          }}>
+            <div style={{ fontSize: 14, color: "var(--text)", fontWeight: 600 }}>
+              {sessionUser?.email ?? sessionUser?.username}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
+              Seu usuário já está cadastrado. Não será criado outro registro; o checkout seguirá como renovação de plano.
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 14 }}>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                Email
+              </span>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="seu@email.com"
+                autoComplete="email"
+                style={{
+                  border: "1.5px solid var(--card-border)",
+                  background: "var(--bg)",
+                  borderRadius: 12,
+                  padding: "12px 14px",
+                  fontSize: 15,
+                  color: "var(--text)",
+                  fontFamily: "inherit",
+                  transition: "all 0.3s ease",
+                }}
+              />
+            </label>
 
-          <label style={{ display: "grid", gap: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-              Senha
-            </span>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Mínimo 6 caracteres"
-              autoComplete="new-password"
-              style={{
-                border: "1.5px solid var(--card-border)",
-                background: "var(--bg)",
-                borderRadius: 12,
-                padding: "12px 14px",
-                fontSize: 15,
-                color: "var(--text)",
-                fontFamily: "inherit",
-                transition: "all 0.3s ease",
-              }}
-            />
-          </label>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                Senha
+              </span>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Mínimo 6 caracteres"
+                autoComplete="new-password"
+                style={{
+                  border: "1.5px solid var(--card-border)",
+                  background: "var(--bg)",
+                  borderRadius: 12,
+                  padding: "12px 14px",
+                  fontSize: 15,
+                  color: "var(--text)",
+                  fontFamily: "inherit",
+                  transition: "all 0.3s ease",
+                }}
+              />
+            </label>
 
-          <label style={{ display: "grid", gap: 6 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-              Confirmar Senha
-            </span>
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Repita a senha"
-              autoComplete="new-password"
-              style={{
-                border: "1.5px solid var(--card-border)",
-                background: "var(--bg)",
-                borderRadius: 12,
-                padding: "12px 14px",
-                fontSize: 15,
-                color: "var(--text)",
-                fontFamily: "inherit",
-                transition: "all 0.3s ease",
-              }}
-            />
-          </label>
-        </div>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                Confirmar Senha
+              </span>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Repita a senha"
+                autoComplete="new-password"
+                style={{
+                  border: "1.5px solid var(--card-border)",
+                  background: "var(--bg)",
+                  borderRadius: 12,
+                  padding: "12px 14px",
+                  fontSize: 15,
+                  color: "var(--text)",
+                  fontFamily: "inherit",
+                  transition: "all 0.3s ease",
+                }}
+              />
+            </label>
+          </div>
+        )}
 
         {error && (
           <div style={{
@@ -368,28 +456,32 @@ export default function PlanosPage() {
 
         <button
           onClick={handleCheckout}
-          disabled={loading || !selectedPlan}
+          disabled={loading || sessionLoading || !selectedPlan}
           style={{
             width: "100%",
             marginTop: 20,
             border: "none",
             borderRadius: 14,
             padding: "15px 16px",
-            background: loading || !selectedPlan
+            background: loading || sessionLoading || !selectedPlan
               ? "rgba(14, 165, 233, 0.3)"
               : "linear-gradient(135deg, var(--accent), #0284c7)",
             color: "white",
-            cursor: loading || !selectedPlan ? "not-allowed" : "pointer",
+            cursor: loading || sessionLoading || !selectedPlan ? "not-allowed" : "pointer",
             fontWeight: 700,
             fontSize: 16,
             transition: "all 0.3s ease",
             letterSpacing: "0.3px",
           }}
         >
-          {loading
+          {sessionLoading
+            ? "Verificando sessão..."
+            : loading
             ? "Aguarde..."
             : selectedPlan
-            ? `Pagar via PIX — ${PLANOS.find((p) => p.key === selectedPlan)?.price}`
+            ? isExistingUser
+              ? `Renovar via PIX — ${PLANOS.find((p) => p.key === selectedPlan)?.price}`
+              : `Pagar via PIX — ${PLANOS.find((p) => p.key === selectedPlan)?.price}`
             : "Selecione um plano acima"}
         </button>
 
@@ -407,15 +499,23 @@ export default function PlanosPage() {
         </div>
 
         <div style={{ marginTop: 20, textAlign: "center", borderTop: "1px solid var(--card-border)", paddingTop: 16 }}>
-          <span style={{ fontSize: 13, color: "var(--muted)" }}>
-            Já tem uma conta?{" "}
-          </span>
-          <a
-            href="/login"
-            style={{ fontSize: 13, color: "var(--accent)", fontWeight: 600, textDecoration: "none" }}
-          >
-            Fazer login
-          </a>
+          {isExistingUser ? (
+            <span style={{ fontSize: 13, color: "var(--muted)" }}>
+              Conta autenticada. Use o botão acima para renovar o acesso.
+            </span>
+          ) : (
+            <>
+              <span style={{ fontSize: 13, color: "var(--muted)" }}>
+                Já tem uma conta?{" "}
+              </span>
+              <a
+                href="/login"
+                style={{ fontSize: 13, color: "var(--accent)", fontWeight: 600, textDecoration: "none" }}
+              >
+                Fazer login
+              </a>
+            </>
+          )}
         </div>
       </div>
 
