@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSessionSecret, readSessionFromToken, SESSION_COOKIE } from './lib/session'
+import { getSessionSecret, readSessionFromToken, SESSION_COOKIE, SessionPayload } from './lib/session'
 
 const PUBLIC_FILE_PATTERN = /\.[^/]+$/
 
@@ -11,6 +11,8 @@ function hasValidCronAuthorization(request: NextRequest): boolean {
 
 function isPublicPath(pathname: string): boolean {
   return pathname === '/login'
+    || pathname === '/planos'
+    || pathname.startsWith('/pagamento/')
     || pathname.startsWith('/arbitragem-scanner')
     || pathname.startsWith('/admin/arbitragem-geral')
     || pathname === '/api/auth/login'
@@ -19,12 +21,26 @@ function isPublicPath(pathname: string): boolean {
     || pathname === '/api/p2p-arbitrage'
     || pathname === '/api/spot-futures-arbitrage'
     || pathname.startsWith('/api/telegram')
+    || pathname.startsWith('/api/payments/')
     || pathname === '/api/health/debug'
     || PUBLIC_FILE_PATTERN.test(pathname)
 }
 
 function isAdminPath(pathname: string): boolean {
   return pathname.startsWith('/admin/') && pathname !== '/admin/arbitragem-geral'
+}
+
+function isPlanExpiredOrMissing(session: SessionPayload): boolean {
+  // Admins nunca ficam bloqueados por plano
+  if (session.role === 'admin') return false
+
+  // planExpiresAt = undefined → plano não foi verificado (sessão antiga) → bloquear
+  // planExpiresAt = null → sem plano → bloquear
+  if (session.planExpiresAt === undefined || session.planExpiresAt === null) return true
+
+  // Verifica expiração (epoch seconds)
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  return session.planExpiresAt <= nowSeconds
 }
 
 export async function middleware(request: NextRequest) {
@@ -74,6 +90,19 @@ export async function middleware(request: NextRequest) {
   // Verificar se é uma rota de admin
   if (isAdminPath(pathname) && session.role !== 'admin') {
     return NextResponse.json({ error: 'Acesso negado. Apenas admins podem acessar esta página.' }, { status: 403 })
+  }
+
+  // Verificar plano ativo (apenas para rotas não-admin, não-públicas)
+  if (!isAdminPath(pathname) && isPlanExpiredOrMissing(session)) {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { error: 'Plano expirado ou inativo. Acesse /planos para renovar.' },
+        { status: 402 }
+      )
+    }
+    const planosUrl = new URL('/planos', request.url)
+    planosUrl.searchParams.set('renew', '1')
+    return NextResponse.redirect(planosUrl)
   }
 
   return NextResponse.next()

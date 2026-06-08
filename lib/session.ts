@@ -2,11 +2,12 @@ import { NextRequest } from 'next/server'
 
 export type SessionRole = 'admin' | 'user'
 
-type SessionPayload = {
+export type SessionPayload = {
   username: string
   email?: string | null
   role: SessionRole
   exp: number
+  planExpiresAt?: number | null // epoch seconds, null = sem plano, undefined = admin/não verificado
 }
 
 export const SESSION_COOKIE = 'usdtbot_session'
@@ -108,13 +109,15 @@ export async function createSessionToken(
   role: SessionRole,
   secret: string,
   email?: string | null,
-  durationSeconds = 60 * 60 * 3 // 3 horas de inatividade
+  durationSeconds = 60 * 60 * 3, // 3 horas de inatividade
+  planExpiresAt?: number | null
 ): Promise<string> {
   const payload: SessionPayload = {
     username,
     email: email ?? null,
     role,
     exp: Math.floor(Date.now() / 1000) + durationSeconds,
+    planExpiresAt: planExpiresAt ?? undefined,
   }
 
   const encodedPayload = base64UrlEncode(JSON.stringify(payload))

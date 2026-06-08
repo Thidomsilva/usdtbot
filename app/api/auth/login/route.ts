@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createSessionToken, getSessionSecret, SESSION_COOKIE } from '@/lib/session'
-import { verifyUserCredentials } from '@/lib/user-store'
+import { verifyUserCredentials, getUserPlanInfo } from '@/lib/user-store'
 import { logActivity, recordUserSession } from '@/lib/activity-logger'
 
 export const runtime = 'nodejs'
@@ -38,9 +38,21 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  let planExpiresAtSeconds: number | null = null
+  if (user.role !== 'admin') {
+    try {
+      const planInfo = await getUserPlanInfo(user.username)
+      planExpiresAtSeconds = planInfo.planExpiresAt
+        ? Math.floor(new Date(planInfo.planExpiresAt).getTime() / 1000)
+        : null
+    } catch {
+      planExpiresAtSeconds = null
+    }
+  }
+
   let token
   try {
-    token = await createSessionToken(user.username, user.role, secret, user.email)
+    token = await createSessionToken(user.username, user.role, secret, user.email, undefined, planExpiresAtSeconds)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Erro desconhecido'
     console.error('[LOGIN] Erro ao criar token:', message)

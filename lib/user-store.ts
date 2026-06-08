@@ -7,6 +7,8 @@ import { createClient as createRedisClient, type RedisClientType } from 'redis'
 
 export type UserRole = 'admin' | 'user'
 
+export type PlanType = 'weekly' | 'monthly'
+
 export type StoredUser = {
   username: string
   email: string | null
@@ -18,6 +20,11 @@ export type StoredUser = {
   telegramLinkedAt: string | null
   createdAt: string
   updatedAt: string
+  // Campos de plano/pagamento
+  planType?: PlanType | null
+  planExpiresAt?: string | null   // ISO datetime
+  planActivatedAt?: string | null // ISO datetime
+  planPaymentId?: string | null   // ID do pagamento no Mercado Pago
 }
 
 type UserStore = {
@@ -44,6 +51,9 @@ export type PublicUser = {
   telegramLinkedAt: string | null
   createdAt: string
   updatedAt: string
+  planType?: PlanType | null
+  planExpiresAt?: string | null
+  planActivatedAt?: string | null
 }
 
 const DATA_DIR = process.env.VERCEL
@@ -230,6 +240,9 @@ function toPublicUser(user: StoredUser): PublicUser {
     telegramLinkedAt: user.telegramLinkedAt,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
+    planType: user.planType ?? null,
+    planExpiresAt: user.planExpiresAt ?? null,
+    planActivatedAt: user.planActivatedAt ?? null,
   }
 }
 
@@ -909,6 +922,105 @@ export async function deleteUser(username: string, actorUsername: string): Promi
 
   store.users = remaining
   await persistStore(store)
+}
+
+export async function activateUserPlan(
+  username: string,
+  planType: PlanType,
+  paymentId: string
+): Promise<void> {
+  const normalizedUsername = username.trim().toLowerCase()
+  const store = await loadStore()
+  const user = store.users.find((entry) => entry.username === normalizedUsername)
+
+  if (!user) {
+    throw new Error(`Usuario nao encontrado: ${normalizedUsername}`)
+  }
+
+  const now = new Date()
+  const daysToAdd = planType === 'weekly' ? 7 : 30
+  const expiresAt = new Date(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000)
+
+  user.active = true
+  user.planType = planType
+  user.planExpiresAt = expiresAt.toISOString()
+  user.planActivatedAt = now.toISOString()
+  user.planPaymentId = paymentId
+  user.updatedAt = now.toISOString()
+
+  await persistStore(store)
+}
+
+export async function createPendingUser(input: {
+  email: string
+  password: string
+}): Promise<void> {
+  const username = input.email.trim().toLowerCase()
+  const password = input.password.trim()
+
+  if (!username || !password) {
+    throw new Error('Email e senha sao obrigatorios')
+  }
+
+  if (!EMAIL_PATTERN.test(username)) {
+    throw new Error('Email invalido')
+  }
+
+  if (password.length < 6) {
+    throw new Error('Senha deve ter ao menos 6 caracteres')
+  }
+
+  const store = await loadStore()
+
+  if (store.users.some((user) => user.username === username)) {
+    // Usuário já existe, não é erro - apenas não recria
+    return
+  }
+
+  const now = new Date().toISOString()
+  const salt = randomBytes(16).toString('hex')
+
+  const pending: StoredUser = {
+    username,
+    email: username,
+    role: 'user',
+    salt,
+    passwordHash: hashPassword(password, salt),
+    active: false, // inativo até o pagamento ser confirmado
+    telegramChatId: null,
+    telegramLinkedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    planType: null,
+    planExpiresAt: null,
+    planActivatedAt: null,
+    planPaymentId: null,
+  }
+
+  store.users.push(pending)
+  await persistStore(store)
+}
+
+export async function getUserPlanInfo(
+  username: string
+): Promise<{ planType: PlanType | null; planExpiresAt: string | null; planActive: boolean }> {
+  const normalizedUsername = username.trim().toLowerCase()
+  const store = await loadStore()
+  const user = store.users.find((entry) => entry.username === normalizedUsername)
+
+  if (!user) {
+    return { planType: null, planExpiresAt: null, planActive: false }
+  }
+
+  if (user.role === 'admin') {
+    return { planType: null, planExpiresAt: null, planActive: true }
+  }
+
+  const planExpiresAt = user.planExpiresAt ?? null
+  const planActive =
+    planExpiresAt !== null && new Date(planExpiresAt).getTime() > Date.now()
+
+  return { planType: user.planType ?? null, planExpiresAt, planActive }
 }
 
 export async function verifyUserCredentials(username: string, password: string): Promise<PublicUser | null> {
