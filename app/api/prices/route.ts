@@ -232,35 +232,68 @@ async function fetchBybit() {
     }
   }
 
-  // Fallback oficial web: endpoint usado pelo front da Bybit para spot.
-  const [klinePayload, openPayload] = await Promise.all([
-    fetchJson("https://www.bybit.com/spot/api/quote/v5/klines?symbol=USDTBRL&interval=1m&limit=2"),
-    fetchJson("https://www.bybit.com/spot/api/quote/v5/open-price?symbol=USDTBRL").catch(
-      () => ({} as Record<string, any>)
-    ),
-  ]);
+  // Fallback oficial web: usa os mesmos endpoints do front da Bybit spot.
+  const webHosts = ["api2.bybit.com", "www.bybit.com"];
+  for (const host of webHosts) {
+    try {
+      const headers = {
+        accept: "application/json",
+        origin: "https://www.bybit.com",
+        referer: "https://www.bybit.com/pt-BR/trade/spot/USDT/BRL",
+        "user-agent": "Mozilla/5.0",
+      } as const;
 
-  const rows = Array.isArray(klinePayload.result?.list) ? klinePayload.result.list : [];
-  const candle = [...rows].reverse().find((row) => Array.isArray(row) && safeNumber(row[4]) > 0);
-  const last = safeNumber(Array.isArray(candle) ? candle[4] : 0);
-  if (last <= 0) {
-    throw new Error("Bybit spot USDT/BRL indisponivel para esta regiao");
+      const [klineRes, openRes] = await Promise.all([
+        fetch(`https://${host}/spot/api/quote/v5/klines?symbol=USDTBRL&interval=1m&limit=2`, {
+          method: "GET",
+          cache: "no-store",
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+          headers,
+        }),
+        fetch(`https://${host}/spot/api/quote/v5/open-price?symbol=USDTBRL`, {
+          method: "GET",
+          cache: "no-store",
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+          headers,
+        }).catch(() => null),
+      ]);
+
+      if (!klineRes.ok) {
+        throw new Error(`HTTP ${klineRes.status}`);
+      }
+
+      const klinePayload = (await klineRes.json()) as Record<string, any>;
+      const openPayload = openRes && openRes.ok
+        ? ((await openRes.json()) as Record<string, any>)
+        : ({} as Record<string, any>);
+
+      const rows = Array.isArray(klinePayload.result?.list) ? klinePayload.result.list : [];
+      const candle = [...rows].reverse().find((row) => Array.isArray(row) && safeNumber(row[4]) > 0);
+      const last = safeNumber(Array.isArray(candle) ? candle[4] : 0);
+      if (last <= 0) {
+        throw new Error("Bybit spot USDT/BRL indisponivel");
+      }
+
+      const high = safeNumber(Array.isArray(candle) ? candle[2] : 0) || last;
+      const low = safeNumber(Array.isArray(candle) ? candle[3] : 0) || last;
+      const quoteVolume = safeNumber(Array.isArray(candle) ? candle[6] : 0);
+      const open24h = safeNumber(openPayload.result?.data?.USDTBRL);
+      const change24h = open24h > 0 ? ((last - open24h) / open24h) * 100 : 0;
+
+      return {
+        price_brl: last,
+        volume_24h: quoteVolume,
+        change_24h: change24h,
+        high_24h: high,
+        low_24h: low,
+        source_url: "https://www.bybit.com/pt-BR/trade/spot/USDT/BRL",
+      };
+    } catch {
+      // Try next web host.
+    }
   }
 
-  const high = safeNumber(Array.isArray(candle) ? candle[2] : 0) || last;
-  const low = safeNumber(Array.isArray(candle) ? candle[3] : 0) || last;
-  const quoteVolume = safeNumber(Array.isArray(candle) ? candle[6] : 0);
-  const open24h = safeNumber(openPayload.result?.data?.USDTBRL);
-  const change24h = open24h > 0 ? ((last - open24h) / open24h) * 100 : 0;
-
-  return {
-    price_brl: last,
-    volume_24h: quoteVolume,
-    change_24h: change24h,
-    high_24h: high,
-    low_24h: low,
-    source_url: "https://www.bybit.com/pt-BR/trade/spot/USDT/BRL",
-  };
+  throw new Error("Bybit spot USDT/BRL indisponivel para esta regiao");
 }
 
 async function fetchKucoin() {
