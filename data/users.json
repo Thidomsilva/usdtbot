@@ -26,6 +26,22 @@
       "active": true,
       "createdAt": "2026-05-08T11:17:11.037Z",
       "updatedAt": "2026-05-08T11:17:11.037Z"
+    },
+    {
+      "username": "teste@example.com",
+      "email": "teste@example.com",
+      "role": "user",
+      "salt": "75e23167872784c9c69830919da8c2d1",
+      "passwordHash": "6f0f353388e49994dd0014d940facda99d8489690557ba2be581075dd05681560451ef67de064d1bbc3babf42c5c93735d4ed2ad3827a817b8593623ea34517d",
+      "active": false,
+      "telegramChatId": null,
+      "telegramLinkedAt": null,
+      "createdAt": "2026-06-08T19:56:51.354Z",
+      "updatedAt": "2026-06-08T19:56:51.354Z",
+      "planType": null,
+      "planExpiresAt": null,
+      "planActivatedAt": null,
+      "planPaymentId": null
     }
   ]
 }

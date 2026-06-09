@@ -171,7 +171,7 @@ async function fetchUsdtUsdReference() {
 }
 
 async function fetchBinance() {
-  const hosts = ["api.binance.com", "api1.binance.com", "api2.binance.com", "api3.binance.com"];
+  const hosts = ["data-api.binance.vision", "api.binance.com", "api1.binance.com", "api2.binance.com", "api3.binance.com"];
 
   for (const host of hosts) {
     try {
@@ -232,14 +232,35 @@ async function fetchBybit() {
     }
   }
 
-  // Fallback sem chave: USDT/USD de referencia + USD/BRL.
-  const [usdBrl, ref] = await Promise.all([fetchUsdBrlRate(), fetchUsdtUsdReference()]);
-  return buildUsdFallback(ref.usdtUsd, usdBrl, ref.sourceUrl, "USDT/USD", {
-    change_24h: ref.change24h,
-    high_usd: ref.highUsd,
-    low_usd: ref.lowUsd,
-    volume_usd: ref.volumeUsd,
-  });
+  // Fallback oficial web: endpoint usado pelo front da Bybit para spot.
+  const [klinePayload, openPayload] = await Promise.all([
+    fetchJson("https://www.bybit.com/spot/api/quote/v5/klines?symbol=USDTBRL&interval=1m&limit=2"),
+    fetchJson("https://www.bybit.com/spot/api/quote/v5/open-price?symbol=USDTBRL").catch(
+      () => ({} as Record<string, any>)
+    ),
+  ]);
+
+  const rows = Array.isArray(klinePayload.result?.list) ? klinePayload.result.list : [];
+  const candle = [...rows].reverse().find((row) => Array.isArray(row) && safeNumber(row[4]) > 0);
+  const last = safeNumber(Array.isArray(candle) ? candle[4] : 0);
+  if (last <= 0) {
+    throw new Error("Bybit spot USDT/BRL indisponivel para esta regiao");
+  }
+
+  const high = safeNumber(Array.isArray(candle) ? candle[2] : 0) || last;
+  const low = safeNumber(Array.isArray(candle) ? candle[3] : 0) || last;
+  const quoteVolume = safeNumber(Array.isArray(candle) ? candle[6] : 0);
+  const open24h = safeNumber(openPayload.result?.data?.USDTBRL);
+  const change24h = open24h > 0 ? ((last - open24h) / open24h) * 100 : 0;
+
+  return {
+    price_brl: last,
+    volume_24h: quoteVolume,
+    change_24h: change24h,
+    high_24h: high,
+    low_24h: low,
+    source_url: "https://www.bybit.com/pt-BR/trade/spot/USDT/BRL",
+  };
 }
 
 async function fetchKucoin() {
