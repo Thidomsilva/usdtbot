@@ -94,6 +94,82 @@ function buildUsdFallback(
   };
 }
 
+async function fetchUsdtUsdReference() {
+  const sources = [
+    async () => {
+      const payload = await fetchJson("https://www.okx.com/api/v5/market/ticker?instId=USDT-USD");
+      const data = Array.isArray(payload.data) ? payload.data[0] ?? {} : {};
+      const usdtUsd = safeNumber(data.last);
+      if (usdtUsd <= 0) {
+        throw new Error("USDT/USD indisponivel");
+      }
+
+      const openUsd = safeNumber(data.open24h);
+      const volumeUsdt = safeNumber(data.volCcy24h);
+      return {
+        usdtUsd,
+        change24h: openUsd > 0 ? ((usdtUsd - openUsd) / openUsd) * 100 : 0,
+        highUsd: safeNumber(data.high24h),
+        lowUsd: safeNumber(data.low24h),
+        volumeUsd: volumeUsdt > 0 ? volumeUsdt * usdtUsd : 0,
+        sourceUrl: "https://www.okx.com/trade-spot/usdt-usd",
+      };
+    },
+    async () => {
+      const payload = await fetchJson("https://api.exchange.coinbase.com/products/USDT-USD/ticker");
+      const usdtUsd = safeNumber(payload.price);
+      if (usdtUsd <= 0) {
+        throw new Error("USDT/USD indisponivel");
+      }
+
+      const openUsd = safeNumber(payload.open);
+      const volumeUsdt = safeNumber(payload.volume);
+      return {
+        usdtUsd,
+        change24h: openUsd > 0 ? ((usdtUsd - openUsd) / openUsd) * 100 : 0,
+        highUsd: safeNumber(payload.high),
+        lowUsd: safeNumber(payload.low),
+        volumeUsd: volumeUsdt > 0 ? volumeUsdt * usdtUsd : 0,
+        sourceUrl: "https://www.coinbase.com/advanced-trade/spot/USDT-USD",
+      };
+    },
+    async () => {
+      const payload = await fetchJson("https://api.kraken.com/0/public/Ticker?pair=USDTUSD");
+      if (Array.isArray(payload.error) && payload.error.length > 0) {
+        throw new Error("USDT/USD indisponivel");
+      }
+
+      const pairKey = Object.keys(payload.result ?? {})[0];
+      const ticker = pairKey ? payload.result?.[pairKey] ?? {} : {};
+      const usdtUsd = safeNumber(Array.isArray(ticker.c) ? ticker.c[0] : 0);
+      if (usdtUsd <= 0) {
+        throw new Error("USDT/USD indisponivel");
+      }
+
+      const openUsd = safeNumber(ticker.o);
+      const volumeUsdt = safeNumber(Array.isArray(ticker.v) ? ticker.v[1] : 0);
+      return {
+        usdtUsd,
+        change24h: openUsd > 0 ? ((usdtUsd - openUsd) / openUsd) * 100 : 0,
+        highUsd: safeNumber(Array.isArray(ticker.h) ? ticker.h[1] : 0),
+        lowUsd: safeNumber(Array.isArray(ticker.l) ? ticker.l[1] : 0),
+        volumeUsd: volumeUsdt > 0 ? volumeUsdt * usdtUsd : 0,
+        sourceUrl: "https://pro.kraken.com/app/trade/usdt-usd",
+      };
+    },
+  ];
+
+  for (const source of sources) {
+    try {
+      return await source();
+    } catch {
+      // Try next source.
+    }
+  }
+
+  throw new Error("USDT/USD de referencia indisponivel");
+}
+
 async function fetchBinance() {
   const hosts = ["api.binance.com", "api1.binance.com", "api2.binance.com", "api3.binance.com"];
 
@@ -121,21 +197,14 @@ async function fetchBinance() {
     }
   }
 
-  // Fallback: gets Binance reference price via CryptoCompare when direct endpoints are blocked.
-  const fallback = await fetchJson("https://min-api.cryptocompare.com/data/price?fsym=USDT&tsyms=BRL&e=Binance");
-  const fallbackPrice = safeNumber(fallback.BRL);
-  if (fallbackPrice <= 0) {
-    throw new Error("Binance ticker indisponivel");
-  }
-
-  return {
-    price_brl: fallbackPrice,
-    volume_24h: 0,
-    change_24h: 0,
-    high_24h: fallbackPrice,
-    low_24h: fallbackPrice,
-    source_url: "https://www.binance.com/en/trade/USDT_BRL",
-  };
+  // Fallback sem chave: USDT/USD de referencia + USD/BRL.
+  const [usdBrl, ref] = await Promise.all([fetchUsdBrlRate(), fetchUsdtUsdReference()]);
+  return buildUsdFallback(ref.usdtUsd, usdBrl, ref.sourceUrl, "USDT/USD", {
+    change_24h: ref.change24h,
+    high_usd: ref.highUsd,
+    low_usd: ref.lowUsd,
+    volume_usd: ref.volumeUsd,
+  });
 }
 
 async function fetchBybit() {
@@ -163,21 +232,14 @@ async function fetchBybit() {
     }
   }
 
-  // Fallback: reference Bybit price via CryptoCompare when direct endpoints are blocked.
-  const fallback = await fetchJson("https://min-api.cryptocompare.com/data/price?fsym=USDT&tsyms=BRL&e=Bybit");
-  const fallbackPrice = safeNumber(fallback.BRL);
-  if (fallbackPrice <= 0) {
-    throw new Error("Bybit ticker indisponivel");
-  }
-
-  return {
-    price_brl: fallbackPrice,
-    volume_24h: 0,
-    change_24h: 0,
-    high_24h: fallbackPrice,
-    low_24h: fallbackPrice,
-    source_url: "https://www.bybit.com/pt-BR/trade/spot/USDT/BRL",
-  };
+  // Fallback sem chave: USDT/USD de referencia + USD/BRL.
+  const [usdBrl, ref] = await Promise.all([fetchUsdBrlRate(), fetchUsdtUsdReference()]);
+  return buildUsdFallback(ref.usdtUsd, usdBrl, ref.sourceUrl, "USDT/USD", {
+    change_24h: ref.change24h,
+    high_usd: ref.highUsd,
+    low_usd: ref.lowUsd,
+    volume_usd: ref.volumeUsd,
+  });
 }
 
 async function fetchKucoin() {
@@ -533,6 +595,7 @@ function normalizeError(err: unknown): string {
   const msg = String(err ?? "Erro desconhecido");
   if (msg.includes("HTTP 451")) return "Indisponivel na regiao atual";
   if (msg.includes("HTTP 403")) return "Bloqueado para esta regiao";
+  if (msg.includes("HTTP 401")) return "Endpoint exige autenticacao/API key";
   if (msg.toLowerCase().includes("timeout")) return "Timeout na consulta";
   return msg;
 }
