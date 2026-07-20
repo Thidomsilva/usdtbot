@@ -2,7 +2,9 @@
 import Link from "next/link";
 import React, { useEffect, useState } from "react";
 import OpportunityCard from "../../components/OpportunityCard";
+import OnChainDirectMatrix from "../../components/OnChainDirectMatrix";
 import type { InfinityOpportunity } from "../../lib/usdt-infinity";
+import type { OnChainMatrixResponse } from "../../lib/polygon-brl-onchain";
 
 type DisplayMode = "brl" | "original";
 const REFRESH_SECONDS = 10;
@@ -32,10 +34,17 @@ export default function UsdtInfinityPage() {
   const [capital, setCapital] = useState(1000);
   const [inputValue, setInputValue] = useState("1000");
   const [opportunities, setOpportunities] = useState<InfinityOpportunity[]>([]);
+  const [onChainData, setOnChainData] = useState<OnChainMatrixResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [onChainLoading, setOnChainLoading] = useState(false);
+  const [onChainError, setOnChainError] = useState<string | null>(null);
   const [displayMode, setDisplayMode] = useState<DisplayMode>("brl");
   const [countdown, setCountdown] = useState(REFRESH_SECONDS);
   const [selectedExchanges, setSelectedExchanges] = useState<Set<string>>(new Set(ALL_EXCHANGE_IDS));
+  const [bookMinBrl, setBookMinBrl] = useState("0");
+  const [onChainLotBrl, setOnChainLotBrl] = useState("1000");
+  const [onChainThresholdPct, setOnChainThresholdPct] = useState("0.5");
+  const [brlReference, setBrlReference] = useState<{ label: string; price: number; sourceUrl?: string } | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem("usdt-infinity-display-mode");
@@ -47,6 +56,27 @@ export default function UsdtInfinityPage() {
   useEffect(() => {
     localStorage.setItem("usdt-infinity-display-mode", displayMode);
   }, [displayMode]);
+
+  useEffect(() => {
+    const savedBookMin = localStorage.getItem("usdt-infinity-book-min-brl");
+    if (savedBookMin) setBookMinBrl(savedBookMin);
+    const savedOnChainLot = localStorage.getItem("usdt-infinity-onchain-lot-brl");
+    if (savedOnChainLot) setOnChainLotBrl(savedOnChainLot);
+    const savedOnChainThreshold = localStorage.getItem("usdt-infinity-onchain-threshold");
+    if (savedOnChainThreshold) setOnChainThresholdPct(savedOnChainThreshold);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("usdt-infinity-book-min-brl", bookMinBrl);
+  }, [bookMinBrl]);
+
+  useEffect(() => {
+    localStorage.setItem("usdt-infinity-onchain-lot-brl", onChainLotBrl);
+  }, [onChainLotBrl]);
+
+  useEffect(() => {
+    localStorage.setItem("usdt-infinity-onchain-threshold", onChainThresholdPct);
+  }, [onChainThresholdPct]);
 
   useEffect(() => {
     const saved = localStorage.getItem("usdt-infinity-exchanges");
@@ -85,9 +115,27 @@ export default function UsdtInfinityPage() {
   async function fetchOpportunities(cap: number) {
     setLoading(true);
     try {
-      const res = await fetch(`/api/fan-tokens?capital=${cap}`, { cache: "no-store" });
-      const data = await res.json();
+      const [fanRes, pricesRes] = await Promise.all([
+        fetch(`/api/fan-tokens?capital=${cap}`, { cache: "no-store" }),
+        fetch(`/api/prices`, { cache: "no-store" }),
+      ]);
+      const data = await fanRes.json();
+      const prices = await pricesRes.json();
       const usdBrl = Number(data?.summary?.usd_brl || 0);
+      const priceEntries = prices?.exchanges ? Object.entries(prices.exchanges as Record<string, any>) : [];
+      const brlSourceEntry =
+        priceEntries.find(([, exchange]: [string, any]) => exchange?.status === "ok" && (exchange?.price_brl ?? 0) > 0) ??
+        priceEntries.find(([key]) => key === "binance") ??
+        priceEntries[0] ??
+        null;
+      if (brlSourceEntry) {
+        const [label, exchange] = brlSourceEntry;
+        setBrlReference({
+          label: `${label.toUpperCase()} USDT/BRL`,
+          price: Number(exchange?.price_brl || 0),
+          sourceUrl: exchange?.source_url,
+        });
+      }
       const brlToUsd = (value: number) => (usdBrl > 0 ? value / usdBrl : value);
       const resolveDisplayPrice = (exchange: any, fallbackBrl: number, side: "ask" | "bid") => {
         if (displayMode === "original") {
@@ -224,14 +272,39 @@ export default function UsdtInfinityPage() {
       setOpportunities([]);
     } finally {
       setLoading(false);
-      setCountdown(REFRESH_SECONDS);
+    }
+  }
+
+  async function fetchOnChainMatrix() {
+    setOnChainLoading(true);
+    try {
+      const lot = Number(onChainLotBrl.replace(/[^\d.]/g, ""));
+      const threshold = Number(onChainThresholdPct.replace(/[^\d.]/g, ""));
+      const qs = new URLSearchParams({
+        lot_brl: String(Number.isFinite(lot) && lot > 0 ? lot : 1000),
+        threshold_pct: String(Number.isFinite(threshold) && threshold > 0 ? threshold : 0.5),
+      });
+      const res = await fetch(`/api/usdt-infinity/on-chain?${qs.toString()}`, { cache: "no-store" });
+      const json = (await res.json()) as OnChainMatrixResponse;
+      if (!res.ok) {
+        throw new Error(json?.error || `HTTP ${res.status}`);
+      }
+      setOnChainData(json);
+      setOnChainError(null);
+    } catch (err) {
+      setOnChainData(null);
+      setOnChainError(String(err ?? "Falha ao consultar pools on-chain"));
+    } finally {
+      setOnChainLoading(false);
     }
   }
 
   useEffect(() => {
     fetchOpportunities(capital);
+    fetchOnChainMatrix();
     const refreshTimer = setInterval(() => {
       fetchOpportunities(capital);
+      fetchOnChainMatrix();
     }, REFRESH_SECONDS * 1000);
 
     const countdownTimer = setInterval(() => {
@@ -243,7 +316,7 @@ export default function UsdtInfinityPage() {
       clearInterval(countdownTimer);
     };
     // eslint-disable-next-line
-  }, [capital, displayMode]);
+  }, [capital, displayMode, onChainLotBrl, onChainThresholdPct]);
 
   function handleSimulate(e: React.FormEvent) {
     e.preventDefault();
@@ -268,36 +341,61 @@ export default function UsdtInfinityPage() {
               Oportunidades de arbitragem cross-exchange com base na mesma malha de dados da Arbitragem Geral.
             </p>
           </div>
-          <div style={{ display: "flex", border: "1px solid var(--card-border)", borderRadius: 12, overflow: "hidden", background: "var(--card)" }}>
-            <button
-              onClick={() => setDisplayMode("brl")}
-              style={{
-                border: "none",
-                padding: "10px 12px",
-                background: displayMode === "brl" ? "rgba(255,255,255,0.08)" : "transparent",
-                color: "var(--text)",
-                cursor: "pointer",
-                fontSize: 13,
-                fontWeight: 600,
-              }}
-            >
-              Exibir em BRL
-            </button>
-            <button
-              onClick={() => setDisplayMode("original")}
-              style={{
-                border: "none",
-                borderLeft: "1px solid var(--card-border)",
-                padding: "10px 12px",
-                background: displayMode === "original" ? "rgba(255,255,255,0.08)" : "transparent",
-                color: "var(--text)",
-                cursor: "pointer",
-                fontSize: 13,
-                fontWeight: 600,
-              }}
-            >
-              Exibir em moeda original
-            </button>
+          <div style={{ display: "grid", gap: 8, justifyItems: "end" }}>
+            <div style={{ display: "flex", border: "1px solid var(--card-border)", borderRadius: 12, overflow: "hidden", background: "var(--card)" }}>
+              <button
+                onClick={() => setDisplayMode("brl")}
+                style={{
+                  border: "none",
+                  padding: "10px 12px",
+                  background: displayMode === "brl" ? "rgba(255,255,255,0.08)" : "transparent",
+                  color: "var(--text)",
+                  cursor: "pointer",
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+              >
+                Exibir em BRL
+              </button>
+              <button
+                onClick={() => setDisplayMode("original")}
+                style={{
+                  border: "none",
+                  borderLeft: "1px solid var(--card-border)",
+                  padding: "10px 12px",
+                  background: displayMode === "original" ? "rgba(255,255,255,0.08)" : "transparent",
+                  color: "var(--text)",
+                  cursor: "pointer",
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+              >
+                Exibir em moeda original
+              </button>
+            </div>
+            {brlReference && (
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "7px 10px",
+                  borderRadius: 999,
+                  border: "1px solid var(--card-border)",
+                  background: "rgba(255,255,255,0.05)",
+                  fontSize: 12,
+                  color: "var(--muted)",
+                }}
+              >
+                <span style={{ fontWeight: 700, color: "var(--text)" }}>Referência BRL</span>
+                <span>{brlReference.label} · R$ {brlReference.price.toFixed(4)}</span>
+                {brlReference.sourceUrl && (
+                  <a href={brlReference.sourceUrl} target="_blank" rel="noreferrer" style={{ color: "#38bdf8", textDecoration: "none" }}>
+                    fonte
+                  </a>
+                )}
+              </div>
+            )}
           </div>
         </header>
 
@@ -367,29 +465,88 @@ export default function UsdtInfinityPage() {
             padding: 16,
           }}
         >
-          <form onSubmit={handleSimulate} style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <label htmlFor="capital" style={{ fontSize: 13, color: "var(--muted)", fontWeight: 600 }}>
-              Valor para simulacao (USDT):
-            </label>
-            <input
-              id="capital"
-              type="number"
-              min={10}
-              step={10}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              style={{
-                width: 140,
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid var(--card-border)",
-                background: "transparent",
-                color: "var(--text)",
-                fontSize: 16,
-                fontWeight: 700,
-                outline: "none",
-              }}
-            />
+          <form onSubmit={handleSimulate} style={{ display: "grid", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, alignItems: "end" }}>
+              <label htmlFor="capital" style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 600 }}>Valor para simulacao (USDT)</span>
+                <input
+                  id="capital"
+                  type="number"
+                  min={10}
+                  step={10}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: "1px solid var(--card-border)",
+                    background: "transparent",
+                    color: "var(--text)",
+                    fontSize: 16,
+                    fontWeight: 700,
+                    outline: "none",
+                  }}
+                />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 600 }}>Filtrar lote minimo no book (R$)</span>
+                <input
+                  value={bookMinBrl}
+                  onChange={(e) => setBookMinBrl(e.target.value)}
+                  inputMode="decimal"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: "1px solid var(--card-border)",
+                    background: "transparent",
+                    color: "var(--text)",
+                    fontSize: 16,
+                    fontWeight: 700,
+                    outline: "none",
+                  }}
+                />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 600 }}>Lote on-chain BRL (R$)</span>
+                <input
+                  value={onChainLotBrl}
+                  onChange={(e) => setOnChainLotBrl(e.target.value)}
+                  inputMode="decimal"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: "1px solid var(--card-border)",
+                    background: "transparent",
+                    color: "var(--text)",
+                    fontSize: 16,
+                    fontWeight: 700,
+                    outline: "none",
+                  }}
+                />
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 13, color: "var(--muted)", fontWeight: 600 }}>Limiar on-chain (%)</span>
+                <input
+                  value={onChainThresholdPct}
+                  onChange={(e) => setOnChainThresholdPct(e.target.value)}
+                  inputMode="decimal"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: "1px solid var(--card-border)",
+                    background: "transparent",
+                    color: "var(--text)",
+                    fontSize: 16,
+                    fontWeight: 700,
+                    outline: "none",
+                  }}
+                />
+              </label>
+            </div>
             <button
               type="submit"
               style={{
@@ -405,7 +562,7 @@ export default function UsdtInfinityPage() {
             >
               Simular
             </button>
-            <span style={{ marginLeft: "auto", color: "var(--muted)", fontSize: 13 }}>
+            <span style={{ color: "var(--muted)", fontSize: 13 }}>
               Capital atual: <strong style={{ color: "var(--text)" }}>{capital} USDT</strong>
             </span>
           </form>
@@ -422,6 +579,13 @@ export default function UsdtInfinityPage() {
                 selectedExchanges.has(opp.fromExchangeId ?? "") &&
                 selectedExchanges.has(opp.toExchangeId ?? "")
             )
+            .filter((opp) => {
+              const minBook = Number(bookMinBrl.replace(/[^\d.]/g, ""));
+              if (!Number.isFinite(minBook) || minBook <= 0) return true;
+              const buyCoverage = opp.buyBookCoverageBrl ?? 0;
+              const sellCoverage = opp.sellBookCoverageBrl ?? 0;
+              return buyCoverage >= minBook && sellCoverage >= minBook;
+            })
             .map((opp) => ({
               ...opp,
               allExchangesBooks: (opp.allExchangesBooks ?? []).filter((b) =>
@@ -455,6 +619,14 @@ export default function UsdtInfinityPage() {
             </section>
           );
         })()}
+
+        <OnChainDirectMatrix
+          data={onChainData}
+          loading={onChainLoading}
+          error={onChainError}
+          lotBrl={Number(onChainLotBrl.replace(/[^\d.]/g, "")) || 1000}
+          thresholdPct={Number(onChainThresholdPct.replace(/[^\d.]/g, "")) || 0.5}
+        />
       </div>
     </main>
   );

@@ -68,3 +68,29 @@ body {
 a {
   color: inherit;
 }
+
+@keyframes onchainPulseBuy {
+  0%, 100% {
+    box-shadow: inset 4px 0 0 rgba(34, 197, 94, 0.9);
+  }
+  50% {
+    box-shadow: inset 4px 0 0 rgba(34, 197, 94, 0.35);
+  }
+}
+
+@keyframes onchainPulseSell {
+  0%, 100% {
+    box-shadow: inset 4px 0 0 rgba(239, 68, 68, 0.9);
+  }
+  50% {
+    box-shadow: inset 4px 0 0 rgba(239, 68, 68, 0.35);
+  }
+}
+
+.onchain-flash-buy {
+  animation: onchainPulseBuy 1.8s ease-in-out infinite;
+}
+
+.onchain-flash-sell {
+  animation: onchainPulseSell 1.8s ease-in-out infinite;
+}
