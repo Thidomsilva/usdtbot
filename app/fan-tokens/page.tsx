@@ -313,6 +313,7 @@ export default function FanTokensPage() {
               <Link href="/" style={{ textDecoration: "none", color: "var(--muted)" }}>Voltar para USDT/BRL</Link>
               <Link href="/spot-futures" style={{ textDecoration: "none", color: "var(--muted)" }}>Abrir Spot x Futuro</Link>
               <Link href="/depeg" style={{ textDecoration: "none", color: "var(--muted)" }}>Abrir De-peg</Link>
+              <Link href="/usdt-infinity-onchain" style={{ textDecoration: "none", color: "var(--muted)" }}>On-chain BRL</Link>
             </div>
             <h1 style={{ margin: 0, fontSize: 34, letterSpacing: "-0.8px", fontWeight: 800 }}>Arbitragem Geral</h1>
             <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 15 }}>

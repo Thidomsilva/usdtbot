@@ -324,7 +324,7 @@ export default function HomePage() {
               Abrir Geral
             </Link>
             <Link
-              href="/usdt-infinity2"
+              href="/usdt-infinity"
               style={{
                 border: "1px solid var(--card-border)",
                 borderRadius: 12,
@@ -337,6 +337,21 @@ export default function HomePage() {
               }}
             >
               USDT Infinity
+            </Link>
+            <Link
+              href="/usdt-infinity-onchain"
+              style={{
+                border: "1px solid var(--card-border)",
+                borderRadius: 12,
+                padding: "10px 12px",
+                textDecoration: "none",
+                background: "var(--card)",
+                color: "var(--text)",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              On-chain BRL
             </Link>
             {/* <Link
               href="/spot-futures"
