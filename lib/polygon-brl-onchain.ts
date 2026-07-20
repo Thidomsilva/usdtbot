@@ -210,14 +210,20 @@ function loadProtocols(): ProtocolConfig[] {
   return protocols;
 }
 
+const FALLBACK_RPCS = [
+  "https://polygon-bor-rpc.publicnode.com",
+  "https://1rpc.io/matic",
+  "https://polygon-rpc.com",
+];
+
 function getClient() {
-  const rpcUrl = process.env.POLYGON_RPC_URL || "https://polygon-rpc.com";
+  const rpcUrl = process.env.POLYGON_RPC_URL || FALLBACK_RPCS[0];
   return {
     rpcUrl,
     client: createPublicClient({
       chain: polygon,
       transport: http(rpcUrl, {
-        timeout: 8_000,
+        timeout: 10_000,
       }),
     }),
   };
@@ -386,8 +392,18 @@ export async function scanPolygonBrlStableMatrix(params: {
       for (const targetToken of tokens) {
         if (sourceToken === targetToken) continue;
 
-        const feeTier = protocol.feeTiers[0] ?? 3000;
-        const poolAddress = await discoverPoolAddress(client, protocol, sourceToken, targetToken, feeTier);
+        // Tenta todos os fee tiers até encontrar uma pool ativa
+        let poolAddress: Address | null = null;
+        let feeTier = protocol.feeTiers[0] ?? 3000;
+        for (const ft of protocol.feeTiers) {
+          const addr = await discoverPoolAddress(client, protocol, sourceToken, targetToken, ft);
+          if (addr) {
+            poolAddress = addr;
+            feeTier = ft;
+            break;
+          }
+        }
+
         if (!poolAddress) {
           rows.push({
             pair: formatPairLabel(sourceToken, targetToken),
@@ -405,7 +421,7 @@ export async function scanPolygonBrlStableMatrix(params: {
             alertSide: "watch",
             status: "unavailable",
             updatedAt: new Date().toISOString(),
-            notes: "Pool nao encontrada via factory para a fee tier configurada.",
+            notes: "Pool nao encontrada via factory em nenhum fee tier (100, 500, 3000, 10000).",
           });
           continue;
         }

@@ -16,7 +16,6 @@ const ORDER = [
   "bitget",
   "okx",
   "kucoin",
-  "novadax",
   "mercadobitcoin",
   "mexc",
 ];
@@ -32,7 +31,6 @@ const EXCHANGE_META: Record<string, { domain: string }> = {
   bitget: { domain: "bitget.com" },
   okx: { domain: "okx.com" },
   kucoin: { domain: "kucoin.com" },
-  novadax: { domain: "novadax.com" },
   mercadobitcoin: { domain: "mercadobitcoin.com.br" },
   mexc: { domain: "mexc.com" },
 };
@@ -49,7 +47,6 @@ const DEFAULT_FEES: Record<string, { buy: number; sell: number }> = {
   bitget: { buy: 0.20, sell: 0.20 },
   okx: { buy: 0.20, sell: 0.20 },
   kucoin: { buy: 0.20, sell: 0.20 },
-  novadax: { buy: 0.35, sell: 0.35 },
   mercadobitcoin: { buy: 0.45, sell: 0.45 },
   mexc: { buy: 0.20, sell: 0.20 },
 };
