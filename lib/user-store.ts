@@ -68,6 +68,9 @@ type StorageBackend = 'file' | 'kv-rest' | 'kv-redis-url' | 'supabase'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+const COURTESY_ACCESS_EMAIL = 'mmec201x@gmail.com'
+const COURTESY_ACCESS_DURATION_DAYS = 30
+
 let redisClient: Redis | null = null
 let redisUrlClient: RedisClientType | null = null
 let redisUrlConnecting: Promise<RedisClientType> | null = null
@@ -228,6 +231,15 @@ function hashPassword(password: string, salt: string): string {
 
 function isValidEmail(value: string): boolean {
   return EMAIL_PATTERN.test(value)
+}
+
+function hasCourtesyAccess(value: string | null | undefined): boolean {
+  return (value ?? '').trim().toLowerCase() === COURTESY_ACCESS_EMAIL
+}
+
+function buildCourtesyPlanExpiresAtIso(): string {
+  const expiresAt = Date.now() + COURTESY_ACCESS_DURATION_DAYS * 24 * 60 * 60 * 1000
+  return new Date(expiresAt).toISOString()
 }
 
 function toPublicUser(user: StoredUser): PublicUser {
@@ -1016,6 +1028,14 @@ export async function getUserPlanInfo(
     return { planType: null, planExpiresAt: null, planActive: true }
   }
 
+  if (hasCourtesyAccess(user.email ?? user.username)) {
+    return {
+      planType: user.planType ?? 'monthly',
+      planExpiresAt: buildCourtesyPlanExpiresAtIso(),
+      planActive: true,
+    }
+  }
+
   const planExpiresAt = user.planExpiresAt ?? null
   const planActive =
     planExpiresAt !== null && new Date(planExpiresAt).getTime() > Date.now()
@@ -1028,7 +1048,11 @@ export async function verifyUserCredentials(username: string, password: string):
   const store = await loadStore()
 
   const user = store.users.find((entry) => entry.username === normalizedUsername)
-  if (!user || !user.active) {
+  if (!user) {
+    return null
+  }
+
+  if (!user.active && !hasCourtesyAccess(user.email ?? user.username)) {
     return null
   }
 

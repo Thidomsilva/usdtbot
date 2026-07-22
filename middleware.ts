@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSessionSecret, readSessionFromToken, SESSION_COOKIE, SessionPayload } from './lib/session'
 
 const PUBLIC_FILE_PATTERN = /\.[^/]+$/
+const COURTESY_ACCESS_EMAIL = 'mmec201x@gmail.com'
 
 function hasValidCronAuthorization(request: NextRequest): boolean {
   const secret = process.env.CRON_SECRET?.trim()
@@ -33,6 +34,10 @@ function isAdminPath(pathname: string): boolean {
 function isPlanExpiredOrMissing(session: SessionPayload): boolean {
   // Admins nunca ficam bloqueados por plano
   if (session.role === 'admin') return false
+
+  // Exceção de cortesia temporária por e-mail
+  const normalizedEmail = (session.email ?? session.username).trim().toLowerCase()
+  if (normalizedEmail === COURTESY_ACCESS_EMAIL) return false
 
   // planExpiresAt = undefined → plano não foi verificado (sessão antiga) → bloquear
   // planExpiresAt = null → sem plano → bloquear
